@@ -1,0 +1,5 @@
+[tls.options]
+  [tls.options.check-ca]
+    [tls.options.check-ca.clientAuth]
+      caFiles = ["/etc/ssl/certs/WirenBoard_Root_CA.crt"]
+      clientAuthType = "RequireAndVerifyClientCert"

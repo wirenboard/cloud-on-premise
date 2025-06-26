@@ -1,0 +1,18 @@
+[log]
+  level = "DEBUG"
+
+[entryPoints]
+  [entryPoints.websecure]
+    address = ":443"
+
+[providers.docker]
+  endpoint = "unix:///var/run/docker.sock"
+  exposedByDefault = false
+  watch = true
+
+[providers.file]
+  directory = "/traefik-dynamic-conf"
+  watch = true
+
+[retry]
+  attempts = 3
