@@ -16,3 +16,6 @@
 
 [retry]
   attempts = 3
+
+[ping]
+entryPoint = "websecure"
