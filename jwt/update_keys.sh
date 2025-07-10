@@ -1,82 +1,82 @@
 #!/bin/bash
 set -e
 
-# Проверяем, существует ли .env
+# Check if .env exists
 if [[ ! -f .env ]]; then
     if [[ -f .env.example ]]; then
-        echo "Файл .env не найден, создаю его из .env.example..."
+        echo ".env file not found, creating from .env.example..."
         mv .env.example .env
     else
-        echo "Ошибка: .env и .env.example не найдены! Создайте .env и укажите переменные окружения!"
+        echo "Error: .env and .env.example not found! Please create .env and set environment variables!"
         exit 1
     fi
 fi
 
-# Экспортируем только строки вида VAR=VAL, без пробелов и комментариев
+# Export only VAR=VAL lines (no spaces or comments)
 set -o allexport
 grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env | while read -r line; do export "$line"; done
 set +o allexport
 
-# Файлы ключей
+# Key files
 PRIVATE_KEY_FILE="jwt/private.pem"
 PUBLIC_KEY_FILE="jwt/public.pem"
 
-# Флаги для генерации
+# Generation flags
 GENERATE_PRIVATE=false
 GENERATE_PUBLIC=false
 
-echo "Проверяю файлы ключей..."
+echo "Checking key files..."
 
-# Проверяем, существует ли приватный ключ и не пуст ли он
+# Check if private key exists and is not empty
 if [[ ! -f "$PRIVATE_KEY_FILE" || ! -s "$PRIVATE_KEY_FILE" ]]; then
-    echo "Приватный ключ отсутствует или пустой, требуется генерация."
+    echo "Private key is missing or empty, generation required."
     GENERATE_PRIVATE=true
 fi
 
-# Проверяем, существует ли публичный ключ и не пуст ли он
+# Check if public key exists and is not empty
 if [[ ! -f "$PUBLIC_KEY_FILE" || ! -s "$PUBLIC_KEY_FILE" ]]; then
-    echo "Публичный ключ отсутствует или пустой, требуется генерация."
+    echo "Public key is missing or empty, generation required."
     GENERATE_PUBLIC=true
 fi
 
-# Проверяем валидность существующего приватного ключа
+# Validate existing private key
 if [[ -f "$PRIVATE_KEY_FILE" && -s "$PRIVATE_KEY_FILE" ]]; then
     if ! openssl rsa -in "$PRIVATE_KEY_FILE" -check -noout &>/dev/null; then
-        echo "Приватный ключ поврежден или невалиден. Перегенерирую..."
+        echo "Private key is corrupted or invalid. Regenerating..."
         GENERATE_PRIVATE=true
     fi
 fi
 
-# Проверяем валидность существующего публичного ключа
+# Validate existing public key
 if [[ -f "$PUBLIC_KEY_FILE" && -s "$PUBLIC_KEY_FILE" ]]; then
     if ! openssl rsa -in "$PUBLIC_KEY_FILE" -pubin -noout &>/dev/null; then
-        echo "Публичный ключ поврежден или невалиден. Перегенерирую..."
+        echo "Public key is corrupted or invalid. Regenerating..."
         GENERATE_PUBLIC=true
     fi
 fi
 
-# Если приватный ключ поврежден или отсутствует, пересоздаем оба ключа
+# If private key is corrupted or missing, regenerate both keys
 if [[ "$GENERATE_PRIVATE" == true ]]; then
-    echo "Генерирую новый приватный ключ..."
+    echo "Generating new private key..."
     openssl genrsa -out "$PRIVATE_KEY_FILE" 2048
-    GENERATE_PUBLIC=true  # Если приватный ключ новый, публичный тоже нужно обновить
+    GENERATE_PUBLIC=true  # Public key must be updated as well
 fi
 
-# Генерируем публичный ключ, если требуется
+# Generate public key if required
 if [[ "$GENERATE_PUBLIC" == true ]]; then
-    echo "Генерирую новый публичный ключ..."
+    echo "Generating new public key..."
     openssl rsa -in "$PRIVATE_KEY_FILE" -pubout -out "$PUBLIC_KEY_FILE"
 fi
 
-echo "Оба ключа валидны и готовы к использованию!"
+echo "Both keys are valid and ready to use!"
 
 # -------------------------------------------------------------------
 
-# Читаем файлы и заменяем переносы строк на \n
+# Read files and replace line breaks with \n
 PRIVATE_KEY=$(sed ':a;N;$!ba;s/\n/\\n/g' $PRIVATE_KEY_FILE)
 PUBLIC_KEY=$(sed ':a;N;$!ba;s/\n/\\n/g' $PUBLIC_KEY_FILE)
 
-# Обновляем .env (замена или добавление переменных)
+# Update .env (replace or add variables)
 if grep -q "^PRIVATE_KEY=" .env; then
     sed -i "s|^PRIVATE_KEY=.*|PRIVATE_KEY=\"$PRIVATE_KEY\"|" .env
 else
@@ -89,4 +89,4 @@ else
     echo "PUBLIC_KEY=\"$PUBLIC_KEY\"" >> .env
 fi
 
-echo "Ключи успешно обновлены в .env"
+echo "Keys have been successfully updated in .env"
