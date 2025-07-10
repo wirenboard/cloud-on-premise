@@ -1,6 +1,3 @@
-[log]
-  level = "DEBUG"
-
 [entryPoints]
   [entryPoints.websecure]
     address = ":443"
@@ -18,4 +15,4 @@
   attempts = 3
 
 [ping]
-entryPoint = "websecure"
+  entryPoint = "websecure"

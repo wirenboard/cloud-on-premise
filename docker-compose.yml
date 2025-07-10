@@ -18,7 +18,7 @@ x-backend-common-env: &backend-common-env
   INFLUX_GRAFANA_ADMIN_MANAGEMENT_URL: "https://${INFLUXDB_USERNAME}:${INFLUXDB_PASSWORD}@metrics.${ABSOLUTE_SERVER}"
   TUNNEL_AGENT_PORT: 7107
   TUNNEL_AGENT_GLOBAL_TOKEN: ${TUNNEL_AUTH_TOKEN}
-  DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+  DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db}"
   ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
   TELEGRAF_AGENT_URL: "https://influx.${ABSOLUTE_SERVER}"
   BACKEND_APP_URL: "https://app.${ABSOLUTE_SERVER}"
@@ -31,8 +31,8 @@ x-backend-common-env: &backend-common-env
   ADMIN_EMAIL: ${ADMIN_EMAIL}
   ADMIN_USERNAME: ${ADMIN_USERNAME}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
   AWS_S3_ENDPOINT_URL: "http://minio:9000"
   AWS_STORAGE_BUCKET_NAME: "media"
   AWS_S3_REGION_NAME: "eu-west-1"
@@ -50,11 +50,11 @@ services:
       --max-connections=100 
       --max_wal_senders=0
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-db}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -100,18 +100,13 @@ services:
     ports:
       - "443:443"
     volumes:
-      - /etc/letsencrypt/live/${ABSOLUTE_SERVER}/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
-      - /etc/letsencrypt/live/${ABSOLUTE_SERVER}/privkey.pem:/etc/ssl/private/privkey.pem:ro
+      - ${TLS_CERTS_PATH:-./tls}/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
+      - ${TLS_CERTS_PATH:-./tls}/privkey.pem:/etc/ssl/private/privkey.pem:ro
       - $PWD/traefik/traefik.toml:/traefik.toml
       - $PWD/traefik/WirenBoard_Root_CA.crt:/etc/ssl/certs/WirenBoard_Root_CA.crt:ro
       - $PWD/traefik/traefik-check-ca.toml:/traefik-dynamic-conf/check-ca.toml
       - $PWD/traefik/traefik-tls.toml:/traefik-dynamic-conf/tls.toml
       - /var/run/docker.sock:/var/run/docker.sock:ro
-#    healthcheck:
-#      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:80/ping" ]
-#      interval: 10s
-#      timeout: 3s
-#      retries: 3
 
   tunnel:
     image: registry.wirenboard.com/wbc-tunnel
@@ -173,6 +168,9 @@ services:
     restart: always
     environment:
       BACKEND_APP_URL: "http://backend:8000/"
+      FOOTER_LINKS: '[{"url": "https://wirenboard.com/", "caption": "mainSiteLink"}]'
+      FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"Сайт компании Wiren Board"}'
+      FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"Wiren Board website"}'
     labels:
       <<: *traefik-common
       traefik.http.routers.frontend.rule: "Host(`${ABSOLUTE_SERVER}`)"
@@ -289,8 +287,8 @@ services:
       - minioData:/data
     restart: always
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_login}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_pass}
     command: server /data
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
@@ -302,7 +300,7 @@ services:
     image: minio/mc:latest
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio_login} ${MINIO_ROOT_PASSWORD:-minio_pass};
       /usr/bin/mc rb --force local/media/;
       /usr/bin/mc mb --quiet local/media/;
       /usr/bin/mc policy set public local/media/;
