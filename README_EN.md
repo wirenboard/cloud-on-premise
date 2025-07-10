@@ -130,7 +130,13 @@ POSTGRES_PASSWORD=postgres_password
 
 ### 2. Automatic Setup and Launch
 
-Run the Make command to generate all required secret keys and tokens and start the project:
+Install the `make` package if it is not already installed:
+
+```bash
+apt install make
+```
+
+Run the command to generate all required secret keys and tokens and start the project:
 
 ```bash
 make run
@@ -144,7 +150,7 @@ make run
 
 ### User Registration
 
-In on-premise cloud, registration of external users is disabled.
+In the on-premise cloud, registration of external users is disabled.
 Initially, only one user with admin rights has access, and their login and password are set via the environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD` at project startup.
 
 > ⚠️ You can change the password at any time and create another admin user. However, if you delete the user specified in the environment variables, it will be recreated at the next project restart.
