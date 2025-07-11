@@ -220,12 +220,11 @@ INFLUXDB_TOKEN=PvxahJmIuieFy1ieODoQ3JpKEVSCDSkRUQZjjePSlajJV6w1Sl2iAQcpY8f2z4s
 # Секретный ключ для Django
 SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 
-# Приватный и публичный JWT ключи
-# Обязательно! Значение должно быть в ковычках "" и все переносы строк замененны на '\n'
-PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvAIBKYfZatYWB9N----YOUR_KEY----aUIZJC7fno2DqqH5fQ==\n-----END PRIVATE KEY-----"
-PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9wT----YOUR_KEY----3UV8Hm2CS7x9E47QIQAB\n-----END PUBLIC KEY-----"
-
 ```
+
+Если вы хотите использовать свои приватный и публичные ключи для JWT, 
+пометите файлы `private.pem` и `public.pem` в директорию `jwt` в корне проекта
+или они будут сгенерированы автоматически.
 
 ---
 
