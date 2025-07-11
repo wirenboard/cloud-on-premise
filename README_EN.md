@@ -224,15 +224,17 @@ A set of Makefile commands is used to work with the on-premise cloud. All action
 
 ### Main Commands
 
-| Command                | Description                                                                        |
-|------------------------|------------------------------------------------------------------------------------|
-| `make help`            | Show all available commands                                                        |
-| `make init-env`        | Create `.env` from `.env.example` if it does not exist                             |
-| `make check-env`       | Check for required environment variables in `.env`                                 |
-| `make generate-env`    | Generate missing tokens/secrets, fill them in `.env`                               |
-| `make generate-jwt`    | Generate or update JWT keys                                                        |
-| `make run`             | Full deployment cycle: generate-env, build and launch containers                   |
-| `make update`          | Stop containers, update images, rebuild and relaunch project                       |
+| Command                  | Description                                                                      |
+|--------------------------|----------------------------------------------------------------------------------|
+| `make help`              | Show all available commands                                                      |
+| `make check-env`         | Check for required environment variables in `.env`                               |
+| `make generate-env`      | Generate missing tokens/secrets, fill them in `.env`                             |
+| `make generate-jwt`      | Generate or update JWT keys                                                      |
+| `generate-tunnel-token`  | Generate SSH and HTTP tunnel token                                               |
+| `generate-influx-token`  | Generate Influx token                                                            |
+| `generate-django-secret` | Generate Django secret key                                                       |
+| `make run`               | Full deployment cycle: generate-env, build and launch containers                 |
+| `make update`            | Stop containers, update images, rebuild and relaunch project                     |
 
 ### Usage Examples
 

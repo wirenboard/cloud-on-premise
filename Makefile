@@ -42,13 +42,15 @@ help:
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  help                  Show this message"
-	@echo "  init-env              Create .env from .env.example if missing"
-	@echo "  check-env             Check that all required variables are set"
-	@echo "  generate-env          Generate all secrets and variables (without overwriting existing ones)"
-	@echo "  run                   Full project launch cycle: generate-env, start containers"
-	@echo "  update                Update images, rebuild and start"
-	@echo "  generate-jwt          Generate/update keys for JWT"
+	@echo "  help                  		Show this message"
+	@echo "  check-env             		Check that all required variables are set"
+	@echo "  generate-env          		Generate all secrets and variables (without overwriting existing ones)"
+	@echo "  run                   		Full project launch cycle: generate-env, start containers"
+	@echo "  update                		Update images, rebuild and start"
+	@echo "  generate-jwt          		Generate/update keys for JWT"
+	@echo "  generate-tunnel-token 		Generate SSH and HTTP tunnel token"
+	@echo "  generate-influx-token 		Generate Influx token"
+	@echo "  generate-django-secret     Generate Django secret key"
 	@echo ""
 
 #------------------------------------------------------------------------------
@@ -70,24 +72,10 @@ endef
 # Environment file management
 #------------------------------------------------------------------------------
 
-.PHONY: init-env
-init-env:
-	@if [ ! -f $(ENV_FILE) ]; then \
-		if [ -f $(ENV_EXAMPLE) ]; then \
-			cp $(ENV_EXAMPLE) $(ENV_FILE); \
-			echo ".env created from .env.example"; \
-		else \
-			echo "ERROR: Neither $(ENV_FILE) nor $(ENV_EXAMPLE) exists."; \
-			exit 1; \
-		fi \
-	else \
-		echo "$(ENV_FILE) already exists"; \
-	fi
-
 .PHONY: check-env
 check-env:
 	@if [ ! -f $(ENV_FILE) ]; then \
-		echo "ERROR: File $(ENV_FILE) not found."; exit 1; \
+		echo "ERROR: File $(ENV_FILE) not found. Please create the .env file based on the .env.example file."; exit 1; \
 	fi
 	@result=0; \
 	for var in $(REQUIRED_VARS); do \
@@ -155,7 +143,7 @@ generate-jwt:
 	bash ./jwt/update_keys.sh
 
 .PHONY: generate-env
-generate-env: init-env
+generate-env:
 	${MAKE} generate-tunnel-token
 	${MAKE} generate-influx-token
 	${MAKE} generate-django-secret
