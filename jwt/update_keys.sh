@@ -3,13 +3,8 @@ set -e
 
 # Check if .env exists
 if [[ ! -f .env ]]; then
-    if [[ -f .env.example ]]; then
-        echo ".env file not found, creating from .env.example..."
-        mv .env.example .env
-    else
-        echo "Error: .env and .env.example not found! Please create .env and set environment variables!"
-        exit 1
-    fi
+    echo "Error: .env file not found! Please create .env and set environment variables!"
+    exit 1
 fi
 
 # Export only VAR=VAL lines (no spaces or comments)
@@ -76,17 +71,12 @@ echo "Both keys are valid and ready to use!"
 PRIVATE_KEY=$(sed ':a;N;$!ba;s/\n/\\n/g' $PRIVATE_KEY_FILE)
 PUBLIC_KEY=$(sed ':a;N;$!ba;s/\n/\\n/g' $PUBLIC_KEY_FILE)
 
-# Update .env (replace or add variables)
-if grep -q "^PRIVATE_KEY=" .env; then
-    sed -i "s|^PRIVATE_KEY=.*|PRIVATE_KEY=\"$PRIVATE_KEY\"|" .env
-else
-    echo "PRIVATE_KEY=\"$PRIVATE_KEY\"" >> .env
-fi
+# Delete existing variables
+sed -i '/^PRIVATE_KEY=/d' .env
+sed -i '/^PUBLIC_KEY=/d' .env
 
-if grep -q "^PUBLIC_KEY=" .env; then
-    sed -i "s|^PUBLIC_KEY=.*|PUBLIC_KEY=\"$PUBLIC_KEY\"|" .env
-else
-    echo "PUBLIC_KEY=\"$PUBLIC_KEY\"" >> .env
-fi
+# Add new variables
+echo "PRIVATE_KEY=\"$PRIVATE_KEY\"" >> .env
+echo "PUBLIC_KEY=\"$PUBLIC_KEY\"" >> .env
 
 echo "Keys have been successfully updated in .env"
