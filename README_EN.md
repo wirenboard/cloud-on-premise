@@ -146,7 +146,7 @@ make run
 
 ---
 
-## What’s Next?
+## ▶️ Usage
 
 ### User Registration
 
@@ -161,13 +161,40 @@ Adding new users is possible only via the admin panel or by sending an invitatio
 
 Once the invitation is received, the user can follow the link in the email to register.
 
-### Adding Controllers
+### Controller Setup
 
-⚠️ In development
+To configure your controller to work with your on-premises cloud, follow these steps:
+
+#### 1. Add a Cloud Provider
+
+Open the controller’s console and execute the following command:
+```bash
+wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https://your-domain.com/api-agent/v1/
+```
+where:
+- `your-onpremise-name` - provider name (can be any value)
+- `https://your-domain.com/` - cloud address
+- `https://your-domain.com/api-agent/v1/` - cloud agent address (always: `cloud address` + `/api-agent/v1/`)
+
+#### 2. Link the Controller to a User
+
+Go to the controller’s web interface and select:
+
+`Settings` -> `System` -> `Cloud Connection (your-onpremise-name)`
+
+> If you do not see the System section in the `settings`, you do not have administrator rights.
+> 
+> Go to `Settings` -> `Access Rights`, select `Administrator` -> `I accept all responsibility...` -> `Apply`.
+> 
+> After this, the `System` section will appear in the menu.
+
+Follow the link, log in to the cloud, and select the organization to which you want to add the controller.
+
+Your controller is now successfully linked to the cloud.
 
 ---
 
-## Environment Variables
+## 🎛 Environment Variables
 
 You may also set some environment variables manually; in this case, their generation will be skipped at startup.
 
