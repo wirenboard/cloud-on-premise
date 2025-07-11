@@ -1,0 +1,319 @@
+x-traefik-common: &traefik-common
+  traefik.enable: "true"
+  traefik.docker.network: ${DOCKER_NET_NAME:-wb_net}
+
+x-backend-common-env: &backend-common-env
+  EMAIL_URL: ${EMAIL_URL}
+  EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM}
+  EMAIL_ENABLED: "On"
+  CELERY_BROKER_URL: "redis://redis:6379/0"
+  CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+  CACHE_URL: "redis://redis:6379/1"
+  SECRET_KEY: ${SECRET_KEY}
+  JWT_PRIVATE_KEY: ${PRIVATE_KEY}
+  JWT_PUBLIC_KEY: ${PUBLIC_KEY}
+  INFLUX_DB_URL: "http://influx:8086"
+  INFLUX_DB_TOKEN: ${INFLUXDB_TOKEN}
+  INFLUX_GRAFANA_URL: "https://metrics.${ABSOLUTE_SERVER}"
+  INFLUX_GRAFANA_ADMIN_MANAGEMENT_URL: "https://${INFLUXDB_USERNAME}:${INFLUXDB_PASSWORD}@metrics.${ABSOLUTE_SERVER}"
+  TUNNEL_AGENT_PORT: 7107
+  TUNNEL_AGENT_GLOBAL_TOKEN: ${TUNNEL_AUTH_TOKEN}
+  DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db}"
+  ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
+  TELEGRAF_AGENT_URL: "https://influx.${ABSOLUTE_SERVER}"
+  BACKEND_APP_URL: "https://app.${ABSOLUTE_SERVER}"
+  BACKEND_AGENT_URL: "https://agent.${ABSOLUTE_SERVER}"
+  TUNNEL_AGENT_URL: "https://tunnel.${ABSOLUTE_SERVER}"
+  TUNNEL_DASHBOARD_URL: "http://${TUNNEL_DASHBOARD_USER}:${TUNNEL_DASHBOARD_PASSWORD}@tunnel:7501"
+  TUNNEL_REDIRECT_SSH_MAIN_URL: "https://ssh.${ABSOLUTE_SERVER}"
+  TUNNEL_REDIRECT_HTTP_MAIN_URL: "https://http.${ABSOLUTE_SERVER}"
+  TUNNEL_UPSTREAM: "tunnel"
+  ADMIN_EMAIL: ${ADMIN_EMAIL}
+  ADMIN_USERNAME: ${ADMIN_USERNAME}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
+  AWS_S3_ENDPOINT_URL: "http://minio:9000"
+  AWS_STORAGE_BUCKET_NAME: "media"
+  AWS_S3_REGION_NAME: "eu-west-1"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: always
+    command: >
+      --autovacuum=off 
+      --fsync=off 
+      --synchronous_commit=off 
+      --full_page_writes=off 
+      --work_mem=5MB 
+      --max-connections=100 
+      --max_wal_senders=0
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-db}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - postgresData:/var/lib/postgresql/data
+
+  influx:
+    image: influxdb:2.7
+    restart: always
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: "setup"
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: "admin-org"
+      DOCKER_INFLUXDB_INIT_BUCKET: "admin-bucket"
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN}
+    labels:
+      <<: *traefik-common
+      traefik.http.routers.influx.rule: "Host(`influx.${ABSOLUTE_SERVER}`)"
+      traefik.http.routers.influx.entrypoints: "websecure"
+      traefik.http.routers.influx.service: "influx"
+      traefik.http.routers.influx.tls: "true"
+      traefik.http.services.influx.loadbalancer.server.port: "8086"
+    volumes:
+      - influxData:/var/lib/influxdb2
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8086/health" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:6-alpine
+    restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  traefik:
+    image: traefik:3.4
+    ports:
+      - "443:443"
+    volumes:
+      - ${TLS_CERTS_PATH:-./tls}/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
+      - ${TLS_CERTS_PATH:-./tls}/privkey.pem:/etc/ssl/private/privkey.pem:ro
+      - $PWD/traefik/traefik.toml:/traefik.toml
+      - $PWD/traefik/WirenBoard_Root_CA.crt:/etc/ssl/certs/WirenBoard_Root_CA.crt:ro
+      - $PWD/traefik/traefik-check-ca.toml:/traefik-dynamic-conf/check-ca.toml
+      - $PWD/traefik/traefik-tls.toml:/traefik-dynamic-conf/tls.toml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  tunnel:
+    image: registry.wirenboard.com/wbc-tunnel
+    restart: always
+    environment:
+      FRP_AUTH_TOKEN: ${TUNNEL_AUTH_TOKEN}
+      FRP_TUNNELING_PORT: 7107
+      FRP_WEBHOOK_ADDRESS: "backend:8000"
+      FRP_DASHBOARD_PORT: 7501
+      FRP_DASHBOARD_USER: ${TUNNEL_DASHBOARD_USER}
+      FRP_DASHBOARD_PASSWORD: ${TUNNEL_DASHBOARD_PASSWORD}
+    ports:
+      - "7107:7107"
+      - "7501:7501"
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  tunnel_auth:
+    image: registry.wirenboard.com/wbc-tunnel-auth
+    restart: always
+    environment:
+      TUNNEL_UPSTREAM: "tunnel"
+      WEBSSH_UPSTREAM: "webssh:8888"
+      BACKEND_APP_UPSTREAM: "backend:8000"
+      CLOUD_ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
+      CLOUD_ABSOLUTE_SERVER_NAME_REGEX: ${ABSOLUTE_SERVER_REGEX}
+      BACKEND_APP_PUBLIC_KEY: ${PUBLIC_KEY}
+    labels:
+      <<: *traefik-common
+      traefik.http.routers.tunnel_auth.tls.domains[0].main: "ssh.${ABSOLUTE_SERVER}"
+      traefik.http.routers.tunnel_auth.tls.domains[0].sans: "*.ssh.${ABSOLUTE_SERVER}"
+      traefik.http.routers.tunnel_auth.tls.domains[1].main: "http.${ABSOLUTE_SERVER}"
+      traefik.http.routers.tunnel_auth.tls.domains[1].sans: "*.http.${ABSOLUTE_SERVER}"
+      traefik.http.routers.tunnel_auth.rule: "HostRegexp(`(?P<sub>[a-zA-Z0-9]{5,25}).ssh.${ABSOLUTE_SERVER}`) || Host(`ssh.${ABSOLUTE_SERVER}`) || HostRegexp(`(?P<sub>[a-zA-Z0-9]{5,25}).http.${ABSOLUTE_SERVER}`) || Host(`http.${ABSOLUTE_SERVER}`)"
+      traefik.http.routers.tunnel_auth.entrypoints: "websecure"
+      traefik.http.routers.tunnel_auth.tls: "true"
+      traefik.http.routers.tunnel_auth.service: "tunnel_auth"
+      traefik.http.services.tunnel_auth.loadbalancer.server.port: "8000"
+    depends_on:
+      tunnel:
+        condition: service_started
+      backend:
+        condition: service_healthy
+
+  webssh:
+    image: registry.wirenboard.com/wbc-webssh
+    restart: always
+    depends_on:
+      tunnel:
+        condition: service_started
+
+  frontend:
+    image: registry.wirenboard.com/wbc-frontend
+    restart: always
+    environment:
+      BACKEND_APP_URL: "http://backend:8000/"
+      FOOTER_LINKS: '[{"url": "https://wirenboard.com/", "caption": "mainSiteLink"}]'
+      FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"Сайт компании Wiren Board"}'
+      FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"Wiren Board website"}'
+    labels:
+      <<: *traefik-common
+      traefik.http.routers.frontend.rule: "Host(`${ABSOLUTE_SERVER}`)"
+      traefik.http.routers.frontend.entrypoints: "websecure"
+      traefik.http.routers.frontend.service: "frontend"
+      traefik.http.routers.frontend.tls: "true"
+      traefik.http.services.frontend.loadbalancer.server.port: "3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    image: registry.wirenboard.com/wbc-backend
+    restart: always
+    environment:
+      <<: *backend-common-env
+    labels:
+      <<: *traefik-common
+      traefik.http.routers.backend.rule: "(Host(`${ABSOLUTE_SERVER}`) && PathPrefix(`/static/`)) || (Host(`app.${ABSOLUTE_SERVER}`) && (PathPrefix(`/admin/`) || PathPrefix(`/static/`) || PathPrefix(`/silk/`)))"
+      traefik.http.routers.backend.entrypoints: "websecure"
+      traefik.http.routers.backend.service: "backend"
+      traefik.http.routers.backend.tls: "true"
+      traefik.http.services.backend.loadbalancer.server.port: "8000"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+
+  agent_backend:
+    image: registry.wirenboard.com/wbc-agent-backend
+    restart: always
+    environment:
+      <<: *backend-common-env
+    labels:
+      <<: *traefik-common
+      traefik.http.services.agent_backend.loadbalancer.server.port: "8000"
+      traefik.http.routers.agent_backend.rule: "Host(`agent.${ABSOLUTE_SERVER}`) && PathPrefix(`/api-agent/`)"
+      traefik.http.routers.agent_backend.entrypoints: "websecure"
+      traefik.http.routers.agent_backend.service: "agent_backend"
+      traefik.http.routers.agent_backend.tls: "true"
+      traefik.http.routers.agent_backend.tls.options: "check-ca@file"
+      traefik.http.routers.agent_backend.middlewares: "agent_backend_check_ca"
+      traefik.http.middlewares.agent_backend_check_ca.passtlsclientcert.info.subject.commonName: "true"
+      traefik.http.middlewares.agent_backend_check_ca.passtlsclientcert.pem: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  worker:
+    image: registry.wirenboard.com/wbc-worker
+    restart: always
+    environment:
+      <<: *backend-common-env
+      QUEUE: default_queue
+      CONCURRENCY: 4
+      SOFT_TIME_LIMIT: 300
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  worker-influx:
+    image: registry.wirenboard.com/wbc-worker
+    restart: always
+    environment:
+      <<: *backend-common-env
+      QUEUE: influx_queue
+      CONCURRENCY: 4
+      SOFT_TIME_LIMIT: 300
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  worker-grafana:
+    image: registry.wirenboard.com/wbc-worker
+    restart: always
+    environment:
+      <<: *backend-common-env
+      QUEUE: grafana_queue
+      CONCURRENCY: 1
+      SOFT_TIME_LIMIT: 10
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  scheduler:
+    image: registry.wirenboard.com/wbc-scheduler
+    restart: always
+    environment:
+      <<: *backend-common-env
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  minio:
+    image: minio/minio:latest
+    volumes:
+      - minioData:/data
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_login}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_pass}
+    command: server /data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio-client:
+    image: minio/mc:latest
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio_login} ${MINIO_ROOT_PASSWORD:-minio_pass};
+      /usr/bin/mc rb --force local/media/;
+      /usr/bin/mc mb --quiet local/media/;
+      /usr/bin/mc policy set public local/media/;
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+
+networks:
+  default:
+    name: ${DOCKER_NET_NAME:-wb_net}
+
+volumes:
+  influxData: {}
+  postgresData: {}
+  minioData: {}
