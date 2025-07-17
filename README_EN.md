@@ -167,6 +167,8 @@ To configure your controller to work with your on-premises cloud, follow these s
 
 #### 1. Add a Cloud Provider
 
+##### Provider version <= 1.5.14
+
 Open the controller’s console and execute the following command:
 ```bash
 wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https://your-domain.com/api-agent/v1/
@@ -176,6 +178,16 @@ where:
 - `https://your-domain.com/` - cloud address
 - `https://your-domain.com/api-agent/v1/` - cloud agent address (always: `cloud address` + `/api-agent/v1/`)
 
+> After your-domain.com If it is available online, go to the web UI of the controller in the Settings -> System section and click on the activation link with which you can link the controller to your cloud.
+
+##### Provider version > 1.5.14
+
+```bash
+wb-cloud-agent use-on-premise https://your-domain.com
+```
+
+> After your-domain.com When it is available on the network, the `wb-cloud-agent` command displays an activation link that allows you to link the controller to your cloud.
+
 #### 2. Link the Controller to a User
 
 Go to the controller’s web interface and select:
@@ -183,9 +195,9 @@ Go to the controller’s web interface and select:
 `Settings` -> `System` -> `Cloud Connection (your-onpremise-name)`
 
 > If you do not see the System section in the `settings`, you do not have administrator rights.
-> 
+>
 > Go to `Settings` -> `Access Rights`, select `Administrator` -> `I accept all responsibility...` -> `Apply`.
-> 
+>
 > After this, the `System` section will appear in the menu.
 
 Follow the link, log in to the cloud, and select the organization to which you want to add the controller.
@@ -212,7 +224,7 @@ SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 
 ```
 
-If you want to use your own private and public keys for JWT, 
+If you want to use your own private and public keys for JWT,
 place the `private.pem` and `public.pem` files in the `jwt` directory at the root of the project.
 Otherwise, they will be generated automatically.
 
@@ -251,4 +263,3 @@ make check-env
 # Command help
 make help
 ```
-
