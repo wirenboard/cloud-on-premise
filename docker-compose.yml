@@ -98,7 +98,7 @@ services:
   traefik:
     image: traefik:3.4
     ports:
-      - "443:443"
+      - "${TRAEFIK_EXTERNAL_PORT:-443}:443"
     volumes:
       - ${TLS_CERTS_PATH:-./tls}/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
       - ${TLS_CERTS_PATH:-./tls}/privkey.pem:/etc/ssl/private/privkey.pem:ro
