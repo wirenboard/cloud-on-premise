@@ -22,22 +22,24 @@ Documentation for setting up and deploying Wirenboard Cloud in an On-Premise env
 
 ---
 
-## ⚙️ Pre-deployment Steps
+> ⚠️ Your CPU or VM hypervisor must support the `x86-64-v2` instruction set. When using a VM, the `host-passthrough` option (or `CPU=host`) may be required.
+
+---
+
+## ⚙️ Preconfiguration
 
 Before deploying the application, the following steps must be completed:
 
-### 1. DNS Records for TLS
+### 1. DNS Records
 
 The following A-type DNS records must be configured:
 
 ```text
 @.your-domain.com
 *.your-domain.com
-*.http.your-domain.com
-*.ssh.your-domain.com
 ```
 
-These should cover the following subdomains:
+These cover the required subdomains:
 
 ```text
 metrics.your-domain.com
@@ -53,34 +55,56 @@ http.your-domain.com
 
 ### 2. DNS Records for Email
 
-MX, SPF, DKIM, and DMARC records must be configured for correct email delivery. This is required for sending invitations, password reset emails, etc.
+MX, SPF, DKIM, and DMARC records must be configured to enable email sending. 
+This is required for sending organization invites, password resets, etc.
 
 ### 3. TLS Certificates
 
-Create and place certificate files (`fullchain.pem`, `privkey.pem`) in the directory:
+Certificates must be issued by a trusted CA:
+- Let's Encrypt (DNS challenge)
+- Commercial CAs (Sectigo, DigiCert, etc.)
+
+> ❌ Self-signed certificates are not supported.
+
+If you already have a certificate for your domain, check the SANs (Subject Alternative Names):
 
 ```bash
-path/to/your/cloud-on-premise/tls
+openssl x509 -in "path/to/your/certs/fullchain.pem" -noout -text | grep -A1 "Subject Alternative Name"
 ```
 
-Or specify the path in the environment variable `TLS_CERTS_PATH`.
+The certificate must include:
+
+```text
+your-domain.com
+*.your-domain.com
+*.http.your-domain.com
+*.ssh.your-domain.com
+```
+
+If not, you must obtain a new certificate.
+
+Place `fullchain.pem` and `privkey.pem` in the `./tls` directory or set the `TLS_CERTS_PATH` environment variable.
+
+To obtain a certificate using Certbot, see: [Manual Wildcard Certificate Setup Example](#-manual-wildcard-certificate-setup-example)
+
+> If port `443` is already occupied by another web server, see [Using with External Web Server](#-using-with-external-web-server)
 
 ---
 
 ## 🚀 Application Deployment
 
-> `docker compose` v1.21.0 or higher is required for launching.
+> You need `docker compose` v1.21.0 or higher to run the application.
 
-### 1. Environment Variables Setup
+### 1. Configure Environment Variables
 
-Create a copy of the environment file:
+Copy the sample environment file:
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in all required variables as in the example below:
+Fill in the required variables, e.g.:
 
 ```dotenv
 ABSOLUTE_SERVER=my-domain-name.com
@@ -94,20 +118,20 @@ EMAIL_SERVER=smtp.mail.com
 EMAIL_PORT=587
 EMAIL_NOTIFICATIONS_FROM=mymail@mail.com
 
-# Create admin user
+# Admin credentials
 ADMIN_EMAIL=admin@mail.com
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=password
 
-# Create InfluxDB admin
+# InfluxDB admin
 INFLUXDB_USERNAME=influx_admin
 INFLUXDB_PASSWORD=influx_password
 
-# Create Tunnel Dashboard admin
+# Tunnel Dashboard admin
 TUNNEL_DASHBOARD_USER=tunnel_admin
 TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 
-# Create Postgres admin
+# Postgres admin
 POSTGRES_DB=db_name
 POSTGRES_USER=postgres_user
 POSTGRES_PASSWORD=postgres_password
@@ -126,23 +150,26 @@ POSTGRES_PASSWORD=postgres_password
 # Set path to directory with tls certificates if required. Default is "./tls"
 #TLS_CERTS_PATH=path/to/my/certs/
 
+# Set external port for Traefik
+#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
+
 ```
 
-### 2. Automatic Setup and Launch
+### 2. Automatic Initialization and Launch
 
-Install the `make` package if it is not already installed:
+Install `make` if not yet installed:
 
 ```bash
 apt install make
 ```
 
-Run the command to generate all required secret keys and tokens and start the project:
+Then run:
 
 ```bash
 make run
 ```
 
-✅ Congratulations! Your cloud is ready.
+✅ Your cloud is now ready.
 
 ---
 
@@ -150,16 +177,12 @@ make run
 
 ### User Registration
 
-In the on-premise cloud, registration of external users is disabled.
-Initially, only one user with admin rights has access, and their login and password are set via the environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD` at project startup.
+User self-registration is disabled in the On-Premise cloud.
+Only one admin user will be available initially, using credentials from `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
 
-> ⚠️ You can change the password at any time and create another admin user. However, if you delete the user specified in the environment variables, it will be recreated at the next project restart.
+> ⚠️ You may change the password or create another admin user. However, the user specified in `.env` will be recreated on each restart if deleted.
 
-Creating the first organization is done manually by the administrator.
-
-Adding new users is possible only via the admin panel or by sending an invitation by email.
-
-Once the invitation is received, the user can follow the link in the email to register.
+First organization must be created manually by the admin. New users can be added via admin panel or email invitation.
 
 ### Controller Setup
 
@@ -208,9 +231,9 @@ Your controller is now successfully linked to the cloud.
 
 ## 🎛 Environment Variables
 
-You may also set some environment variables manually; in this case, their generation will be skipped at startup.
+You can override some environment variables manually in `.env`. If a variable is already set, it won’t be generated again.
 
-Example of available environment variables:
+Example:
 
 ```dotenv
 # Token for opening tunnels
@@ -224,29 +247,28 @@ SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 
 ```
 
-If you want to use your own private and public keys for JWT,
-place the `private.pem` and `public.pem` files in the `jwt` directory at the root of the project.
-Otherwise, they will be generated automatically.
+For JWT, place `private.pem` and `public.pem` in the `jwt` directory, or they’ll be generated.
 
 ---
 
-## 📦 Managing the Project via Makefile
+## 📦 Makefile Commands
 
-A set of Makefile commands is used to work with the on-premise cloud. All actions are performed from the root of the repository. Before the first launch, make sure you have Docker Compose and the make utility installed.
+Run all commands from the repo root.
 
 ### Main Commands
 
-| Command                  | Description                                                                      |
-|--------------------------|----------------------------------------------------------------------------------|
-| `make help`              | Show all available commands                                                      |
-| `make check-env`         | Check for required environment variables in `.env`                               |
-| `make generate-env`      | Generate missing tokens/secrets, fill them in `.env`                             |
-| `make generate-jwt`      | Generate or update JWT keys                                                      |
-| `generate-tunnel-token`  | Generate SSH and HTTP tunnel token                                               |
-| `generate-influx-token`  | Generate Influx token                                                            |
-| `generate-django-secret` | Generate Django secret key                                                       |
-| `make run`               | Full deployment cycle: generate-env, build and launch containers                 |
-| `make update`            | Stop containers, update images, rebuild and relaunch project                     |
+| Command                  | Description                                                |
+|--------------------------|------------------------------------------------------------|
+| `make help`              | Show all available commands                                |
+| `make check-env`         | Check required environment variables in `.env`             |
+| `make check-certs`       | Check availability and validity of certificates            |
+| `make generate-env`      | Generate missing tokens/secrets                            |
+| `make generate-jwt`      | Generate or update JWT keys                                |
+| `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                        |
+| `generate-influx-token`  | Generate Influx token                                      |
+| `generate-django-secret` | Generate Django SECRET_KEY                                 |
+| `make run`               | Full launch cycle (generate-env, build and start containers) |
+| `make update`            | Stop containers, update images, rebuild and restart        |
 
 ### Usage Examples
 
@@ -263,3 +285,86 @@ make check-env
 # Command help
 make help
 ```
+
+---
+
+## 🛠 Manual Wildcard Certificate Setup Example
+
+### Install Certbot
+
+```bash
+sudo apt update && sudo apt install certbot -y
+```
+
+### Obtain Wildcard Certificate
+
+```bash
+export EMAIL=admin@email.com
+export DOMAIN_NAME=your-domain-name.com
+```
+
+```bash
+sudo certbot certonly --manual --preferred-challenges dns \
+  --agree-tos \
+  --email $EMAIL \
+  --key-type rsa \
+  -d $DOMAIN_NAME \
+  -d "*.$DOMAIN_NAME" \
+  -d "*.ssh.$DOMAIN_NAME" \
+  -d "*.http.$DOMAIN_NAME"
+```
+
+Add DNS TXT records as prompted by Certbot. Use `dig` to verify.
+
+Certs saved to:
+
+```
+/etc/letsencrypt/live/your-domain.com/fullchain.pem
+/etc/letsencrypt/live/your-domain.com/privkey.pem
+```
+
+### Verify RSA Key
+
+```bash
+openssl rsa -in /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem -check -noout
+```
+
+---
+
+## 🛡 Using with External Web Server (Nginx/Apache/Caddy)
+
+If port 443 is already used by another web server, configure as follows:
+
+### 1. Set this in `.env`:
+```dotenv
+TRAEFIK_EXTERNAL_PORT=127.0.0.1:8443
+```
+
+### 2. Proxy via External Web Server
+
+Example Nginx config:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+
+    location / {
+        proxy_pass https://127.0.0.1:8443;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+> TLS must be terminated in the external web server. Traefik does not need certificates in this case.
+
+> Ensure port 8443 is bound only to 127.0.0.1 and not exposed publicly.
+
+---
+
