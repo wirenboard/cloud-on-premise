@@ -61,7 +61,7 @@ http.your-domain.com
 - `7107` - для туннелей
 - `7501` - для доступа к дашборду туннелей (Опционально)
 
-> ⚠️ Если у вас уже заняты какие-то из этих портов вы можете переопределить их в `.env` файле.
+> ⚠️ Если у вас уже заняты какие-то из этих портов вы можете раскомментировать нужные параметры в `.env` файле: `TRAEFIK_EXTERNAL_PORT`, `TUNNEL_EXTERNAL_PORT` или `TUNNEL_DASHBOARD_EXTERNAL_PORT`.
 
 > Если `443` порт уже занят другим веб-сервером, см. [Использование с другим веб-сервером](#-использование-с-внешним-веб-сервером-nginxapachecaddy)
 
@@ -140,13 +140,9 @@ ADMIN_PASSWORD=password
 INFLUXDB_USERNAME=influx_admin
 INFLUXDB_PASSWORD=influx_password
 
-# Создание администратора Tunnel Dashboard и настройка порта
+# Создание администратора Tunnel Dashboard
 TUNNEL_DASHBOARD_USER=tunnel_admin
 TUNNEL_DASHBOARD_PASSWORD=tunnel_password
-TUNNEL_DASHBOARD_PORT=7501
-
-# Настройка порта для работы тоннелей. Измените если порт уже занят
-TUNNEL_PORT=7107
 
 # Создание администратора Postgres
 POSTGRES_DB=db_name
@@ -167,8 +163,10 @@ POSTGRES_PASSWORD=postgres_password
 # Установить путь к директории с tls сертификатами если требуется. По умолчанию "./tls"
 #TLS_CERTS_PATH=path/to/my/certs/
 
-# Установить внешний порт для Traefik
+# Установить внешние порты
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
+#TUNNEL_EXTERNAL_PORT=7108
+#TUNNEL_DASHBOARD_EXTERNAL_PORT=7502
 
 ```
 

@@ -60,7 +60,7 @@ The following ports must be open for the cloud to operate:
 - `7107` – tunnels  
 - `7501` – tunnel dashboard access (optional)
 
-> ⚠️ If any of these ports are already in use, you can override them in the `.env` file.
+> ⚠️ If any of these ports are already in use, you can uncomment the corresponding parameters in the `.env` file: `TRAEFIK_EXTERNAL_PORT`, `TUNNEL_EXTERNAL_PORT`, or `TUNNEL_DASHBOARD_EXTERNAL_PORT`.
 
 > If port `443` is already occupied by another web server, see: [Using with External Web Server](#-using-with-external-web-server-nginxapachecaddy)
 > 
@@ -138,13 +138,9 @@ ADMIN_PASSWORD=password
 INFLUXDB_USERNAME=influx_admin
 INFLUXDB_PASSWORD=influx_password
 
-# Tunnel Dashboard admin and port configuration
+# Tunnel Dashboard admin
 TUNNEL_DASHBOARD_USER=tunnel_admin
 TUNNEL_DASHBOARD_PASSWORD=tunnel_password
-TUNNEL_DASHBOARD_PORT=7501
-
-# Tunnel port configuration – change if the port is already in use
-TUNNEL_PORT=7107
 
 # Postgres admin
 POSTGRES_DB=db_name
@@ -165,8 +161,10 @@ POSTGRES_PASSWORD=postgres_password
 # Set path to directory with tls certificates if required. Default is "./tls"
 #TLS_CERTS_PATH=path/to/my/certs/
 
-# Set external port for Traefik
+# Set external ports
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
+#TUNNEL_EXTERNAL_PORT=7108
+#TUNNEL_DASHBOARD_EXTERNAL_PORT=7502
 
 ```
 
