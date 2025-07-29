@@ -122,7 +122,7 @@ ABSOLUTE_SERVER=my-domain-name.com
 
 # Email setup
 # Set smtp+ssl if using SSL
-EMAIL_PROTOCOP=smtp+tls
+EMAIL_PROTOCOL=smtp+tls
 EMAIL_LOGIN=mymail@mail.com
 EMAIL_PASSWORD=password
 EMAIL_SERVER=smtp.mail.com
@@ -169,6 +169,12 @@ POSTGRES_PASSWORD=postgres_password
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
 
 ```
+
+> ⚠️ **The `EMAIL_URL` variable is generated automatically.**  
+> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, etc.  
+> After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.  
+> This rebuilds `EMAIL_URL` and applies the new settings.  
+> Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value and email will fail.
 
 ### 2. Automatic Initialization and Launch
 
@@ -272,18 +278,19 @@ Run all commands from the repo root.
 
 ### Main Commands
 
-| Command                  | Description                                                |
-|--------------------------|------------------------------------------------------------|
-| `make help`              | Show all available commands                                |
-| `make check-env`         | Check required environment variables in `.env`             |
-| `make check-certs`       | Check availability and validity of certificates            |
-| `make generate-env`      | Generate missing tokens/secrets                            |
-| `make generate-jwt`      | Generate or update JWT keys                                |
-| `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                        |
-| `generate-influx-token`  | Generate Influx token                                      |
-| `generate-django-secret` | Generate Django SECRET_KEY                                 |
+| Command                  | Description                                                  |
+|--------------------------|--------------------------------------------------------------|
+| `make help`              | Show all available commands                                  |
+| `make check-env`         | Check required environment variables in `.env`               |
+| `make check-certs`       | Check availability and validity of certificates              |
+| `make generate-env`      | Generate missing tokens/secrets                              |
+| `make generate-jwt`      | Generate or update JWT keys                                  |
+| `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                          |
+| `generate-influx-token`  | Generate Influx token                                        |
+| `generate-django-secret` | Generate Django SECRET_KEY                                   |
+| `generate-email-url`     | Generate/update Email URL                                    |
 | `make run`               | Full launch cycle (generate-env, build and start containers) |
-| `make update`            | Stop containers, update images, rebuild and restart        |
+| `make update`            | Stop containers, update images, rebuild and restart          |
 
 ### Usage Examples
 

@@ -17,7 +17,7 @@ PYTHON_BIN    := python3
 
 REQUIRED_VARS := \
   ABSOLUTE_SERVER \
-  EMAIL_PROTOCOP \
+  EMAIL_PROTOCOL \
   EMAIL_LOGIN \
   EMAIL_PASSWORD \
   EMAIL_SERVER \
@@ -74,6 +74,7 @@ help:
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
 	@printf "  generate-influx-token    Generate Influx token\n"
 	@printf "  generate-django-secret   Generate Django secret key\n\n"
+	@printf "  generate-email-url       Generate/update Email URL"
 
 #------------------------------------------------------------------------------
 # [ TLS CERTIFICATE CHECK ] ---------------------------------------------------
@@ -213,17 +214,17 @@ generate-absolute-server-regex:
 .PHONY: generate-email-url
 generate-email-url:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating EMAIL_URL ------"
-	@EMAIL_PROTOCOP=$$(grep -E '^[[:space:]]*EMAIL_PROTOCOP=' $(ENV_FILE) | cut -d= -f2-); \
+	@EMAIL_PROTOCOL=$$(grep -E '^[[:space:]]*EMAIL_PROTOCOL=' $(ENV_FILE) | cut -d= -f2-); \
 	EMAIL_LOGIN=$$(grep -E '^[[:space:]]*EMAIL_LOGIN=' $(ENV_FILE) | cut -d= -f2-); \
 	EMAIL_PASSWORD=$$(grep -E '^[[:space:]]*EMAIL_PASSWORD=' $(ENV_FILE) | cut -d= -f2-); \
 	EMAIL_SERVER=$$(grep -E '^[[:space:]]*EMAIL_SERVER=' $(ENV_FILE) | cut -d= -f2-); \
 	EMAIL_PORT=$$(grep -E '^[[:space:]]*EMAIL_PORT=' $(ENV_FILE) | cut -d= -f2-); \
-	if [ -z "$$EMAIL_PROTOCOP" ] || [ -z "$$EMAIL_LOGIN" ] || [ -z "$$EMAIL_PASSWORD" ] || [ -z "$$EMAIL_SERVER" ] || [ -z "$$EMAIL_PORT" ]; then \
+	if [ -z "$$EMAIL_PROTOCOL" ] || [ -z "$$EMAIL_LOGIN" ] || [ -z "$$EMAIL_PASSWORD" ] || [ -z "$$EMAIL_SERVER" ] || [ -z "$$EMAIL_PORT" ]; then \
 		printf "\n$(RED)ERROR: Not all email variables are set.$(NC)\n"; exit 1; \
 	fi; \
 	EMAIL_LOGIN_ENC=$$($(PYTHON_BIN) -c "import urllib.parse; print(urllib.parse.quote('$$EMAIL_LOGIN'))"); \
 	EMAIL_PASSWORD_ENC=$$($(PYTHON_BIN) -c "import urllib.parse; print(urllib.parse.quote('$$EMAIL_PASSWORD'))"); \
-	EMAIL_URL="$$EMAIL_PROTOCOP://$$EMAIL_LOGIN_ENC:$$EMAIL_PASSWORD_ENC@$$EMAIL_SERVER:$$EMAIL_PORT"; \
+	EMAIL_URL="$$EMAIL_PROTOCOL://$$EMAIL_LOGIN_ENC:$$EMAIL_PASSWORD_ENC@$$EMAIL_SERVER:$$EMAIL_PORT"; \
 	if grep -q '^EMAIL_URL=' $(ENV_FILE); then \
 		sed -i "s|^EMAIL_URL=.*|EMAIL_URL=$$EMAIL_URL|" $(ENV_FILE); \
 		printf "\n$(YELLOW)EMAIL_URL updated in %s.$(NC)\n" "$(ENV_FILE)"; \
