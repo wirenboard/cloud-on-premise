@@ -20,7 +20,6 @@ Documentation for setting up and deploying Wirenboard Cloud in an On-Premise env
 - RAM: 8GB
 - HDD: 40GB
 
----
 
 > ⚠️ Your CPU or VM hypervisor must support the `x86-64-v2` instruction set. When using a VM, the `host-passthrough` option (or `CPU=host`) may be required.
 
@@ -53,12 +52,26 @@ http.your-domain.com
 *.http.your-domain.com
 ```
 
-### 2. DNS Records for Email
+### 2. Ports
+
+The following ports must be open for the cloud to operate:
+
+- `443` – cloud access  
+- `7107` – tunnels  
+- `7501` – tunnel dashboard access (optional)
+
+> ⚠️ If any of these ports are already in use, you can override them in the `.env` file.
+
+> If port `443` is already occupied by another web server, see: [Using with External Web Server](#-using-with-external-web-server-nginxapachecaddy)
+> 
+
+### 3. DNS Records for Email
 
 MX, SPF, DKIM, and DMARC records must be configured to enable email sending. 
 This is required for sending organization invites, password resets, etc.
 
-### 3. TLS Certificates
+
+### 4. TLS Certificates
 
 Certificates must be issued by a trusted CA:
 - Let's Encrypt (DNS challenge)
@@ -85,15 +98,13 @@ If not, you must obtain a new certificate.
 
 Place `fullchain.pem` and `privkey.pem` in the `./tls` directory or set the `TLS_CERTS_PATH` environment variable.
 
-To obtain a certificate using Certbot, see: [Manual Wildcard Certificate Setup Example](#-manual-wildcard-certificate-setup-example)
-
-> If port `443` is already occupied by another web server, see [Using with External Web Server](#-using-with-external-web-server)
+To get a certificate using Certbot, see: [Manual Wildcard Certificate Setup Example](#-manual-wildcard-certificate-setup-example)
 
 ---
 
 ## 🚀 Application Deployment
 
-> You need `docker compose` v1.21.0 or higher to run the application.
+> You need `docker compose v1.21.0` or higher to run the application.
 
 ### 1. Configure Environment Variables
 
@@ -111,7 +122,7 @@ ABSOLUTE_SERVER=my-domain-name.com
 
 # Email setup
 # Set smtp+ssl if using SSL
-EMAIL_PROTOCOP=smtp+tls
+EMAIL_PROTOCOL=smtp+tls
 EMAIL_LOGIN=mymail@mail.com
 EMAIL_PASSWORD=password
 EMAIL_SERVER=smtp.mail.com
@@ -127,9 +138,13 @@ ADMIN_PASSWORD=password
 INFLUXDB_USERNAME=influx_admin
 INFLUXDB_PASSWORD=influx_password
 
-# Tunnel Dashboard admin
+# Tunnel Dashboard admin and port configuration
 TUNNEL_DASHBOARD_USER=tunnel_admin
 TUNNEL_DASHBOARD_PASSWORD=tunnel_password
+TUNNEL_DASHBOARD_PORT=7501
+
+# Tunnel port configuration – change if the port is already in use
+TUNNEL_PORT=7107
 
 # Postgres admin
 POSTGRES_DB=db_name
@@ -154,6 +169,12 @@ POSTGRES_PASSWORD=postgres_password
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
 
 ```
+
+> ⚠️ **The `EMAIL_URL` variable is generated automatically.**  
+> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, etc.  
+> After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.  
+> This rebuilds `EMAIL_URL` and applies the new settings.  
+> Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value and email will fail.
 
 ### 2. Automatic Initialization and Launch
 
@@ -182,7 +203,7 @@ Only one admin user will be available initially, using credentials from `ADMIN_U
 
 > ⚠️ You may change the password or create another admin user. However, the user specified in `.env` will be recreated on each restart if deleted.
 
-First organization must be created manually by the admin. New users can be added via admin panel or email invitation.
+The admin must create the first organization manually. New users can be added via an admin panel or email invitation.
 
 ### Controller Setup
 
@@ -257,18 +278,19 @@ Run all commands from the repo root.
 
 ### Main Commands
 
-| Command                  | Description                                                |
-|--------------------------|------------------------------------------------------------|
-| `make help`              | Show all available commands                                |
-| `make check-env`         | Check required environment variables in `.env`             |
-| `make check-certs`       | Check availability and validity of certificates            |
-| `make generate-env`      | Generate missing tokens/secrets                            |
-| `make generate-jwt`      | Generate or update JWT keys                                |
-| `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                        |
-| `generate-influx-token`  | Generate Influx token                                      |
-| `generate-django-secret` | Generate Django SECRET_KEY                                 |
+| Command                  | Description                                                  |
+|--------------------------|--------------------------------------------------------------|
+| `make help`              | Show all available commands                                  |
+| `make check-env`         | Check required environment variables in `.env`               |
+| `make check-certs`       | Check availability and validity of certificates              |
+| `make generate-env`      | Generate missing tokens/secrets                              |
+| `make generate-jwt`      | Generate or update JWT keys                                  |
+| `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                          |
+| `generate-influx-token`  | Generate Influx token                                        |
+| `generate-django-secret` | Generate Django SECRET_KEY                                   |
+| `generate-email-url`     | Generate/update Email URL                                    |
 | `make run`               | Full launch cycle (generate-env, build and start containers) |
-| `make update`            | Stop containers, update images, rebuild and restart        |
+| `make update`            | Stop containers, update images, rebuild and restart          |
 
 ### Usage Examples
 
