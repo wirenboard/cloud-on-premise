@@ -23,6 +23,17 @@ Documentation for setting up and deploying Wiren Board Cloud in an On-Premise en
 
 > ⚠️ Your CPU or VM hypervisor must support the `x86-64-v2` instruction set. When using a VM, the `host-passthrough` option (or `CPU=host`) may be required.
 
+### Metrics
+
+Currently, only the free version for up to 100 controllers is available, which can be used for personal and commercial purposes. In this version, mandatory sending of anonymized metrics to our server is included; see exactly what is sent in the backend of the instance “On-Premise” → “Metrics”.
+
+If your instance cannot connect to our metrics collection server [metrics.wirenboard.cloud](https://on-premise-metrics.wirenboard.cloud), the cloud will continue to work, but you will not be able to add controllers.
+
+In the future, there will be paid plans where you can disable metric sending and add more controllers.
+
+Sent metrics, screenshot from the backend of the On-Premise instance:  
+![metrics.png](./assets/metrics.png)
+
 ---
 
 ## ⚙️ Preconfiguration
