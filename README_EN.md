@@ -25,7 +25,7 @@ Documentation for setting up and deploying Wiren Board Cloud in an On-Premise en
 
 ### Metrics
 
-Currently, only the free version for up to 100 controllers is available, which can be used for personal and commercial purposes. In this version, mandatory sending of anonymized metrics to our server is included; see exactly what is sent in the backend of the “On-Premise” instance → “Metrics”.
+Currently, only the free version for up to 100 controllers is available, which can be used for personal and commercial purposes. In this version, mandatory sending of anonymized metrics to our server is included; see exactly what is sent in the backend of the instance “On-Premise” → “Metrics”.
 
 If your instance cannot connect to our metrics collection server [metrics.wirenboard.cloud](https://on-premise-metrics.wirenboard.cloud), the cloud will continue to work, but you will not be able to add controllers.
 
