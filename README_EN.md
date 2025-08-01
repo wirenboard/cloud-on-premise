@@ -1,4 +1,4 @@
-# Wirenboard On-Premise Cloud
+# Wiren Board Cloud On-Premise
 
 > ⚠️ By using this repository or downloading Docker images, you accept the terms of the license agreement (see LICENSE file).
 
@@ -6,7 +6,7 @@
 
 ## 📖 Description
 
-Documentation for setting up and deploying Wirenboard Cloud in an On-Premise environment.
+Documentation for setting up and deploying Wiren Board Cloud in an On-Premise environment.
 
 ### Minimum System Requirements:
 - OS: Linux (Ubuntu 24)
