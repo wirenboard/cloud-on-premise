@@ -23,7 +23,17 @@ Documentation for setting up and deploying Wiren Board Cloud in an On-Premise en
 
 > ⚠️ Your CPU or VM hypervisor must support the `x86-64-v2` instruction set. When using a VM, the `host-passthrough` option (or `CPU=host`) may be required.
 
-### Metrics
+### On-Premise Version Features
+
+The main differences between the local cloud and our [wirenboard.cloud](https://wirenboard.cloud) relate to instance security and reduced server load.
+
+#### User Registration and Demo Access
+
+In On-Premise:
+- a new user cannot register without an invitation from the organization owner or admin;
+- there is no “Demo” button.
+
+#### Metrics
 
 Currently, only the free version for up to 100 controllers is available, which can be used for personal and commercial purposes. In this version, mandatory sending of anonymized metrics to our server is included; see exactly what is sent in the backend of the instance “On-Premise” → “Metrics”.
 
@@ -222,7 +232,7 @@ To configure your controller to work with your on-premises cloud, follow these s
 
 #### 1. Add a Cloud Provider
 
-##### Provider version <= 1.5.14
+##### In new releases starting from wb-2507 and testing (agent > 1.5.14)
 
 Open the controller’s console and execute the following command:
 ```bash
@@ -235,7 +245,7 @@ where:
 
 > After your-domain.com If it is available online, go to the web UI of the controller in the Settings -> System section and click on the activation link with which you can link the controller to your cloud.
 
-##### Provider version > 1.5.14
+##### In old releases up to and including wb-2504 (agent <= 1.5.14)
 
 ```bash
 wb-cloud-agent use-on-premise https://your-domain.com
