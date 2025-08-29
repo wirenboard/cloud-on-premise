@@ -1,0 +1,70 @@
+name: Build all on-premise testing images
+
+on:
+  workflow_dispatch:
+
+jobs:
+  read_version:
+    runs-on: ubuntu-latest
+    outputs:
+      image_version: ${{ steps.read_version.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v3
+      - id: read_version
+        run: echo "VERSION=$(cat version)" >> "$GITHUB_OUTPUT"
+
+  dispatch-all:
+    needs: read_version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to cloud-backend
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WB_CI_TOKEN }}
+          repository: wirenboard/cloud-backend
+          event-type: build-on-premise
+          client-payload: >-
+            {
+              "REGISTRY": "ghcr.io",
+              "TARGET": "testing",
+              "IMAGE_VERSION": "${{ needs.read_version.outputs.image_version }}"
+            }
+
+      - name: Dispatch to cloud-frontend
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WB_CI_TOKEN }}
+          repository: wirenboard/cloud-frontend
+          event-type: build-on-premise
+          client-payload: >-
+            {
+              "REGISTRY": "ghcr.io",
+              "TARGET": "testing",
+              "IMAGE_VERSION": "${{ needs.read_version.outputs.image_version }}"
+            }
+
+      - name: Dispatch to cloud-tunnel
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WB_CI_TOKEN }}
+          repository: wirenboard/cloud-tunnel
+          event-type: build-on-premise
+          client-payload: >-
+            {
+              "REGISTRY": "ghcr.io",
+              "TARGET": "testing",
+              "IMAGE_VERSION": "${{ needs.read_version.outputs.image_version }}"
+            }
+
+      - name: Dispatch to webssh
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WB_CI_TOKEN }}
+          repository: wirenboard/cloud-webssh
+          event-type: build-on-premise
+          client-payload: >-
+            {
+              "REGISTRY": "ghcr.io",
+              "TARGET": "testing",
+              "IMAGE_VERSION": "${{ needs.read_version.outputs.image_version }}"
+            }
