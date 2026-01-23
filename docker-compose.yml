@@ -3,24 +3,27 @@ x-traefik-common: &traefik-common
   traefik.docker.network: ${DOCKER_NET_NAME:-wb_net}
 
 x-backend-common-env: &backend-common-env
-  EMAIL_URL: ${EMAIL_URL}
-  EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM}
   EMAIL_ENABLED: "On"
+  EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM}
+  EMAIL_HOST: ${EMAIL_HOST}
+  EMAIL_PORT: ${EMAIL_PORT}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
+  EMAIL_USE_SSL: ${EMAIL_USE_SSL:-false}
   CELERY_BROKER_URL: "redis://redis:6379/0"
   CELERY_RESULT_BACKEND: "redis://redis:6379/0"
   CACHE_URL: "redis://redis:6379/1"
   SECRET_KEY: ${SECRET_KEY}
-  JWT_PRIVATE_KEY: ${PRIVATE_KEY}
-  JWT_PUBLIC_KEY: ${PUBLIC_KEY}
-  INFLUX_DB_URL: "http://influx:8086"
-  INFLUX_DB_TOKEN: ${INFLUXDB_TOKEN}
-  INFLUX_GRAFANA_URL: "https://metrics.${ABSOLUTE_SERVER}"
-  INFLUX_GRAFANA_ADMIN_MANAGEMENT_URL: "https://${INFLUXDB_USERNAME}:${INFLUXDB_PASSWORD}@metrics.${ABSOLUTE_SERVER}"
+  TIMESCALE_PRIMARY_DB_URL: "postgresql://${TIMESCALE_USER}:${TIMESCALE_PASSWORD}@${TIMESCALE_HOST:-timescaledb}:${TIMESCALE_PORT}/${TIMESCALE_DB}"
+  GRAFANA_URL: "https://metrics.${ABSOLUTE_SERVER}"
+  GRAFANA_UPSTREAM_URL: "http://grafana:3000"
+  GRAFANA_ADMIN_MANAGEMENT_URL: "http://${GRAFANA_ADMIN_USER}:${GRAFANA_ADMIN_PASSWORD}@grafana:3000"
   TUNNEL_AGENT_PORT: ${TUNNEL_PORT}
   TUNNEL_AGENT_GLOBAL_TOKEN: ${TUNNEL_AUTH_TOKEN}
   DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db}"
   ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
-  TELEGRAF_AGENT_URL: "https://influx.${ABSOLUTE_SERVER}"
+  TELEGRAF_AGENT_URL: "https://timescale.${ABSOLUTE_SERVER}/telegraf"
   BACKEND_APP_URL: "https://app.${ABSOLUTE_SERVER}"
   BACKEND_AGENT_URL: "https://agent.${ABSOLUTE_SERVER}"
   TUNNEL_AGENT_URL: "https://tunnel.${ABSOLUTE_SERVER}"
@@ -29,7 +32,7 @@ x-backend-common-env: &backend-common-env
   TUNNEL_REDIRECT_HTTP_MAIN_URL: "https://http.${ABSOLUTE_SERVER}"
   TUNNEL_UPSTREAM: "tunnel"
   ADMIN_EMAIL: ${ADMIN_EMAIL}
-  ADMIN_USERNAME: ${ADMIN_USERNAME}
+  ADMIN_USERNAME: ${ADMIN_EMAIL}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD}
   AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
   AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
@@ -37,17 +40,23 @@ x-backend-common-env: &backend-common-env
   AWS_STORAGE_BUCKET_NAME: "media"
   AWS_S3_REGION_NAME: "eu-west-1"
 
+secrets:
+  backend_private_key:
+    file: ${PWD}/secrets/private_key.pem
+  backend_public_key:
+    file: ${PWD}/secrets/public_key.pem
+
 services:
   postgres:
     image: postgres:17-alpine
-    restart: always
+    restart: unless-stopped
     command: >
-      --autovacuum=off 
-      --fsync=off 
-      --synchronous_commit=off 
-      --full_page_writes=off 
-      --work_mem=5MB 
-      --max-connections=100 
+      --autovacuum=off
+      --fsync=off
+      --synchronous_commit=off
+      --full_page_writes=off
+      --work_mem=5MB
+      --max-connections=100
       --max_wal_senders=0
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -61,34 +70,122 @@ services:
     volumes:
       - postgresData:/var/lib/postgresql/data
 
-  influx:
-    image: influxdb:2.7
-    restart: always
+  timescaledb:
+    image: timescale/timescaledb:latest-pg17
     environment:
-      DOCKER_INFLUXDB_INIT_MODE: "setup"
-      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME}
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD}
-      DOCKER_INFLUXDB_INIT_ORG: "admin-org"
-      DOCKER_INFLUXDB_INIT_BUCKET: "admin-bucket"
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD}
+      POSTGRES_USER: ${TIMESCALE_USER}
+      POSTGRES_DB: ${TIMESCALE_DB}
+    command: >
+      postgres
+      -c autovacuum=off
+      -c fsync=off
+      -c synchronous_commit=off
+      -c full_page_writes=off
+      -c work_mem=5MB
+      -c max_connections=100
+      -c max_wal_senders=0
+    restart: unless-stopped
     labels:
       <<: *traefik-common
-      traefik.http.routers.influx.rule: "Host(`influx.${ABSOLUTE_SERVER}`)"
-      traefik.http.routers.influx.entrypoints: "websecure"
-      traefik.http.routers.influx.service: "influx"
-      traefik.http.routers.influx.tls: "true"
-      traefik.http.services.influx.loadbalancer.server.port: "8086"
     volumes:
-      - influxData:/var/lib/influxdb2
+      - timescaleData:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8086/health" ]
+      test: ["CMD", "pg_isready", "-U", "${TIMESCALE_USER}", "-d", "${TIMESCALE_DB}"]
+      interval: 3s
+      timeout: 1s
+      retries: 10
+
+  timescaledb-init:
+    image: postgres:17
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD}
+      TIMESCALE_DB: ${TIMESCALE_DB}
+      TIMESCALE_USER: ${TIMESCALE_USER}
+      TELEGRAF_TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER}
+      TELEGRAF_TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD}
+      GRAFANA_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - $PWD/timescale/init.sql.tmpl:/tmpl/init.sql.tmpl:ro
+      - $PWD/timescale/gen_timescale_init.sh:/bin/gen_timescale_init.sh:ro
+    entrypoint: [ "/bin/bash", "/bin/gen_timescale_init.sh" ]
+    restart: "no"
+
+  telegraf:
+    image: telegraf:1.35.4
+    environment:
+      TELEGRAF_INPUT_PORT: ${TELEGRAF_INPUT_PORT}
+      TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER}
+      TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD}
+      TIMESCALE_PORT: ${TIMESCALE_PORT}
+      TIMESCALE_DB: ${TIMESCALE_DB}
+    labels:
+      <<: *traefik-common
+      traefik.http.routers.metrics_telegraf.rule: "Host(`timescale.${ABSOLUTE_SERVER}`) && PathPrefix(`/telegraf`)"
+      traefik.http.routers.metrics_telegraf.entrypoints: "websecure"
+      traefik.http.routers.metrics_telegraf.tls: "true"
+      traefik.http.routers.metrics_telegraf.tls.options: "check-ca@file"
+      traefik.http.routers.metrics_telegraf.service: "metrics_telegraf"
+      traefik.http.routers.metrics_telegraf.middlewares: "strip_client_cert_info,wbc_telegraf_check_ca,wbc_telegraf_throttle,wbc_telegraf_size_limit"
+      traefik.http.services.metrics_telegraf.loadbalancer.server.port: ${TELEGRAF_INPUT_PORT}
+      # Middleware to check client certificate for Telegraf
+      traefik.http.middlewares.wbc_telegraf_check_ca.passtlsclientcert.info.serialnumber: "true"
+      traefik.http.middlewares.wbc_telegraf_check_ca.passtlsclientcert.info.subject.commonName: "true"
+      traefik.http.middlewares.wbc_telegraf_check_ca.passtlsclientcert.pem: "false"
+      traefik.http.middlewares.strip_client_cert_info.headers.customrequestheaders.X-Forwarded-Tls-Client-Cert-Info: ""
+      # Throttle лимит: не более 3 запросов от одного клиента за 60 секунд
+      traefik.http.middlewares.wbc_telegraf_throttle.ratelimit.sourceCriterion.requestHeaderName: "X-Forwarded-Tls-Client-Cert-Info"
+      traefik.http.middlewares.wbc_telegraf_throttle.ratelimit.average: "3"
+      traefik.http.middlewares.wbc_telegraf_throttle.ratelimit.period: "60s"  # 429
+      # Лимит на размер запроса: 1 МБ
+      traefik.http.middlewares.wbc_telegraf_size_limit.buffering.maxRequestBodyBytes: "1000000"  # 413
+    volumes:
+      - $PWD/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    restart: unless-stopped
+    depends_on:
+      timescaledb-init:
+        condition: service_completed_successfully
+      timescaledb:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: "https://metrics.${ABSOLUTE_SERVER}/"
+      GF_AUTH_SIGNOUT_REDIRECT_URL: "https://${ABSOLUTE_SERVER}/"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_PATHS_CONFIG: /grafana.ini
+    labels:
+      <<: *traefik-common
+      traefik.http.routers.grafana.priority: "98"
+      traefik.http.routers.grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth/`)"
+      traefik.http.routers.grafana.entrypoints: "websecure"
+      traefik.http.routers.grafana.tls: "true"
+      traefik.http.routers.grafana.service: "grafana"
+      traefik.http.services.grafana.loadbalancer.server.port: "3000"
+    volumes:
+      - grafanaData:/var/lib/grafana
+      - $PWD/grafana/grafana.ini:/grafana.ini:ro
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
       interval: 5s
       timeout: 3s
       retries: 5
+    depends_on:
+      timescaledb-init:
+        condition: service_completed_successfully
+      timescaledb:
+        condition: service_healthy
 
   redis:
-    image: redis:6-alpine
-    restart: always
+    image: redis:7-alpine
+    restart: unless-stopped
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
@@ -96,17 +193,18 @@ services:
       retries: 5
 
   traefik:
-    image: traefik:3.4
+    image: traefik:3.6.4
+    restart: unless-stopped
     ports:
       - "${TRAEFIK_EXTERNAL_PORT:-443}:443"
     volumes:
+      - $PWD/traefik/traefik.toml:/traefik.toml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${TLS_CERTS_PATH:-./tls}/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
       - ${TLS_CERTS_PATH:-./tls}/privkey.pem:/etc/ssl/private/privkey.pem:ro
-      - $PWD/traefik/traefik.toml:/traefik.toml
       - $PWD/traefik/WirenBoard_Root_CA.crt:/etc/ssl/certs/WirenBoard_Root_CA.crt:ro
       - $PWD/traefik/traefik-check-ca.toml:/traefik-dynamic-conf/check-ca.toml
       - $PWD/traefik/traefik-tls.toml:/traefik-dynamic-conf/tls.toml
-      - /var/run/docker.sock:/var/run/docker.sock:ro
 
   tunnel:
     image: ghcr.io/wirenboard/on-premise/wbc-tunnel:${VERSION}
@@ -131,14 +229,15 @@ services:
 
   tunnel_auth:
     image: ghcr.io/wirenboard/on-premise/wbc-tunnel-auth:${VERSION}
-    restart: always
+    restart: unless-stopped
+    secrets:
+      - backend_public_key
     environment:
       TUNNEL_UPSTREAM: "tunnel"
       WEBSSH_UPSTREAM: "webssh:8888"
       BACKEND_APP_UPSTREAM: "backend:8000"
       CLOUD_ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
-      CLOUD_ABSOLUTE_SERVER_NAME_REGEX: ${ABSOLUTE_SERVER_REGEX}
-      BACKEND_APP_PUBLIC_KEY: ${PUBLIC_KEY}
+      BACKEND_APP_PUBLIC_KEY_PATH: "/run/secrets/backend_public_key"
     labels:
       <<: *traefik-common
       traefik.http.routers.tunnel_auth.tls.domains[0].main: "ssh.${ABSOLUTE_SERVER}"
@@ -158,14 +257,16 @@ services:
 
   webssh:
     image: ghcr.io/wirenboard/on-premise/wbc-webssh:${VERSION}
-    restart: always
+    environment:
+      REDIS_URL: "redis://redis:6379/1"
+    restart: unless-stopped
     depends_on:
       tunnel:
         condition: service_started
 
   frontend:
     image: ghcr.io/wirenboard/on-premise/wbc-frontend:${VERSION}
-    restart: always
+    restart: unless-stopped
     environment:
       BACKEND_APP_URL: "http://backend:8000/"
       FOOTER_LINKS: '[{"url": "https://wirenboard.com/", "caption": "mainSiteLink"}]'
@@ -175,8 +276,8 @@ services:
       <<: *traefik-common
       traefik.http.routers.frontend.rule: "Host(`${ABSOLUTE_SERVER}`)"
       traefik.http.routers.frontend.entrypoints: "websecure"
-      traefik.http.routers.frontend.service: "frontend"
       traefik.http.routers.frontend.tls: "true"
+      traefik.http.routers.frontend.service: "frontend"
       traefik.http.services.frontend.loadbalancer.server.port: "3000"
     depends_on:
       backend:
@@ -184,16 +285,26 @@ services:
 
   backend:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
-    restart: always
+    restart: unless-stopped
+    secrets:
+      - backend_private_key
+      - backend_public_key
     environment:
       <<: *backend-common-env
     labels:
       <<: *traefik-common
       traefik.http.routers.backend.rule: "(Host(`${ABSOLUTE_SERVER}`) && PathPrefix(`/static/`)) || (Host(`app.${ABSOLUTE_SERVER}`) && (PathPrefix(`/admin/`) || PathPrefix(`/static/`) || PathPrefix(`/silk/`)))"
       traefik.http.routers.backend.entrypoints: "websecure"
-      traefik.http.routers.backend.service: "backend"
       traefik.http.routers.backend.tls: "true"
+      traefik.http.routers.backend.service: "backend"
       traefik.http.services.backend.loadbalancer.server.port: "8000"
+
+      traefik.http.routers.backend-grafana.priority: "99"
+      traefik.http.routers.backend-grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && PathPrefix(`/grafana-auth/`)"
+      traefik.http.routers.backend-grafana.entrypoints: "websecure"
+      traefik.http.routers.backend-grafana.tls: "true"
+      traefik.http.routers.backend-grafana.service: "backend-grafana"
+      traefik.http.services.backend-grafana.loadbalancer.server.port: "8000"
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/" ]
       interval: 10s
@@ -207,10 +318,9 @@ services:
       postgres:
         condition: service_healthy
 
-
   agent_backend:
     image: ghcr.io/wirenboard/on-premise/wbc-agent-backend:${VERSION}
-    restart: always
+    restart: unless-stopped
     environment:
       <<: *backend-common-env
     labels:
@@ -218,8 +328,8 @@ services:
       traefik.http.services.agent_backend.loadbalancer.server.port: "8000"
       traefik.http.routers.agent_backend.rule: "Host(`agent.${ABSOLUTE_SERVER}`) && PathPrefix(`/api-agent/`)"
       traefik.http.routers.agent_backend.entrypoints: "websecure"
-      traefik.http.routers.agent_backend.service: "agent_backend"
       traefik.http.routers.agent_backend.tls: "true"
+      traefik.http.routers.agent_backend.service: "agent_backend"
       traefik.http.routers.agent_backend.tls.options: "check-ca@file"
       traefik.http.routers.agent_backend.middlewares: "agent_backend_check_ca"
       traefik.http.middlewares.agent_backend_check_ca.passtlsclientcert.info.subject.commonName: "true"
@@ -232,7 +342,7 @@ services:
 
   worker:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
-    restart: always
+    restart: unless-stopped
     environment:
       <<: *backend-common-env
       QUEUE: default_queue
@@ -244,12 +354,12 @@ services:
       backend:
         condition: service_healthy
 
-  worker-influx:
+  worker-metrics:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
-    restart: always
+    restart: unless-stopped
     environment:
       <<: *backend-common-env
-      QUEUE: influx_queue
+      QUEUE: metrics_queue
       CONCURRENCY: 4
       SOFT_TIME_LIMIT: 300
     depends_on:
@@ -260,12 +370,12 @@ services:
 
   worker-grafana:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
-    restart: always
+    restart: unless-stopped
     environment:
       <<: *backend-common-env
       QUEUE: grafana_queue
-      CONCURRENCY: 1
-      SOFT_TIME_LIMIT: 10
+      CONCURRENCY: 2
+      SOFT_TIME_LIMIT: 300
     depends_on:
       redis:
         condition: service_healthy
@@ -274,7 +384,7 @@ services:
 
   scheduler:
     image: ghcr.io/wirenboard/on-premise/wbc-scheduler:${VERSION}
-    restart: always
+    restart: unless-stopped
     environment:
       <<: *backend-common-env
     depends_on:
@@ -285,7 +395,7 @@ services:
     image: minio/minio:latest
     volumes:
       - minioData:/data
-    restart: always
+    restart: unless-stopped
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_login}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_pass}
@@ -298,13 +408,13 @@ services:
 
   minio-client:
     image: minio/mc:latest
+    restart: "no"
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio_login} ${MINIO_ROOT_PASSWORD:-minio_pass};
-      /usr/bin/mc rb --force local/media/;
-      /usr/bin/mc mb --quiet local/media/;
-      /usr/bin/mc policy set public local/media/;
-      "
+        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio_login} ${MINIO_ROOT_PASSWORD:-minio_pass};
+        mc rb --force local/media/;
+        mc mb --quiet local/media/;
+        mc anonymous set public local/media; "
     depends_on:
       minio:
         condition: service_healthy
@@ -314,6 +424,7 @@ networks:
     name: ${DOCKER_NET_NAME:-wb_net}
 
 volumes:
-  influxData: {}
+  timescaleData: {}
+  grafanaData: {}
   postgresData: {}
   minioData: {}
