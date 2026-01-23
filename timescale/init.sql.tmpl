@@ -1,0 +1,236 @@
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE SCHEMA IF NOT EXISTS auth;
+
+DO $$
+BEGIN
+  -- Telegraf read-write в таблицы
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='$TELEGRAF_TIMESCALE_USER') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '$TELEGRAF_TIMESCALE_USER', '$TELEGRAF_TIMESCALE_PASSWORD');
+  END IF;
+
+  -- Grafana (read-only через VIEW + роль)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='$GRAFANA_ADMIN_USER') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '$GRAFANA_ADMIN_USER', '$GRAFANA_ADMIN_PASSWORD');
+  END IF;
+
+  -- Exporter user (prometheus метрики БД)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='exporter_user') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', 'exporter_user', 'exporter_password');
+  END IF;
+
+  -- Backup user (pgbackrest)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='backup_user') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', 'backup_user', 'backup_password');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='views_reader') THEN
+    CREATE ROLE views_reader NOLOGIN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='all_reader') THEN
+    CREATE ROLE all_reader NOLOGIN;
+  END IF;
+END$$;
+
+-- Управление орг-ролями
+CREATE OR REPLACE PROCEDURE auth.ensure_org_role(org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=rname) THEN
+    EXECUTE format('CREATE ROLE %I NOLOGIN', rname);
+  END IF;
+END$$;
+
+CREATE OR REPLACE PROCEDURE auth.grant_org_role(db_user name, org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  CALL auth.ensure_org_role(org_id);
+  EXECUTE format('GRANT %I TO %I', rname, db_user);
+END$$;
+
+CREATE OR REPLACE PROCEDURE auth.revoke_org_role(db_user name, org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname=rname) THEN
+    EXECUTE format('REVOKE %I FROM %I', rname, db_user);
+  END IF;
+END$$;
+
+-- Текущая привязка контроллера к организации host→org (синхронизируется из бэкенда)
+CREATE TABLE IF NOT EXISTS auth.host_org_map (
+  host text PRIMARY KEY,
+  organization_id uuid NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Админ-предикат
+CREATE OR REPLACE FUNCTION auth.is_admin()
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+  SELECT pg_has_role(session_user, 'pg_read_all_data', 'member') OR pg_has_role(session_user, 'all_reader', 'member');
+$$;
+
+-- Список доступных org из членств в ролях org_<uuid_с_подчёркиваниями>
+CREATE OR REPLACE FUNCTION auth.allowed_orgs_from_roles()
+RETURNS SETOF uuid
+LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+  SELECT replace(substring(r.rolname from 5), '_', '-')::uuid
+  FROM pg_roles r
+  WHERE r.rolname LIKE 'org_%'
+    AND pg_has_role(session_user, r.rolname, 'member');
+$$;
+
+-- ФУНКЦИЯ ТРИГГЕРА НОРМАЛИЗАЦИИ + ВАЛИДАЦИИ
+-- Переносит поля из tags и проверяет host↔org по карте.
+CREATE OR REPLACE FUNCTION public.populate_and_strip_orgid_host()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  v_expected_org uuid;
+BEGIN
+  -- Переносит host из tags в отдельную колонку (для BEFORE INSERT триггера)
+  NEW.host := COALESCE(
+    NEW.host,
+    NEW.tags->>'host'
+  );
+
+  -- Валидация по карте host_org_map
+  SELECT organization_id
+    INTO v_expected_org
+  FROM auth.host_org_map
+  WHERE host = NEW.host;
+
+  IF v_expected_org IS NULL THEN
+    -- мягко пропускаем строку, не роняя COPY
+    RAISE LOG 'skip metric: unknown host in host_org_map: %', NEW.host;
+    RETURN NULL;
+  END IF;
+
+  -- org из карты
+  NEW.organization_id := v_expected_org;
+
+  -- Убираем перенесенный тег из tags
+  NEW.tags := NEW.tags - 'host';
+
+  RETURN NEW;
+END
+$$;
+
+-- Универсальная идемпотентная процедура подготовки измерений.
+CREATE OR REPLACE PROCEDURE ensure_measurement(meas text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  PERFORM set_config('search_path', 'public', true);
+
+  EXECUTE format($q$
+    CREATE TABLE IF NOT EXISTS %I (
+      time TIMESTAMPTZ NOT NULL,
+      organization_id UUID,
+      host TEXT,
+      tags JSONB,
+      fields JSONB
+    )
+  $q$, meas);
+
+  -- btree index autocreated for time column
+  -- Параметр chunk_time_interval определяет временную длину физического куска таблицы,
+  -- каждый кусок таблицы содержит максимум INTERVAL дней данных по времени.
+  -- Гипертаблица: время + hash по organization_id (32 корзины)
+  PERFORM create_hypertable(
+    format('%I', meas)::regclass,
+    'time',
+    chunk_time_interval => INTERVAL '7 days',
+    if_not_exists       => TRUE
+  );
+
+  -- Создание триггера для каждой таблицы для нормализации org/host полей (функция уже создана глобально)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgname = 'populate_strip_orgid_host_'||meas
+  ) THEN
+    EXECUTE format($q$
+      CREATE TRIGGER %I
+      BEFORE INSERT ON %I
+      FOR EACH ROW EXECUTE FUNCTION populate_and_strip_orgid_host()
+    $q$, 'populate_strip_orgid_host_'||meas, meas);
+  END IF;
+
+  -- Сжатие + политики сжатия/ретенции
+  EXECUTE format($q$
+    ALTER TABLE %I SET (
+      timescaledb.compress,
+      timescaledb.compress_orderby = 'time DESC',
+      timescaledb.compress_segmentby = 'organization_id,host'
+    )
+  $q$, meas);
+  -- TimescaleDB Оставляет 14 дней "горячих" данных без сжатия.
+  -- Хранит ещё 46 дней "холодных" сжатых данных.
+  -- Удаляет все данные которые старше 60 дней.
+  PERFORM add_compression_policy (format('%I', meas)::regclass, INTERVAL '14 days', if_not_exists => TRUE);
+  -- Автоматически удаляет данные старше заданного интервала из таблицы.
+  -- Удаление происходит через фоновую задачу, запускаемую TimescaleDB.
+  PERFORM add_retention_policy (format('%I', meas)::regclass, INTERVAL '60 days', if_not_exists => TRUE);
+
+  -- Индексы под типичные запросы по отдельным ключам
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I (organization_id)', meas||'_org_id_idx', meas);
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I (organization_id, time DESC)', meas||'_org_time_desc_idx', meas);
+  -- Комбинированные индексы для ускорения LIMIT 1 + ORDER BY time
+  -- Это даст прирост при выборке по одному топику.
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I (organization_id, host, time DESC)', meas||'_org_host_time_desc_idx', meas);
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I ((tags->>''topic''), time DESC)', meas||'_tags_topic_time_desc_idx', meas);
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I ((tags->>''topic''))', meas||'_tags_topic_idx', meas);
+  -- Комбинированный индекс только для колонки 'path' в таблице "disk"
+  IF meas = 'disk' THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS disk_tags_path_time_desc_idx ON "disk" ((tags->>''path''), time DESC)';
+  END IF;
+
+  -- Вьюха возвращает строки только тех organization_id, роли по которым есть у текущего логина.
+  -- Базовые таблицы обычным пользователям недоступны
+  EXECUTE format($q$
+    CREATE OR REPLACE VIEW %I AS
+    SELECT *
+    FROM %I
+    WHERE auth.is_admin()
+      OR organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+  $q$, 'org_'||meas, meas);
+
+  -- читать всем из all_reader
+  EXECUTE format('GRANT SELECT ON TABLE %I TO all_reader', meas);
+  -- Сразу дать SELECT на новую VIEW читателям
+  EXECUTE format('GRANT SELECT ON %I TO views_reader, all_reader', 'org_'||meas);
+  -- Отдать владение таблицей, telegraf пользователю
+  EXECUTE format('ALTER TABLE %I OWNER TO %I', meas, '$TELEGRAF_TIMESCALE_USER');
+  -- Запрет DML (любые изменения) читателям для текущей таблицы/вьюхи
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE %I FROM views_reader, all_reader', meas);
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON TABLE %I FROM views_reader, all_reader', 'org_'||meas);
+END;
+$$;
+
+-- Сделать бэкап пользователя суперюзером (иначе pgbackrest не сможет делать бэкапы/восстановления)
+ALTER ROLE "backup_user" WITH SUPERUSER;
+
+-- Разрешить сервисным пользователям системные роли
+GRANT pg_read_all_settings TO "backup_user";
+GRANT pg_monitor TO "exporter_user";
+
+-- Разрешить графана юзеру читать из всех таблиц и вьюх
+GRANT all_reader TO "$GRAFANA_ADMIN_USER";
+
+-- глобально запретить подключение к postgres
+REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+
+-- Не разрешать выполнять наши внутренние функции и процедуры читателям
+REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
+REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_reader;
