@@ -38,10 +38,7 @@ REQUIRED_VARS := \
   TUNNEL_AUTH_TOKEN \
   INFLUXDB_TOKEN \
   SECRET_KEY \
-  ABSOLUTE_SERVER_REGEX \
-  EMAIL_URL \
-  PRIVATE_KEY \
-  PUBLIC_KEY
+
 
 #----- [ DOMAIN & CERTIFICATES ] ----------------------------------------------
 
@@ -197,58 +194,12 @@ generate-django-secret:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating Django secret ------"
 	$(call gen_token,SECRET_KEY,openssl rand -base64 50 | tr -dc 'A-Za-z0-9!@#$%^&*(-_=+)' | cut -c1-50)
 
-.PHONY: generate-absolute-server-regex
-generate-absolute-server-regex:
-	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating ABSOLUTE_SERVER_REGEX ------"
-	@ABSOLUTE_SERVER=$$(grep -E '^[[:space:]]*ABSOLUTE_SERVER=' $(ENV_FILE) | cut -d= -f2-); \
-	if [ -z "$$ABSOLUTE_SERVER" ]; then \
-		printf "\n$(RED)ERROR: ABSOLUTE_SERVER variable is missing.$(NC)\n"; exit 1; \
-	fi; \
-	ABSOLUTE_SERVER_REGEX=$$(printf '%s' "$$ABSOLUTE_SERVER" | sed -e 's/[.[\*^$$()+?{}|\\]/\\\\&/g'); \
-	if grep -q '^ABSOLUTE_SERVER_REGEX=' $(ENV_FILE); then \
-		sed -i "s|^ABSOLUTE_SERVER_REGEX=.*|ABSOLUTE_SERVER_REGEX=$$ABSOLUTE_SERVER_REGEX|" $(ENV_FILE); \
-		printf "\n$(YELLOW)ABSOLUTE_SERVER_REGEX updated in %s.$(NC)\n" "$(ENV_FILE)"; \
-	else \
-		{ echo ""; echo "ABSOLUTE_SERVER_REGEX=$$ABSOLUTE_SERVER_REGEX"; } >> $(ENV_FILE); \
-		printf "\n$(GREEN)ABSOLUTE_SERVER_REGEX generated and added to %s.$(NC)\n" "$(ENV_FILE)"; \
-	fi
-
-.PHONY: generate-email-url
-generate-email-url:
-	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating EMAIL_URL ------"
-	@EMAIL_PROTOCOL=$$(grep -E '^[[:space:]]*EMAIL_PROTOCOL=' $(ENV_FILE) | cut -d= -f2-); \
-	EMAIL_LOGIN=$$(grep -E '^[[:space:]]*EMAIL_LOGIN=' $(ENV_FILE) | cut -d= -f2-); \
-	EMAIL_PASSWORD=$$(grep -E '^[[:space:]]*EMAIL_PASSWORD=' $(ENV_FILE) | cut -d= -f2-); \
-	EMAIL_SERVER=$$(grep -E '^[[:space:]]*EMAIL_SERVER=' $(ENV_FILE) | cut -d= -f2-); \
-	EMAIL_PORT=$$(grep -E '^[[:space:]]*EMAIL_PORT=' $(ENV_FILE) | cut -d= -f2-); \
-	if [ -z "$$EMAIL_PROTOCOL" ] || [ -z "$$EMAIL_LOGIN" ] || [ -z "$$EMAIL_PASSWORD" ] || [ -z "$$EMAIL_SERVER" ] || [ -z "$$EMAIL_PORT" ]; then \
-		printf "\n$(RED)ERROR: Not all email variables are set.$(NC)\n"; exit 1; \
-	fi; \
-	EMAIL_LOGIN_ENC=$$($(PYTHON_BIN) -c "import urllib.parse; print(urllib.parse.quote('$$EMAIL_LOGIN'))"); \
-	EMAIL_PASSWORD_ENC=$$($(PYTHON_BIN) -c "import urllib.parse; print(urllib.parse.quote('$$EMAIL_PASSWORD'))"); \
-	EMAIL_URL="$$EMAIL_PROTOCOL://$$EMAIL_LOGIN_ENC:$$EMAIL_PASSWORD_ENC@$$EMAIL_SERVER:$$EMAIL_PORT"; \
-	if grep -q '^EMAIL_URL=' $(ENV_FILE); then \
-		sed -i "s|^EMAIL_URL=.*|EMAIL_URL=$$EMAIL_URL|" $(ENV_FILE); \
-		printf "\n$(YELLOW)EMAIL_URL updated in %s.$(NC)\n" "$(ENV_FILE)"; \
-	else \
-		{ echo ""; echo "EMAIL_URL=$$EMAIL_URL"; } >> $(ENV_FILE); \
-		printf "\n$(GREEN)EMAIL_URL generated and added to %s.$(NC)\n" "$(ENV_FILE)"; \
-	fi
-
-.PHONY: generate-jwt
-generate-jwt:
-	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating JWT keypair ------"
-	@bash ./jwt/update_keys.sh && printf "\n$(GREEN)JWT keypair generated or already valid.$(NC)\n"
-
 .PHONY: generate-env
 generate-env:
 	@printf  "\n\n\033[1;37m%s\033[0m\n" "=====================[ GENERATING SECRETS AND ENVIRONMENT VARIABLES ]====================="
 	@${MAKE} generate-tunnel-token
 	@${MAKE} generate-influx-token
 	@${MAKE} generate-django-secret
-	@${MAKE} generate-absolute-server-regex
-	@${MAKE} generate-email-url
-	@${MAKE} generate-jwt
 	@${MAKE} check-env
 	@printf "\n\n$(GREEN)All secrets and environment variables are ready.$(NC)\n"
 
