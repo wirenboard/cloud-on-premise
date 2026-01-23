@@ -64,8 +64,9 @@
 
 ```text
 metrics.your-domain.com
-influx.your-domain.com
 tunnel.your-domain.com
+metrics.your-domain.com
+timescale.your-domain.com
 app.your-domain.com
 agent.your-domain.com
 ssh.your-domain.com
@@ -144,22 +145,19 @@ nano .env
 ABSOLUTE_SERVER=my-domain-name.com
 
 # Настройка отправки email
-# Установите smtp+ssl если используете SSL
-EMAIL_PROTOCOL=smtp+tls
-EMAIL_LOGIN=mymail@mail.com
-EMAIL_PASSWORD=password
-EMAIL_SERVER=smtp.mail.com
-EMAIL_PORT=587
 EMAIL_NOTIFICATIONS_FROM=mymail@mail.com
+EMAIL_HOST=smtp.mail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=username
+EMAIL_HOST_PASSWORD=password
+# Расскомментируйте один из вариантов в зависимости от используемого протокола
+EMAIL_USE_TLS=true
+#EMAIL_USE_SSL=true
 
 # Создание администратора
 ADMIN_EMAIL=admin@mail.com
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=password
-
-# Создание администратора InfluxDB
-INFLUXDB_USERNAME=influx_admin
-INFLUXDB_PASSWORD=influx_password
 
 # Создание администратора Tunnel Dashboard и настройка порта
 TUNNEL_DASHBOARD_USER=tunnel_admin
@@ -173,6 +171,16 @@ TUNNEL_PORT=7107
 POSTGRES_DB=db_name
 POSTGRES_USER=postgres_user
 POSTGRES_PASSWORD=postgres_password
+
+# Cоздание администратора TimescaleDB
+TIMESCALE_USER=timescale_user
+TIMESCALE_PASSWORD=timescale_password
+TIMESCALE_DB=db_name
+
+# Cоздание администратора Telegraf для TimescaleDB
+TELEGRAF_TIMESCALE_USER=telegraf_user
+TELEGRAF_TIMESCALE_PASSWORD=telegraf_password
+TELEGRAF_INPUT_PORT=8186
 
 #--------------------------------------------------------------------------
 # Optional ----------------------------------------------------------------
@@ -192,13 +200,6 @@ POSTGRES_PASSWORD=postgres_password
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
 
 ```
-
-> ⚠️ **Переменная `EMAIL_URL` генерируется автоматически.**  
-> Она собирается из переменных `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT` и др.  
-> Изменили одну из этих переменных — **обязательно** выполните `make generate-email-url` или `make run` при запуске.  
-> Это пересоберёт `EMAIL_URL` и применит новые настройки.  
-> Запуск `docker compose up` без предварительного `make run` или `make generate-email-url` оставит старое значение.
-
 
 Установите пакет `make`, если он ещё не установлен:
 
@@ -222,7 +223,7 @@ make run
 
 В on-premise облаке регистрация сторонних пользователей отключена.
 Доступ к системе изначально имеет только один пользователь с правами администратора,
-чьи логин и пароль берутся из переменных окружения `ADMIN_USERNAME` и `ADMIN_PASSWORD` при запуске проекта.
+чьи логин и пароль берутся из переменных окружения `ADMIN_EMAIL` и `ADMIN_PASSWORD` при запуске проекта.
 
 > ⚠️ Вы можете сменить пароль в любое время и создать другого администратора,
 > но имейте в виду, что, если вы удалите пользователя,
@@ -292,9 +293,6 @@ wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https:/
 # Токен для открытия тоннелей
 TUNNEL_AUTH_TOKEN=GLgTbKtCiwF8J4tI439NJba0pbXfW0a39E7jZOOr0qO67xonhhfaNIWiH7FzPP
 
-# Токен для доступа к Influx
-INFLUXDB_TOKEN=PvxahJmIuieFy1ieODoQ3JpKEVSCDSkRUQZjjePSlajJV6w1Sl2iAQcpY8f2z4s
-
 # Секретный ключ для Django
 SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 
@@ -321,9 +319,7 @@ SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 | `make generate-env`       | Сгенерировать недостающие токены и секреты, заполнить переменные в `.env`      |
 | `make generate-jwt`       | Сгенерировать или обновить ключи для JWT                                       |
 | `generate-tunnel-token`   | Сгенерировать токен для SSH и HTTP туннелей                                    |
-| `generate-influx-token`   | Сгенерировать Influx токен                                                     |
 | `generate-django-secret`  | Сгенерировать секретный ключ Django                                            |
-| `generate-email-url`      | Сгенерировать/обновить Email URL                                               |
 | `make run`                | Запустить полный цикл развертывания: generate-env, сборка и запуск контейнеров |
 | `make update`             | Остановить контейнеры, обновить образы, пересобрать и запустить проект заново  |
 
