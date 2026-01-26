@@ -20,7 +20,6 @@ Documentation for setting up and deploying Wiren Board Cloud in an On-Premise en
 - RAM: 8GB
 - HDD: 40GB
 
-
 > ⚠️ Your CPU or VM hypervisor must support the `x86-64-v2` instruction set. When using a VM, the `host-passthrough` option (or `CPU=host`) may be required.
 
 ### On-Premise Version Features
@@ -30,7 +29,7 @@ The main differences between the local cloud and our [wirenboard.cloud](https://
 #### User Registration and Demo Access
 
 In On-Premise:
-- a new user cannot register without an invitation from the organization owner or admin;
+- a new user can’t register without an invitation from the organization owner or admin;
 - there is no “Demo” button.
 
 #### Metrics
@@ -39,7 +38,7 @@ Currently, only the free version for up to 100 controllers is available, which c
 
 If your instance cannot connect to our metrics collection server [metrics.wirenboard.cloud](https://on-premise-metrics.wirenboard.cloud), the cloud will continue to work, but you will not be able to add controllers.
 
-In the future, there will be paid plans where you can disable metric sending and add more controllers.
+In the future, there’ll be paid plans where you can disable metric sending and add more controllers.
 
 Sent metrics, screenshot from the backend of the On-Premise instance:  
 ![metrics.png](./assets/metrics.png)
@@ -63,8 +62,9 @@ These cover the required subdomains:
 
 ```text
 metrics.your-domain.com
-influx.your-domain.com
 tunnel.your-domain.com
+metrics.your-domain.com
+timescale.your-domain.com
 app.your-domain.com
 agent.your-domain.com
 ssh.your-domain.com
@@ -84,13 +84,11 @@ The following ports must be open for the cloud to operate:
 > ⚠️ If any of these ports are already in use, you can override them in the `.env` file.
 
 > If port `443` is already occupied by another web server, see: [Using with External Web Server](#-using-with-external-web-server-nginxapachecaddy)
-> 
 
 ### 3. DNS Records for Email
 
 MX, SPF, DKIM, and DMARC records must be configured to enable email sending. 
 This is required for sending organization invites, password resets, etc.
-
 
 ### 4. TLS Certificates
 
@@ -98,7 +96,7 @@ Certificates must be issued by a trusted CA:
 - Let's Encrypt (DNS challenge)
 - Commercial CAs (Sectigo, DigiCert, etc.)
 
-> ❌ Self-signed certificates are not supported.
+> ❌ Self-signed certificates aren’t supported.
 
 If you already have a certificate for your domain, check the SANs (Subject Alternative Names):
 
@@ -115,7 +113,9 @@ your-domain.com
 *.ssh.your-domain.com
 ```
 
-If not, you must obtain a new certificate.
+If not, you must get a new certificate.
+
+---
 
 Place `fullchain.pem` and `privkey.pem` in the `./tls` directory or set the `TLS_CERTS_PATH` environment variable.
 
@@ -142,22 +142,19 @@ Fill in the required variables, e.g.:
 ABSOLUTE_SERVER=my-domain-name.com
 
 # Email setup
-# Set smtp+ssl if using SSL
-EMAIL_PROTOCOL=smtp+tls
-EMAIL_LOGIN=mymail@mail.com
-EMAIL_PASSWORD=password
-EMAIL_SERVER=smtp.mail.com
-EMAIL_PORT=587
 EMAIL_NOTIFICATIONS_FROM=mymail@mail.com
+EMAIL_HOST=smtp.mail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=username
+EMAIL_HOST_PASSWORD=password
+# Uncomment one of this protocols
+EMAIL_USE_TLS=true
+#EMAIL_USE_SSL=true
 
 # Admin credentials
 ADMIN_EMAIL=admin@mail.com
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=password
-
-# InfluxDB admin
-INFLUXDB_USERNAME=influx_admin
-INFLUXDB_PASSWORD=influx_password
 
 # Tunnel Dashboard admin and port configuration
 TUNNEL_DASHBOARD_USER=tunnel_admin
@@ -171,6 +168,16 @@ TUNNEL_PORT=7107
 POSTGRES_DB=db_name
 POSTGRES_USER=postgres_user
 POSTGRES_PASSWORD=postgres_password
+
+# TimescaleDB admin
+TIMESCALE_USER=timescale_user
+TIMESCALE_PASSWORD=timescale_password
+TIMESCALE_DB=db_name
+
+# Telegraf admin for TimescaleDB
+TELEGRAF_TIMESCALE_USER=telegraf_user
+TELEGRAF_TIMESCALE_PASSWORD=telegraf_password
+TELEGRAF_INPUT_PORT=8186
 
 #--------------------------------------------------------------------------
 # Optional ----------------------------------------------------------------
@@ -190,14 +197,6 @@ POSTGRES_PASSWORD=postgres_password
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
 
 ```
-
-> ⚠️ **The `EMAIL_URL` variable is generated automatically.**  
-> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, etc.  
-> After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.  
-> This rebuilds `EMAIL_URL` and applies the new settings.  
-> Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value and email will fail.
-
-### 2. Automatic Initialization and Launch
 
 Install `make` if not yet installed:
 
@@ -222,9 +221,12 @@ make run
 User self-registration is disabled in the On-Premise cloud.
 Only one admin user will be available initially, using credentials from `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
 
-> ⚠️ You may change the password or create another admin user. However, the user specified in `.env` will be recreated on each restart if deleted.
+> ⚠️ You may change the password or create another admin user. 
+> However, the user specified in `.env` will be recreated on each restart if deleted.
 
-The admin must create the first organization manually. New users can be added via an admin panel or email invitation.
+The admin must create the first organization manually.
+
+New users can be added via an admin panel or email invitation.
 
 ### Controller Setup
 
@@ -234,7 +236,16 @@ To configure your controller to work with your on-premises cloud, follow these s
 
 ##### In new releases starting from wb-2507 and testing (agent > 1.5.14)
 
+```bash
+wb-cloud-agent use-on-premise https://your-domain.com
+```
+
+> After your-domain.com When it’s available on the network, the `wb-cloud-agent` command displays an activation link that allows you to link the controller to your cloud.
+
+##### In old releases up to and including wb-2504 (agent <= 1.5.14)
+
 Open the controller’s console and execute the following command:
+
 ```bash
 wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https://your-domain.com/api-agent/v1/
 ```
@@ -243,15 +254,7 @@ where:
 - `https://your-domain.com/` - cloud address
 - `https://your-domain.com/api-agent/v1/` - cloud agent address (always: `cloud address` + `/api-agent/v1/`)
 
-> After your-domain.com If it is available online, go to the web UI of the controller in the Settings -> System section and click on the activation link with which you can link the controller to your cloud.
-
-##### In old releases up to and including wb-2504 (agent <= 1.5.14)
-
-```bash
-wb-cloud-agent use-on-premise https://your-domain.com
-```
-
-> After your-domain.com When it is available on the network, the `wb-cloud-agent` command displays an activation link that allows you to link the controller to your cloud.
+> After your-domain.com If it’s available online, go to the web UI of the controller in the Settings -> System section and click on the activation link with which you can link the controller to your cloud.
 
 #### 2. Link the Controller to a User
 
@@ -259,7 +262,7 @@ Go to the controller’s web interface and select:
 
 `Settings` -> `System` -> `Cloud Connection (your-onpremise-name)`
 
-> If you do not see the System section in the `settings`, you do not have administrator rights.
+> If you don’t see the System section in the `settings`, you don’t have administrator rights.
 >
 > Go to `Settings` -> `Access Rights`, select `Administrator` -> `I accept all responsibility...` -> `Apply`.
 >
@@ -278,11 +281,9 @@ You can override some environment variables manually in `.env`. If a variable is
 Example:
 
 ```dotenv
+
 # Token for opening tunnels
 TUNNEL_AUTH_TOKEN=GLgTbKtCiwF8J4tI439NJba0pbXfW0a39E7jZOOr0qO67xonhhfaNIWiH7FzPP
-
-# Token for Influx access
-INFLUXDB_TOKEN=PvxahJmIuieFy1ieODoQ3JpKEVSCDSkRUQZjjePSlajJV6w1Sl2iAQcpY8f2z4s
 
 # Secret key for Django
 SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
@@ -299,19 +300,17 @@ Run all commands from the repo root.
 
 ### Main Commands
 
-| Command                  | Description                                                  |
-|--------------------------|--------------------------------------------------------------|
-| `make help`              | Show all available commands                                  |
-| `make check-env`         | Check required environment variables in `.env`               |
-| `make check-certs`       | Check availability and validity of certificates              |
-| `make generate-env`      | Generate missing tokens/secrets                              |
-| `make generate-jwt`      | Generate or update JWT keys                                  |
-| `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                          |
-| `generate-influx-token`  | Generate Influx token                                        |
-| `generate-django-secret` | Generate Django SECRET_KEY                                   |
-| `generate-email-url`     | Generate/update Email URL                                    |
-| `make run`               | Full launch cycle (generate-env, build and start containers) |
-| `make update`            | Stop containers, update images, rebuild and restart          |
+| Command                   | Description                                                  |
+|---------------------------|--------------------------------------------------------------|
+| `make help`               | Show all available commands                                  |
+| `make check-env`          | Check required environment variables in `.env`               |
+| `make check-certs`        | Check availability and validity of certificates              |
+| `make generate-env`       | Generate missing tokens/secrets                              |
+| `make generate-jwt`       | Generate or update JWT keys                                  |
+| `generate-tunnel-token`   | Generate token for SSH/HTTP tunnels                          |
+| `generate-django-secret`  | Generate Django SECRET_KEY                                   |
+| `make run`                | Full launch cycle (generate-env, build and start containers) |
+| `make update`             | Stop containers, update images, rebuild and restart          |
 
 ### Usage Examples
 
@@ -341,10 +340,14 @@ sudo apt update && sudo apt install certbot -y
 
 ### Obtain Wildcard Certificate
 
+Set email which will be bind certificate and domain name
+
 ```bash
 export EMAIL=admin@email.com
 export DOMAIN_NAME=your-domain-name.com
 ```
+
+Launch Certbot to run the command:
 
 ```bash
 sudo certbot certonly --manual --preferred-challenges dns \
@@ -372,6 +375,12 @@ Certs saved to:
 openssl rsa -in /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem -check -noout
 ```
 
+Should be:
+
+```
+RSA key ok
+```
+
 ---
 
 ## 🛡 Using with External Web Server (Nginx/Apache/Caddy)
@@ -379,35 +388,35 @@ openssl rsa -in /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem -check -noout
 If port 443 is already used by another web server, configure as follows:
 
 ### 1. Set this in `.env`:
-```dotenv
-TRAEFIK_EXTERNAL_PORT=127.0.0.1:8443
-```
+    ```dotenv
+    TRAEFIK_EXTERNAL_PORT=127.0.0.1:8443
+    ```
+    By default Traefik listen 443 port on server. If variable `TRAEFIK_EXTERNAL_PORT` sets as in example, Traefik will listen only local 8443 port and won't locate 443 port
 
 ### 2. Proxy via External Web Server
 
-Example Nginx config:
+    Example Nginx config:
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
+    ```nginx
+    server {
+        listen 443 ssl;
+        server_name your-domain.com;
 
-    ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+        ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
 
-    location / {
-        proxy_pass https://127.0.0.1:8443;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        location / {
+            proxy_pass https://127.0.0.1:8443;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
     }
-}
-```
+    ```
 
-> TLS must be terminated in the external web server. Traefik does not need certificates in this case.
+> TLS must be terminated in the external web server. Traefik doesn’t need certificates in this case.
 
 > Ensure port 8443 is bound only to 127.0.0.1 and not exposed publicly.
 
 ---
-
