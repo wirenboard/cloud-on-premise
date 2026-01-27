@@ -19,6 +19,10 @@ on:
         options:
           - release
           - testing
+      REF:
+        description: "Branch name to build from"
+        required: false
+        type: string
 
 jobs:
   read_version:
@@ -61,5 +65,7 @@ jobs:
             {
               "REGISTRY": "${{ inputs.REGISTRY }}",
               "TARGET": "${{ inputs.TARGET }}",
-              "IMAGE_VERSION": "${{ needs.read_version.outputs.image_version }}"
+              "IMAGE_VERSION": "${{ needs.read_version.outputs.image_version }}",
+              "GROUP": "on-premise",
+              "REF": "${{ inputs.REF || github.ref_name }}"
             }
