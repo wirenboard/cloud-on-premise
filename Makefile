@@ -210,14 +210,12 @@ generate-env:
 run:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
-	@export VERSION=$$(cat VERSION)
-	docker compose up -d --build
+	@VERSION=$$(cat VERSION) docker compose up -d --build
 
 .PHONY: run-no-cert-check
 run-no-cert-check:
 	@${MAKE} generate-env
-	@export VERSION=$$(cat VERSION)
-	docker compose up -d --build
+	@VERSION=$$(cat VERSION) docker compose up -d --build
 
 .PHONY: update
 update:
@@ -227,6 +225,5 @@ update:
 	docker container prune -f
 	docker compose pull
 	@${MAKE} generate-env
-	@export VERSION=$$(cat VERSION)
-	docker compose up -d --build
+	@VERSION=$$(cat VERSION) docker compose up -d --build
 
