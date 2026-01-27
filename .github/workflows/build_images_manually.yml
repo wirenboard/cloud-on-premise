@@ -20,7 +20,7 @@ on:
           - release
           - testing
       REF:
-        description: "Branch name to build from"
+        description: "Branch name to build images from (optional)"
         required: false
         type: string
 
