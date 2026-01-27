@@ -54,7 +54,7 @@ jobs:
       - name: Dispatch to ${{ matrix.repository }}
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GHCR_TOKEN }}
           repository: "wirenboard/${{ matrix.repository }}"
           event-type: build-on-premise
           client-payload: >-
