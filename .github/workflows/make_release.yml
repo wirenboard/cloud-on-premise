@@ -7,8 +7,6 @@ on:
       - main
     paths:
       - VERSION
-      - docker-compose.yml
-      - make_release.yml
 
 env:
   REGISTRY: ghcr.io
@@ -18,7 +16,7 @@ jobs:
   read-version:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.read.outputs.version }}
+      version: ${{ steps.read_version.outputs.VERSION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
