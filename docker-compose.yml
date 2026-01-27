@@ -109,7 +109,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   tunnel:
-    image: ghcr.io/wirenboard/on-premise/wbc-tunnel
+    image: ghcr.io/wirenboard/on-premise/wbc-tunnel:${VERSION}
     restart: always
     environment:
       FRP_WEBHOOK_ADDRESS: "backend:8000"
@@ -130,7 +130,7 @@ services:
         condition: service_healthy
 
   tunnel_auth:
-    image: ghcr.io/wirenboard/on-premise/wbc-tunnel-auth
+    image: ghcr.io/wirenboard/on-premise/wbc-tunnel-auth:${VERSION}
     restart: always
     environment:
       TUNNEL_UPSTREAM: "tunnel"
@@ -157,14 +157,14 @@ services:
         condition: service_healthy
 
   webssh:
-    image: ghcr.io/wirenboard/on-premise/wbc-webssh
+    image: ghcr.io/wirenboard/on-premise/wbc-webssh:${VERSION}
     restart: always
     depends_on:
       tunnel:
         condition: service_started
 
   frontend:
-    image: ghcr.io/wirenboard/on-premise/wbc-frontend
+    image: ghcr.io/wirenboard/on-premise/wbc-frontend:${VERSION}
     restart: always
     environment:
       BACKEND_APP_URL: "http://backend:8000/"
@@ -183,7 +183,7 @@ services:
         condition: service_healthy
 
   backend:
-    image: ghcr.io/wirenboard/on-premise/wbc-backend
+    image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
     restart: always
     environment:
       <<: *backend-common-env
@@ -209,7 +209,7 @@ services:
 
 
   agent_backend:
-    image: ghcr.io/wirenboard/on-premise/wbc-agent-backend
+    image: ghcr.io/wirenboard/on-premise/wbc-agent-backend:${VERSION}
     restart: always
     environment:
       <<: *backend-common-env
@@ -231,7 +231,7 @@ services:
         condition: service_healthy
 
   worker:
-    image: ghcr.io/wirenboard/on-premise/wbc-worker
+    image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     restart: always
     environment:
       <<: *backend-common-env
@@ -245,7 +245,7 @@ services:
         condition: service_healthy
 
   worker-influx:
-    image: ghcr.io/wirenboard/on-premise/wbc-worker
+    image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     restart: always
     environment:
       <<: *backend-common-env
@@ -259,7 +259,7 @@ services:
         condition: service_healthy
 
   worker-grafana:
-    image: ghcr.io/wirenboard/on-premise/wbc-worker
+    image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     restart: always
     environment:
       <<: *backend-common-env
@@ -273,7 +273,7 @@ services:
         condition: service_healthy
 
   scheduler:
-    image: ghcr.io/wirenboard/on-premise/wbc-scheduler
+    image: ghcr.io/wirenboard/on-premise/wbc-scheduler:${VERSION}
     restart: always
     environment:
       <<: *backend-common-env
