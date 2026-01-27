@@ -28,7 +28,7 @@ jobs:
       - id: read_version
         shell: bash
         run: |
-          VERSION=$(cat version | tr -d '\r' | xargs)
+          VERSION=$(cat VERSION | tr -d '\r' | xargs)
           if [[ -z "$VERSION" ]]; then
             echo "Error: version file is empty"; exit 1
           fi
