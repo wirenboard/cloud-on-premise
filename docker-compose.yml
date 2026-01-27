@@ -42,9 +42,9 @@ x-backend-common-env: &backend-common-env
 
 secrets:
   backend_private_key:
-    file: ${PWD}/secrets/private_key.pem
+    file: ${PWD}/jwt/private_key.pem
   backend_public_key:
-    file: ${PWD}/secrets/public_key.pem
+    file: ${PWD}/jwt/public_key.pem
 
 services:
   postgres:
