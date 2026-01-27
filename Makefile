@@ -199,7 +199,6 @@ generate-django-secret:
 generate-env:
 	@printf  "\n\n\033[1;37m%s\033[0m\n" "=====================[ GENERATING SECRETS AND ENVIRONMENT VARIABLES ]====================="
 	@${MAKE} generate-tunnel-token
-	@${MAKE} generate-influx-token
 	@${MAKE} generate-django-secret
 	@${MAKE} check-env
 	@printf "\n\n$(GREEN)All secrets and environment variables are ready.$(NC)\n"
@@ -221,10 +220,10 @@ run-no-cert-check:
 .PHONY: update
 update:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING IMAGES AND RESTARTING CONTAINERS ]====================="
-	docker compose down
-	docker image prune -f
-	docker container prune -f
-	docker compose pull
+	@VERSION=$$(cat VERSION) docker compose down
+	@VERSION=$$(cat VERSION) docker image prune -f
+	@VERSION=$$(cat VERSION) docker container prune -f
+	@VERSION=$$(cat VERSION) docker compose pull
 	@${MAKE} generate-env
 	@VERSION=$$(cat VERSION) docker compose up -d --build
 
