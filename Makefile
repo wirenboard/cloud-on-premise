@@ -67,14 +67,13 @@ help:
 	@printf "  help                     Show this message\n"
 	@printf "  check-env                Check all required variables in .env\n"
 	@printf "  check-certs              Check TLS certificates and domain coverage\n"
+	@printf "  check-jwt                Check JWT RSA key files\n"
 	@printf "  generate-env             Generate all secrets and variables (non-destructive)\n"
 	@printf "  run                      Full project launch: generate-env, check-certs, start containers\n"
 	@printf "  update                   Update images, rebuild and start\n"
-	@printf "  generate-jwt             Generate/update keys for JWT\n"
+	@printf "  generate-jwt-keys        Generate JWT RSA key file pair\n"
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
-	@printf "  generate-influx-token    Generate Influx token\n"
 	@printf "  generate-django-secret   Generate Django secret key\n\n"
-	@printf "  generate-email-url       Generate/update Email URL"
 
 #------------------------------------------------------------------------------
 # [ TLS CERTIFICATE CHECK ] ---------------------------------------------------
@@ -165,6 +164,35 @@ check-env:
 		exit 1; \
 	fi
 
+.PHONY: check-jwt
+check-jwt:
+	@printf "\n\033[0;37m%s\033[0m\n" "------ Checking JWT RSA keys ------"
+	@set -e; \
+	if [ ! -f jwt/private.pem ]; then \
+		echo ""; \
+		echo "$(RED)ERROR: JWT private key not found: jwt/private.pem$(NC)"; \
+		exit 1; \
+	fi; \
+	if [ ! -f jwt/public.pem ]; then \
+		echo ""; \
+		echo "$(RED)ERROR: JWT public key not found: jwt/public.pem$(NC)"; \
+		exit 1; \
+	fi; \
+	if ! openssl rsa -in jwt/private.pem -check -noout >/dev/null 2>&1; then \
+		echo ""; \
+		echo "$(RED)ERROR: Invalid JWT private key$(NC)"; \
+		exit 1; \
+	fi; \
+	priv_mod=$$(openssl rsa -in jwt/private.pem -noout -modulus 2>/dev/null); \
+	pub_mod=$$(openssl rsa -pubin -in jwt/public.pem -noout -modulus 2>/dev/null); \
+	if [ "$$priv_mod" != "$$pub_mod" ]; then \
+		echo ""; \
+		echo "$(RED)ERROR: JWT public key does NOT match private key$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi; \
+	echo "$(GREEN)OK: JWT RSA keys are valid$(NC)"
+
 #------------------------------------------------------------------------------
 # [ TOKENS AND SECRETS GENERATION ] -------------------------------------------
 # Each target prints status before and after execution.
@@ -189,6 +217,13 @@ generate-tunnel-token:
 generate-django-secret:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating Django secret ------"
 	$(call gen_token,SECRET_KEY,openssl rand -base64 50 | tr -dc 'A-Za-z0-9!@#$%^&*(-_=+)' | cut -c1-50)
+
+.PHONY: generate-jwt-keys
+generate-jwt-keys:
+	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating JWT key files ------"
+	@openssl genrsa -out jwt/private.pem 2048
+	@openssl rsa -in jwt/private.pem -pubout -out jwt/public.pem
+	@printf "$(GREEN)Generated JWT RSA key pair in 'jwt' directory$(NC)\n"
 
 .PHONY: generate-env
 generate-env:
