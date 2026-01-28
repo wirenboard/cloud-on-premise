@@ -221,8 +221,11 @@ generate-django-secret:
 .PHONY: generate-jwt-keys
 generate-jwt-keys:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating JWT key files ------"
+	@mkdir -p jwt
 	@openssl genrsa -out jwt/private.pem 2048
 	@openssl rsa -in jwt/private.pem -pubout -out jwt/public.pem
+	@chmod 600 jwt/private.pem
+	@chmod 644 jwt/public.pem
 	@printf "$(GREEN)Generated JWT RSA key pair in 'jwt' directory$(NC)\n"
 
 .PHONY: generate-env
@@ -231,7 +234,6 @@ generate-env:
 	@${MAKE} generate-tunnel-token
 	@${MAKE} generate-django-secret
 	@${MAKE} check-env
-	@${MAKE} check-jwt
 	@printf "\n\n$(GREEN)All secrets and environment variables are ready.$(NC)\n"
 
 #------------------------------------------------------------------------------
@@ -241,11 +243,13 @@ generate-env:
 run:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
+	@${MAKE} check-jwt
 	@VERSION=$$(cat VERSION) docker compose up -d --build
 
 .PHONY: run-no-cert-check
 run-no-cert-check:
 	@${MAKE} generate-env
+	@${MAKE} check-jwt
 	@VERSION=$$(cat VERSION) docker compose up -d --build
 
 .PHONY: update
