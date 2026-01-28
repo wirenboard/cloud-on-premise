@@ -231,6 +231,7 @@ generate-env:
 	@${MAKE} generate-tunnel-token
 	@${MAKE} generate-django-secret
 	@${MAKE} check-env
+	@${MAKE} check-jwt
 	@printf "\n\n$(GREEN)All secrets and environment variables are ready.$(NC)\n"
 
 #------------------------------------------------------------------------------
