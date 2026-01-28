@@ -185,11 +185,6 @@ generate-tunnel-token:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating SSH/HTTP tunnel token ------"
 	$(call gen_token,TUNNEL_AUTH_TOKEN,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 64)
 
-.PHONY: generate-influx-token
-generate-influx-token:
-	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating Influx token ------"
-	$(call gen_token,INFLUXDB_TOKEN,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 64)
-
 .PHONY: generate-django-secret
 generate-django-secret:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating Django secret ------"
