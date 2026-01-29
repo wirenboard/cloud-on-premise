@@ -40,11 +40,10 @@ x-backend-common-env: &backend-common-env
   AWS_STORAGE_BUCKET_NAME: "media"
   AWS_S3_REGION_NAME: "eu-west-1"
 
-secrets:
-  backend_private_key:
-    file: ${PWD}/jwt/private.pem
-  backend_public_key:
-    file: ${PWD}/jwt/public.pem
+x-backend-jwt-volumes: &backend-jwt-volumes
+  volumes:
+    - ./jwt/private.pem:/app/keys/jwt_private_key.pem:ro
+    - ./jwt/public.pem:/app/keys/jwt_public_key.pem:ro
 
 services:
   postgres:
@@ -230,14 +229,14 @@ services:
   tunnel_auth:
     image: ghcr.io/wirenboard/on-premise/wbc-tunnel-auth:${VERSION}
     restart: unless-stopped
-    secrets:
-      - backend_public_key
     environment:
       TUNNEL_UPSTREAM: "tunnel"
       WEBSSH_UPSTREAM: "webssh:8888"
       BACKEND_APP_UPSTREAM: "backend:8000"
       CLOUD_ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
-      BACKEND_APP_PUBLIC_KEY_PATH: "/run/secrets/backend_public_key"
+      BACKEND_APP_PUBLIC_KEY_PATH: "/app/keys/backend_public_key.pem"
+    volumes:
+      - ./jwt/public.pem:/app/keys/backend_public_key.pem:ro
     labels:
       <<: *traefik-common
       traefik.http.routers.tunnel_auth.tls.domains[0].main: "ssh.${ABSOLUTE_SERVER}"
@@ -286,9 +285,7 @@ services:
   backend:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
     restart: unless-stopped
-    secrets:
-      - backend_private_key
-      - backend_public_key
+    <<: *backend-jwt-volumes
     environment:
       <<: *backend-common-env
     labels:
@@ -321,6 +318,7 @@ services:
   agent_backend:
     image: ghcr.io/wirenboard/on-premise/wbc-agent-backend:${VERSION}
     restart: unless-stopped
+    <<: *backend-jwt-volumes
     environment:
       <<: *backend-common-env
     labels:
@@ -343,6 +341,7 @@ services:
   worker:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     restart: unless-stopped
+    <<: *backend-jwt-volumes
     environment:
       <<: *backend-common-env
       QUEUE: default_queue
@@ -357,6 +356,7 @@ services:
   worker-metrics:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     restart: unless-stopped
+    <<: *backend-jwt-volumes
     environment:
       <<: *backend-common-env
       QUEUE: metrics_queue
@@ -371,6 +371,7 @@ services:
   worker-grafana:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     restart: unless-stopped
+    <<: *backend-jwt-volumes
     environment:
       <<: *backend-common-env
       QUEUE: grafana_queue
@@ -385,6 +386,7 @@ services:
   scheduler:
     image: ghcr.io/wirenboard/on-premise/wbc-scheduler:${VERSION}
     restart: unless-stopped
+    <<: *backend-jwt-volumes
     environment:
       <<: *backend-common-env
     depends_on:

@@ -224,8 +224,6 @@ generate-jwt-keys:
 	@mkdir -p jwt
 	@openssl genrsa -out jwt/private.pem 2048
 	@openssl rsa -in jwt/private.pem -pubout -out jwt/public.pem
-	@chmod 600 jwt/private.pem
-	@chmod 644 jwt/public.pem
 	@printf "$(GREEN)Generated JWT RSA key pair in 'jwt' directory$(NC)\n"
 
 .PHONY: generate-env
