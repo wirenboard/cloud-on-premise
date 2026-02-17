@@ -9,6 +9,14 @@ YELLOW= \033[1;33m
 GREEN = \033[0;32m
 NC    = \033[0m  # No Color
 
+VERSION = $(shell tr -d '[:space:]' < VERSION 2>/dev/null)
+
+define require_version
+	@if [ -z "$(VERSION)" ]; then \
+		printf "$(RED)ERROR: VERSION file missing or empty$(NC)\n"; exit 1; \
+	fi
+endef
+
 ENV_FILE      := .env
 ENV_EXAMPLE   := .env.example
 PYTHON_BIN    := python3
@@ -255,25 +263,26 @@ generate-env:
 
 .PHONY: run
 run:
+	@$(call require_version)
 	@${MAKE} generate-env
 	@${MAKE} check-certs
-	@export VERSION=$$(cat VERSION)
-	docker compose up -d --build
+	@VERSION=$(VERSION) docker compose up -d --build
 
 .PHONY: run-no-cert-check
 run-no-cert-check:
+	@$(call require_version)
 	@${MAKE} generate-env
-	@export VERSION=$$(cat VERSION)
-	docker compose up -d --build
+	@VERSION=$(VERSION) docker compose up -d --build
 
 .PHONY: update
 update:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING IMAGES AND RESTARTING CONTAINERS ]====================="
-	docker compose down
+	@$(call require_version)
+	@${MAKE} generate-env
+	@${MAKE} check-certs
+	@VERSION=$(VERSION) docker compose down
 	docker image prune -f
 	docker container prune -f
-	docker compose pull
-	@${MAKE} generate-env
-	@export VERSION=$$(cat VERSION)
-	docker compose up -d --build
+	@VERSION=$(VERSION) docker compose pull
+	@VERSION=$(VERSION) docker compose up -d --build
 
