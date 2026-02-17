@@ -3,3 +3,10 @@
 *.iml
 out
 gen
+
+# keys
+jwt/*.pem
+tls/*.pem
+
+# env
+.env
