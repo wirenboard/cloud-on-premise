@@ -77,6 +77,9 @@ help:
 	@printf "  check-certs              Check TLS certificates and domain coverage\n"
 	@printf "  generate-env             Generate all secrets and variables (non-destructive)\n"
 	@printf "  run                      Full project launch: generate-env, check-certs, start containers\n"
+	@printf "  run-no-cert-check        Launch without checking TLS certificates (not recommended)\n"
+	@printf "  stop                     Stop containers\n"
+	@printf "  restart                  Restart containers (with cert check)\n"
 	@printf "  update                   Update images, rebuild and start\n"
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
@@ -263,6 +266,7 @@ generate-env:
 
 .PHONY: run
 run:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE ]====================="
 	@$(call require_version)
 	@${MAKE} generate-env
 	@${MAKE} check-certs
@@ -270,6 +274,7 @@ run:
 
 .PHONY: run-no-cert-check
 run-no-cert-check:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE (NO CERT CHECK) ]====================="
 	@$(call require_version)
 	@${MAKE} generate-env
 	@VERSION=$(VERSION) docker compose up -d --build
@@ -286,3 +291,16 @@ update:
 	@VERSION=$(VERSION) docker compose pull
 	@VERSION=$(VERSION) docker compose up -d --build
 
+.PHONY: stop
+stop:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ STOPPING CONTAINERS ]====================="
+	@$(call require_version)
+	@VERSION=$(VERSION) docker compose down
+
+.PHONY: restart
+restart:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ RESTARTING CONTAINERS ]====================="
+	@$(call require_version)
+	@${MAKE} generate-env
+	@${MAKE} check-certs
+	@VERSION=$(VERSION) docker compose down && docker compose up -d --build
