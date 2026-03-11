@@ -3,3 +3,18 @@
 *.iml
 out
 gen
+
+# keys
+jwt/*.pem
+tls/*.pem
+
+# env
+.env
+.env.test
+
+# temp directory
+
+**/tmp*/
+
+
+

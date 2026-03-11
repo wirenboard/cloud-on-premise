@@ -152,7 +152,7 @@ services:
         condition: service_healthy
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:12.2.2
     restart: unless-stopped
     environment:
       GF_SERVER_ROOT_URL: "https://metrics.${ABSOLUTE_SERVER}/"
