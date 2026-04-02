@@ -41,7 +41,7 @@ If your instance cannot connect to our metrics collection server [metrics.wirenb
 
 In the future, there will be paid plans where you can disable metric sending and add more controllers.
 
-Sent metrics, screenshot from the backend of the On-Premise instance:  
+Sent metrics, screenshot from the backend of the On-Premise instance:
 ![metrics.png](./assets/metrics.png)
 
 ---
@@ -77,18 +77,18 @@ http.your-domain.com
 
 The following ports must be open for the cloud to operate:
 
-- `443` – cloud access  
-- `7107` – tunnels  
+- `443` – cloud access
+- `7107` – tunnels
 - `7501` – tunnel dashboard access (optional)
 
 > ⚠️ If any of these ports are already in use, you can override them in the `.env` file.
 
 > If port `443` is already occupied by another web server, see: [Using with External Web Server](#-using-with-external-web-server-nginxapachecaddy)
-> 
+>
 
 ### 3. DNS Records for Email
 
-MX, SPF, DKIM, and DMARC records must be configured to enable email sending. 
+MX, SPF, DKIM, and DMARC records must be configured to enable email sending.
 This is required for sending organization invites, password resets, etc.
 
 
@@ -191,10 +191,10 @@ POSTGRES_PASSWORD=postgres_password
 
 ```
 
-> ⚠️ **The `EMAIL_URL` variable is generated automatically.**  
-> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, etc.  
-> After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.  
-> This rebuilds `EMAIL_URL` and applies the new settings.  
+> ⚠️ **The `EMAIL_URL` variable is generated automatically.**
+> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, etc.
+> After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.
+> This rebuilds `EMAIL_URL` and applies the new settings.
 > Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value and email will fail.
 
 ### 2. Automatic Initialization and Launch
@@ -385,29 +385,60 @@ TRAEFIK_EXTERNAL_PORT=127.0.0.1:8443
 
 ### 2. Proxy via External Web Server
 
-Example Nginx config:
+> ⚠️ **The `agent.*` subdomain uses mutual TLS (mTLS): the controller presents a hardware client certificate that Traefik verifies.**
+> Standard L7 proxying (where Nginx terminates TLS) **does not forward the client certificate**, which breaks controller authentication.
+> Therefore, all on-premise traffic must use **L4 TCP passthrough** via the `stream` module — Nginx forwards the raw TCP connection and Traefik handles TLS termination and mTLS verification itself.
+
+#### Case A: Nginx is used only for on-premise
+
+Remove the existing `server { listen 443 ssl; ... }` block for on-premise domains and add a `stream` block at the top level of your config:
 
 ```nginx
+# /etc/nginx/nginx.conf — top-level, not inside http {}
+stream {
+    server {
+        listen 443;
+        ssl_preread on;
+        proxy_pass 127.0.0.1:8443;
+    }
+}
+```
+
+All HTTPS requests on port 443 will be transparently forwarded to Traefik on port 8443.
+
+#### Case B: Nginx also serves other sites on port 443
+
+Use `ssl_preread` with a `map` to route by SNI: on-premise domains go to Traefik, everything else goes to a separate Nginx HTTP listener.
+
+```nginx
+# /etc/nginx/nginx.conf — top-level, not inside http {}
+stream {
+    map $ssl_preread_server_name $upstream {
+        ~\.your-domain\.com  127.0.0.1:8443;  # on-premise → Traefik
+        default              127.0.0.1:444;   # other sites → nginx http
+    }
+
+    server {
+        listen 443;
+        ssl_preread on;
+        proxy_pass $upstream;
+    }
+}
+
+# In the http {} block, other sites listen on port 444
 server {
-    listen 443 ssl;
+    listen 444 ssl;
     server_name your-domain.com;
 
     ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
 
     location / {
-        proxy_pass https://127.0.0.1:8443;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        # your usual settings
     }
 }
 ```
 
-> TLS must be terminated in the external web server. Traefik does not need certificates in this case.
-
 > Ensure port 8443 is bound only to 127.0.0.1 and not exposed publicly.
 
 ---
-
