@@ -193,10 +193,10 @@ POSTGRES_PASSWORD=postgres_password
 
 ```
 
-> ⚠️ **Переменная `EMAIL_URL` генерируется автоматически.**  
-> Она собирается из переменных `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT` и др.  
-> Изменили одну из этих переменных — **обязательно** выполните `make generate-email-url` или `make run` при запуске.  
-> Это пересоберёт `EMAIL_URL` и применит новые настройки.  
+> ⚠️ **Переменная `EMAIL_URL` генерируется автоматически.**
+> Она собирается из переменных `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT` и др.
+> Изменили одну из этих переменных — **обязательно** выполните `make generate-email-url` или `make run` при запуске.
+> Это пересоберёт `EMAIL_URL` и применит новые настройки.
 > Запуск `docker compose up` без предварительного `make run` или `make generate-email-url` оставит старое значение.
 
 
@@ -261,7 +261,7 @@ wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https:/
 - `https://your-domain.com/api-agent/v1/` - адрес агента облака. Адрес всегда будет: `адрес облака` + `/api-agent/v1/`
 
 > После того как your-domain.com будет доступен в сети, перейдите в web ui контроллера в раздел `Настройки -> Система` и перейдите по активационной ссылке с помощью которой можно связать контроллер с вашим облаком.
-> 
+>
 #### 2. Привязать контроллер к пользователю
 
 Перейдите в веб-интерфейс контроллера, выберите:
@@ -460,28 +460,60 @@ RSA key ok
     По умолчанию Traefik слушает 443 порт на сервере. Если переменная `TRAEFIK_EXTERNAL_PORT` указана как в примере, Traefik будет слушать только на локальном порту 8443, не занимая 443 порт на сервере.
 
 ### 2. Настройте проксирование во внешнем веб-сервере.
-   Добавьте в конфиг вашего веб-сервера правило для нужного домена (например, `your-domain.com`), чтобы все запросы на этот домен по HTTPS проксировались во внутренний порт, используемый Traefik.  
-   Пример для Nginx:
 
-   ```nginx
-   server {
-       listen 443 ssl;
-       server_name your-domain.com;
+> ⚠️ **Поддомен `agent.*` использует взаимную аутентификацию по TLS (mTLS): контроллер предъявляет аппаратный клиентский сертификат, который проверяет Traefik.**
+> Стандартное L7-проксирование (когда nginx терминирует TLS) **не передаёт клиентский сертификат дальше**, что ломает аутентификацию контроллеров.
+> Поэтому для всего on-premise трафика необходимо использовать **L4 TCP passthrough** через модуль `stream` — nginx пробрасывает TCP-соединение «как есть», а Traefik сам завершает TLS и выполняет проверку mTLS.
 
-       ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-       ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+#### Кейс A: nginx используется только для on-premise
 
-       location / {
-           proxy_pass https://127.0.0.1:8443;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-       }
-   }
-   ```
+Удалите существующий `server { listen 443 ssl; ... }` блок для on-premise доменов и добавьте блок `stream` на верхнем уровне конфига:
 
-> Сертификаты для HTTPS в этом режиме должны быть настроены только во внешнем веб-сервере. В Traefik дополнительные сертификаты не требуются.
+```nginx
+# /etc/nginx/nginx.conf — на верхнем уровне, не внутри http {}
+stream {
+    server {
+        listen 443;
+        ssl_preread on;
+        proxy_pass 127.0.0.1:8443;
+    }
+}
+```
+
+Все HTTPS-запросы на порту 443 будут прозрачно проброшены в Traefik на порту 8443.
+
+#### Кейс B: nginx также обслуживает другие сайты на порту 443
+
+Используйте `ssl_preread` с `map` для маршрутизации по SNI: on-premise домены идут в Traefik, остальные — на отдельный HTTP-листенер nginx.
+
+```nginx
+# /etc/nginx/nginx.conf — на верхнем уровне, не внутри http {}
+stream {
+    map $ssl_preread_server_name $upstream {
+        ~\.your-domain\.com  127.0.0.1:8443;  # on-premise → Traefik
+        default              127.0.0.1:444;   # остальные сайты → nginx http
+    }
+
+    server {
+        listen 443;
+        ssl_preread on;
+        proxy_pass $upstream;
+    }
+}
+
+# В блоке http {} обычные сайты переводим на порт 444
+server {
+    listen 444 ssl;
+    server_name your-domain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+
+    location / {
+        # ваши обычные настройки
+    }
+}
+```
 
 > Убедитесь, что порт 8443 (или другой указанный в `TRAEFIK_EXTERNAL_PORT`) не открыт наружу. Достаточно проброса только на 127.0.0.1, как указано выше.
 
