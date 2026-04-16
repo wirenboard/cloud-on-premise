@@ -10,3 +10,7 @@ tls/*.pem
 
 # env
 .env
+
+brandidng/*.svg
+brandidng/*.ico
+brandidng/*.png
