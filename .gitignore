@@ -11,6 +11,6 @@ tls/*.pem
 # env
 .env
 
-brandidng/*.svg
-brandidng/*.ico
-brandidng/*.png
+branding/*.svg
+branding/*.ico
+branding/*.png
