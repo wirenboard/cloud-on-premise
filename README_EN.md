@@ -197,7 +197,30 @@ POSTGRES_PASSWORD=postgres_password
 > This rebuilds `EMAIL_URL` and applies the new settings.
 > Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value and email will fail.
 
-### 2. Automatic Initialization and Launch
+### 2. Custom Logos and Icons
+
+This step is optional. If you do not add anything to `./branding`, the interface will continue to use the default Wiren Board logos and icons.
+
+The `frontend` service mounts the local `./branding` directory into the container as `/branding`. If you need custom branding, place files with these exact names into that folder:
+
+- `logo.svg` - UI logo
+- `favicon.svg` - primary SVG favicon
+- `favicon.ico` - favicon for legacy browsers
+- `favicon-192.png` - 192x192 icon for Android/PWA
+- `favicon-512.png` - 512x512 icon for Android/PWA
+- `apple-touch-icon.png` - icon for iOS
+
+You can replace only the files you need, but the filenames must stay unchanged.
+
+After updating the assets, restart the frontend:
+
+```bash
+docker compose restart frontend
+```
+
+If the browser still shows old icons, do a hard refresh or clear the browser cache.
+
+### 3. Automatic Initialization and Launch
 
 Install `make` if not yet installed:
 
