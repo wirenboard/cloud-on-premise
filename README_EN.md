@@ -123,6 +123,34 @@ To get a certificate using Certbot, see: [Manual Wildcard Certificate Setup Exam
 
 ---
 
+### 5. Custom Logo and Icons
+
+This step is optional.
+
+The frontend reads branding assets from the local `branding/` directory, which is mounted into the `frontend` container.
+If you do not add your own files there, the application will continue using the default Wiren Board logo and icons.
+
+To replace the logo and icons, put your files there using the exact names below:
+
+```text
+branding/logo.svg
+branding/favicon.svg
+branding/favicon.ico
+branding/favicon-192.png
+branding/favicon-512.png
+branding/apple-touch-icon.png
+```
+
+You can also replace these files only partially.
+
+If the project is already running, restart the frontend after replacing the files:
+
+```shell
+docker compose restart frontend
+```
+
+---
+
 ## 🚀 Application Deployment
 
 > You need `docker compose v1.21.0` or higher to run the application.
