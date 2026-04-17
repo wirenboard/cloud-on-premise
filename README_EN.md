@@ -52,6 +52,8 @@ Before deploying the application, the following steps must be completed:
 
 ### 1. DNS Records
 
+In all examples below, `your-domain.com` means the **full public hostname of your cloud**. If the cloud will be available at `https://cloud.example.com`, use `cloud.example.com` everywhere, not the root domain `example.com`.
+
 The following A-type DNS records must be configured:
 
 ```text
@@ -102,6 +104,8 @@ Certificates must be issued by a trusted CA:
 
 If you already have a certificate for your domain, check the SANs (Subject Alternative Names):
 
+The certificate must be issued for the same value as `ABSOLUTE_SERVER`, including the subdomain. For example, if the cloud runs on `cloud.example.com`, the certificate must cover `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, and `*.ssh.cloud.example.com`.
+
 ```bash
 openssl x509 -in "path/to/your/certs/fullchain.pem" -noout -text | grep -A1 "Subject Alternative Name"
 ```
@@ -123,6 +127,34 @@ To get a certificate using Certbot, see: [Manual Wildcard Certificate Setup Exam
 
 ---
 
+### 5. Custom Logo and Icons
+
+This step is optional.
+
+The frontend reads branding assets from the local `branding/` directory, which is mounted into the `frontend` container.
+If you do not add your own files there, the application will continue using the default Wiren Board logo and icons.
+
+To replace the logo and icons, put your files there using the exact names below:
+
+```text
+branding/logo.svg
+branding/favicon.svg
+branding/favicon.ico
+branding/favicon-192.png
+branding/favicon-512.png
+branding/apple-touch-icon.png
+```
+
+You can also replace these files only partially.
+
+If the project is already running, restart the frontend after replacing the files:
+
+```shell
+docker compose restart frontend
+```
+
+---
+
 ## 🚀 Application Deployment
 
 > You need `docker compose v1.21.0` or higher to run the application.
@@ -137,6 +169,8 @@ nano .env
 ```
 
 Fill in the required variables, e.g.:
+
+`ABSOLUTE_SERVER` must match the full public hostname of the cloud. If the cloud will be available at `https://cloud.example.com`, set `ABSOLUTE_SERVER=cloud.example.com`.
 
 ```dotenv
 ABSOLUTE_SERVER=my-domain-name.com
@@ -231,6 +265,8 @@ The admin must create the first organization manually. New users can be added vi
 To configure your controller to work with your on-premises cloud, follow these steps:
 
 #### 1. Add a Cloud Provider
+
+In all commands below, use the same external hostname as in `ABSOLUTE_SERVER`. If the cloud is deployed on a subdomain, use that full subdomain here.
 
 ##### In new releases starting from wb-2507 and testing (agent > 1.5.14)
 
@@ -340,6 +376,8 @@ sudo apt update && sudo apt install certbot -y
 ```
 
 ### Obtain Wildcard Certificate
+
+Set the email and the full public hostname of the cloud. If the cloud will be available at `https://cloud.example.com`, then `DOMAIN_NAME=cloud.example.com`.
 
 ```bash
 export EMAIL=admin@email.com

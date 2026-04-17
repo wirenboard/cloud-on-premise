@@ -172,6 +172,8 @@ services:
       FOOTER_LINKS: '[{"url": "https://wirenboard.com/", "caption": "mainSiteLink"}]'
       FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"Сайт компании Wiren Board"}'
       FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"Wiren Board website"}'
+    volumes:
+      - ./branding:/branding:ro
     labels:
       <<: *traefik-common
       traefik.http.routers.frontend.rule: "Host(`${ABSOLUTE_SERVER}`)"
