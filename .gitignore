@@ -17,4 +17,7 @@ tls/*.pem
 **/tmp*/
 
 
+branding/*.svg
+branding/*.ico
+branding/*.png
 
