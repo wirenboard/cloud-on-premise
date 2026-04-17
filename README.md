@@ -53,6 +53,8 @@
 
 ### 1. DNS-записи
 
+Во всех примерах ниже `your-domain.com` означает **полный внешний hostname вашего облака**. Если облако будет доступно по `https://cloud.example.com`, то везде нужно указывать именно `cloud.example.com`, а не корневой домен `example.com`.
+
 Должны быть настроены следующие DNS-записи типа A:
 
 ```text
@@ -101,6 +103,8 @@ http.your-domain.com
 > ❌ Самоподписанные сертификаты не поддерживаются.
 
 Если у вас есть сертификат для этого домена, то проверьте его SAN (перечень поддоменов):
+
+Сертификат должен быть выпущен для того же значения, которое указано в `ABSOLUTE_SERVER`, включая поддомен. Например, если облако работает на `cloud.example.com`, сертификат нужен для `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com` и `*.ssh.cloud.example.com`.
 
 ```bash
 openssl x509 -in "path/to/your/certs/fullchain.pem" -noout -text | grep -A1 "Subject Alternative Name"
@@ -167,6 +171,8 @@ nano .env
 ```
 
 Заполните все обязательные переменные как в примере ниже:
+
+`ABSOLUTE_SERVER` должен совпадать с полным внешним hostname облака. Если облако будет доступно по `https://cloud.example.com`, укажите `ABSOLUTE_SERVER=cloud.example.com`.
 
 ```dotenv
 ABSOLUTE_SERVER=my-domain-name.com
@@ -268,6 +274,8 @@ make run
 Для настройки контроллера на работу с вашим on-premises облаком, необходимо выполнить следующие шаги:
 
 #### 1. Добавить провайдера облака
+
+Во всех командах ниже используйте тот же внешний hostname, что и в `ABSOLUTE_SERVER`. Если облако разворачивается на поддомене, подставляйте именно этот поддомен целиком.
 
 ##### В новых релизах начиная с wb-2507 и testing (агент > 1.5.14)
 
@@ -384,6 +392,8 @@ sudo apt update && sudo apt install certbot -y
 ### Получение сертификата с wildcard-доменами
 
 Укажите email к которому будет привязан сертификат и доменное имя:
+
+Используйте полный hostname облака. Если облако будет доступно по `https://cloud.example.com`, то `DOMAIN_NAME=cloud.example.com`.
 
 ```bash
 export EMAIL=admin@email.com
