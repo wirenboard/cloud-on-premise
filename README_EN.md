@@ -221,12 +221,12 @@ POSTGRES_PASSWORD=postgres_password
 #TLS_CERTS_PATH=path/to/my/certs/
 
 # Set the external port for Traefik
-#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
+#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
 
 ```
 
 > ⚠️ **The `EMAIL_URL` variable is generated automatically.**
-> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, etc.
+> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_SERVER`, `EMAIL_PORT`, etc.
 > After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.
 > This rebuilds `EMAIL_URL` and applies the new settings.
 > Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value, and email delivery will fail.
