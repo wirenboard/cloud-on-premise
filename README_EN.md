@@ -270,7 +270,15 @@ In all commands below, use the same external hostname as in `ABSOLUTE_SERVER`. I
 
 ##### In new releases starting from wb-2507 and testing (agent > 1.5.14)
 
-Open the controller’s console and execute the following command:
+```bash
+wb-cloud-agent use-on-premise https://your-domain.com
+```
+
+> After `your-domain.com` becomes available on the network, the `wb-cloud-agent` command displays an activation link that allows you to link the controller to your cloud.
+
+##### In old releases up to and including wb-2504 (agent <= 1.5.14)
+
+Open the controller's console and execute the following command:
 ```bash
 wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https://your-domain.com/api-agent/v1/
 ```
@@ -279,15 +287,7 @@ where:
 - `https://your-domain.com/` - cloud address
 - `https://your-domain.com/api-agent/v1/` - cloud agent address (always: `cloud address` + `/api-agent/v1/`)
 
-> After your-domain.com If it is available online, go to the web UI of the controller in the Settings -> System section and click on the activation link with which you can link the controller to your cloud.
-
-##### In old releases up to and including wb-2504 (agent <= 1.5.14)
-
-```bash
-wb-cloud-agent use-on-premise https://your-domain.com
-```
-
-> After your-domain.com When it is available on the network, the `wb-cloud-agent` command displays an activation link that allows you to link the controller to your cloud.
+> After `your-domain.com` becomes available on the network, go to the controller web UI, open Settings -> System, and use the activation link to link the controller to your cloud.
 
 #### 2. Link the Controller to a User
 
