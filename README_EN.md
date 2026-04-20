@@ -1,6 +1,6 @@
 # Wiren Board Cloud On-Premise
 
-> ⚠️ By using this repository or downloading Docker images, you accept the terms of the license agreement (see LICENSE file).
+> ⚠️ By using this repository or downloading Docker images, you accept the terms of the license agreement (see the LICENSE file).
 
 ---
 
@@ -25,23 +25,23 @@ Documentation for setting up and deploying Wiren Board Cloud in an On-Premise en
 
 ### On-Premise Version Features
 
-The main differences between the local cloud and our [wirenboard.cloud](https://wirenboard.cloud) relate to instance security and reduced server load.
+The main differences between the local cloud and our [wirenboard.cloud](https://wirenboard.cloud) service are related to instance security and reduced server load.
 
 #### User Registration and Demo Access
 
 In On-Premise:
-- a new user cannot register without an invitation from the organization owner or admin;
+- new users cannot register without an invitation from the organization owner or admin;
 - there is no “Demo” button.
 
 #### Metrics
 
-Currently, only the free version for up to 100 controllers is available, which can be used for personal and commercial purposes. In this version, mandatory sending of anonymized metrics to our server is included; see exactly what is sent in the backend of the instance “On-Premise” → “Metrics”.
+Currently, only the free version for up to 100 controllers is available, and it can be used for personal and commercial purposes. In this version, sending anonymized metrics to our server is required; you can see exactly what is sent in the instance backend under “On-Premise” → “Metrics”.
 
 If your instance cannot connect to our metrics collection server [metrics.wirenboard.cloud](https://on-premise-metrics.wirenboard.cloud), the cloud will continue to work, but you will not be able to add controllers.
 
-In the future, there will be paid plans where you can disable metric sending and add more controllers.
+Paid plans that allow you to disable metric sending and add more controllers are planned.
 
-Sent metrics, screenshot from the backend of the On-Premise instance:
+Sent metrics, as shown in the backend of the On-Premise instance:
 ![metrics.png](./assets/metrics.png)
 
 ---
@@ -54,7 +54,7 @@ Before deploying the application, the following steps must be completed:
 
 In all examples below, `your-domain.com` means the **full public hostname of your cloud**. If the cloud will be available at `https://cloud.example.com`, use `cloud.example.com` everywhere, not the root domain `example.com`.
 
-The following A-type DNS records must be configured:
+The following DNS A records must be configured:
 
 ```text
 @.your-domain.com
@@ -91,7 +91,7 @@ The following ports must be open for the cloud to operate:
 ### 3. DNS Records for Email
 
 MX, SPF, DKIM, and DMARC records must be configured to enable email sending.
-This is required for sending organization invites, password resets, etc.
+This is required for sending organization invitations, password resets, etc.
 
 
 ### 4. TLS Certificates
@@ -102,7 +102,7 @@ Certificates must be issued by a trusted CA:
 
 > ❌ Self-signed certificates are not supported.
 
-If you already have a certificate for your domain, check the SANs (Subject Alternative Names):
+If you already have a certificate for this hostname, check the SANs (Subject Alternative Names):
 
 The certificate must be issued for the same value as `ABSOLUTE_SERVER`, including the subdomain. For example, if the cloud runs on `cloud.example.com`, the certificate must cover `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, and `*.ssh.cloud.example.com`.
 
@@ -119,7 +119,7 @@ your-domain.com
 *.ssh.your-domain.com
 ```
 
-If not, you must obtain a new certificate.
+Otherwise, you must obtain a new certificate.
 
 Place `fullchain.pem` and `privkey.pem` in the `./tls` directory or set the `TLS_CERTS_PATH` environment variable.
 
@@ -134,7 +134,7 @@ This step is optional.
 The frontend reads branding assets from the local `branding/` directory, which is mounted into the `frontend` container.
 If you do not add your own files there, the application will continue using the default Wiren Board logo and icons.
 
-To replace the logo and icons, put your files there using the exact names below:
+To replace the logo and icons, place your files in that directory with the exact names listed below:
 
 ```text
 branding/logo.svg
@@ -145,7 +145,7 @@ branding/favicon-512.png
 branding/apple-touch-icon.png
 ```
 
-You can also replace these files only partially.
+You can also replace only some of these files.
 
 If the project is already running, restart the frontend after replacing the files:
 
@@ -210,17 +210,17 @@ POSTGRES_PASSWORD=postgres_password
 # Optional ----------------------------------------------------------------
 #--------------------------------------------------------------------------
 
-# Create Minio admin
+# Create MinIO admin
 #MINIO_ROOT_USER=minio_admin
 #MINIO_ROOT_PASSWORD=minio_password
 
 # Set Docker network name if required. Default is "wb-net"
 #DOCKER_NET_NAME=my-docker-network
 
-# Set path to directory with tls certificates if required. Default is "./tls"
+# Set the path to the directory with TLS certificates if required. Default is "./tls"
 #TLS_CERTS_PATH=path/to/my/certs/
 
-# Set external port for Traefik
+# Set the external port for Traefik
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
 
 ```
@@ -229,11 +229,11 @@ POSTGRES_PASSWORD=postgres_password
 > It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, etc.
 > After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.
 > This rebuilds `EMAIL_URL` and applies the new settings.
-> Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value and email will fail.
+> Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value, and email delivery will fail.
 
 ### 2. Automatic Initialization and Launch
 
-Install `make` if not yet installed:
+Install `make` if it is not already installed:
 
 ```bash
 apt install make
@@ -268,7 +268,7 @@ To configure your controller to work with your on-premises cloud, follow these s
 
 In all commands below, use the same external hostname as in `ABSOLUTE_SERVER`. If the cloud is deployed on a subdomain, use that full subdomain here.
 
-##### In new releases starting from wb-2507 and testing (agent > 1.5.14)
+##### In new releases starting with wb-2507 and testing (agent > 1.5.14)
 
 ```bash
 wb-cloud-agent use-on-premise https://your-domain.com
@@ -276,13 +276,13 @@ wb-cloud-agent use-on-premise https://your-domain.com
 
 > After `your-domain.com` becomes available on the network, the `wb-cloud-agent` command displays an activation link that allows you to link the controller to your cloud.
 
-##### In old releases up to and including wb-2504 (agent <= 1.5.14)
+##### In older releases up to and including wb-2504 (agent <= 1.5.14)
 
 Open the controller's console and execute the following command:
 ```bash
 wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https://your-domain.com/api-agent/v1/
 ```
-where:
+Where:
 - `your-onpremise-name` - provider name (can be any value)
 - `https://your-domain.com/` - cloud address
 - `https://your-domain.com/api-agent/v1/` - cloud agent address (always: `cloud address` + `/api-agent/v1/`)
@@ -295,13 +295,13 @@ Go to the controller’s web interface and select:
 
 `Settings` -> `System` -> `Cloud Connection (your-onpremise-name)`
 
-> If you do not see the System section in the `settings`, you do not have administrator rights.
+> If you do not see the System section in `Settings`, you do not have administrator rights.
 >
 > Go to `Settings` -> `Access Rights`, select `Administrator` -> `I accept all responsibility...` -> `Apply`.
 >
 > After this, the `System` section will appear in the menu.
 
-Follow the link, log in to the cloud, and select the organization to which you want to add the controller.
+Follow the link, log in to the cloud, and select the organization you want to add the controller to.
 
 Your controller is now successfully linked to the cloud.
 
@@ -325,7 +325,7 @@ SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 
 ```
 
-For JWT, place `private.pem` and `public.pem` in the `jwt` directory, or they’ll be generated.
+For JWT, place `private.pem` and `public.pem` in the `jwt` directory; otherwise, they will be generated automatically.
 
 ---
 
@@ -339,13 +339,13 @@ Run all commands from the repo root.
 |--------------------------|--------------------------------------------------------------|
 | `make help`              | Show all available commands                                  |
 | `make check-env`         | Check required environment variables in `.env`               |
-| `make check-certs`       | Check availability and validity of certificates              |
+| `make check-certs`       | Check certificate availability and validity                  |
 | `make generate-env`      | Generate missing tokens/secrets                              |
 | `make generate-jwt`      | Generate or update JWT keys                                  |
 | `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                          |
 | `generate-influx-token`  | Generate Influx token                                        |
 | `generate-django-secret` | Generate Django SECRET_KEY                                   |
-| `generate-email-url`     | Generate/update Email URL                                    |
+| `generate-email-url`     | Generate/update email URL                                    |
 | `make run`               | Full launch cycle (generate-env, build and start containers) |
 | `make update`            | Stop containers, update images, rebuild and restart          |
 
@@ -355,10 +355,10 @@ Run all commands from the repo root.
 # First launch (environment initialization and container startup)
 make run
 
-# Update the project to the current state
+# Update the project to the latest state
 make update
 
-# Check the correctness of environment variables
+# Validate environment variables
 make check-env
 
 # Command help
@@ -397,7 +397,7 @@ sudo certbot certonly --manual --preferred-challenges dns \
 
 Add DNS TXT records as prompted by Certbot. Use `dig` to verify.
 
-Certs saved to:
+Certificates are saved to:
 
 ```
 /etc/letsencrypt/live/your-domain.com/fullchain.pem
@@ -416,20 +416,20 @@ openssl rsa -in /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem -check -noout
 
 If port 443 is already used by another web server, configure as follows:
 
-### 1. Set this in `.env`:
+### 1. Set the following in `.env`:
 ```dotenv
 TRAEFIK_EXTERNAL_PORT=127.0.0.1:8443
 ```
 
-### 2. Proxy via External Web Server
+### 2. Proxy via an External Web Server
 
 > ⚠️ **The `agent.*` subdomain uses mutual TLS (mTLS): the controller presents a hardware client certificate that Traefik verifies.**
 > Standard L7 proxying (where Nginx terminates TLS) **does not forward the client certificate**, which breaks controller authentication.
 > Therefore, all on-premise traffic must use **L4 TCP passthrough** via the `stream` module — Nginx forwards the raw TCP connection and Traefik handles TLS termination and mTLS verification itself.
 
-#### Case A: Nginx is used only for on-premise
+#### Case A: Nginx is used only for on-premise traffic
 
-Remove the existing `server { listen 443 ssl; ... }` block for on-premise domains and add a `stream` block at the top level of your config:
+Remove the existing `server { listen 443 ssl; ... }` block for on-premise domain names and add a `stream` block at the top level of your config:
 
 ```nginx
 # /etc/nginx/nginx.conf — top-level, not inside http {}
@@ -446,14 +446,14 @@ All HTTPS requests on port 443 will be transparently forwarded to Traefik on por
 
 #### Case B: Nginx also serves other sites on port 443
 
-Use `ssl_preread` with a `map` to route by SNI: on-premise domains go to Traefik, everything else goes to a separate Nginx HTTP listener.
+Use `ssl_preread` with a `map` to route by SNI: on-premise domain names go to Traefik, and everything else goes to a separate Nginx HTTP listener.
 
 ```nginx
 # /etc/nginx/nginx.conf — top-level, not inside http {}
 stream {
     map $ssl_preread_server_name $upstream {
         ~\.your-domain\.com  127.0.0.1:8443;  # on-premise → Traefik
-        default              127.0.0.1:444;   # other sites → nginx http
+        default              127.0.0.1:444;   # other sites → Nginx HTTP
     }
 
     server {
