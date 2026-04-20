@@ -58,8 +58,10 @@
 Должны быть настроены следующие DNS-записи типа A:
 
 ```text
-@.your-domain.com
+your-domain.com
 *.your-domain.com
+*.ssh.your-domain.com
+*.http.your-domain.com
 ```
 
 Они покрывают все следующие поддомены необходимые для работы сервиса:
@@ -223,12 +225,12 @@ POSTGRES_PASSWORD=postgres_password
 #TLS_CERTS_PATH=path/to/my/certs/
 
 # Установить внешний порт для Traefik
-#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443
+#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
 
 ```
 
 > ⚠️ **Переменная `EMAIL_URL` генерируется автоматически.**
-> Она собирается из переменных `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT` и др.
+> Она собирается из переменных `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_SERVER`, `EMAIL_PORT` и др.
 > Изменили одну из этих переменных — **обязательно** выполните `make generate-email-url` или `make run` при запуске.
 > Это пересоберёт `EMAIL_URL` и применит новые настройки.
 > Запуск `docker compose up` без предварительного `make run` или `make generate-email-url` оставит старое значение.
