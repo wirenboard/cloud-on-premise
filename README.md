@@ -58,8 +58,10 @@
 Должны быть настроены следующие DNS-записи типа A:
 
 ```text
-@.your-domain.com
+your-domain.com
 *.your-domain.com
+*.ssh.your-domain.com
+*.http.your-domain.com
 ```
 
 Они покрывают все следующие поддомены необходимые для работы сервиса:

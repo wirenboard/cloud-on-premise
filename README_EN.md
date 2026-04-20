@@ -57,8 +57,10 @@ In all examples below, `your-domain.com` means the **full public hostname of you
 The following DNS A records must be configured:
 
 ```text
-@.your-domain.com
+your-domain.com
 *.your-domain.com
+*.ssh.your-domain.com
+*.http.your-domain.com
 ```
 
 These cover the required subdomains:
