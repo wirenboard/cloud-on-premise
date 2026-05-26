@@ -14,3 +14,17 @@ tls/*.pem
 branding/*.svg
 branding/*.ico
 branding/*.png
+
+# IDE
+.vscode/
+
+# Copilot customization
+.github/agents/
+.github/instructions/
+.github/prompts/
+.github/skills/
+.github/copilot-instructions.md
+
+# Claude Code
+CLAUDE.md
+.mcp.json
