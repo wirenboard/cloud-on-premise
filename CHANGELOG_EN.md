@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.1] - 2026-05-27
+
+### Added
+
+- Localized organization invitation emails: English-speaking recipients now receive the invitation email in English (selected via the `Accept-Language` header).
+
 ## [1.1.0] - 2026-04-17
 
 ### Added
