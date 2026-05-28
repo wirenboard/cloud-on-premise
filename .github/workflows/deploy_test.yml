@@ -1,0 +1,141 @@
+name: Deploy to test server
+
+# Эмулирует ручной деплой через SSH — ровно то, что делает пользователь:
+# 1) git pull в директорию проекта
+# 2) обновляет VERSION файл
+# 3) make update  (== docker compose down + pull + up -d --build)
+#
+# Запускается ВРУЧНУЮ через Actions UI — Run workflow.
+# (Автотриггер через workflow_run намеренно отключён, так как
+#  build_images_manually.yml поддерживает оба TARGET'а — release и testing —
+#  и из workflow_run нельзя надёжно узнать, какой именно был выбран.
+#  Поэтому после успешной сборки testing-образов запусти этот workflow вручную.)
+#
+# Требуемые секреты:
+#   TEST_SERVER_HOST          — IP/hostname тестового сервера
+#   TEST_SERVER_USER          — SSH-пользователь
+#   TEST_SERVER_SSH_KEY       — приватный SSH-ключ (содержимое файла, не путь)
+#   TEST_SERVER_PORT          — (опц.) SSH порт, по умолчанию 22
+#   TEST_SERVER_PROJECT_PATH  — путь к развёрнутому репо cloud-on-premise на сервере
+#   TEST_SERVER_BRANCH        — (опц.) ветка, которую pull'им, по умолчанию main
+
+on:
+  workflow_dispatch:
+    inputs:
+      VERSION:
+        description: "Image tag to deploy (e.g. 1.1.1-testing)"
+        required: true
+        type: string
+      BRANCH:
+        description: "Branch to checkout on the test server (defaults to TEST_SERVER_BRANCH or main)"
+        required: false
+        type: string
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      branch: ${{ steps.compute.outputs.branch }}
+    steps:
+      - name: Compute deploy parameters
+        id: compute
+        shell: bash
+        run: |
+          set -e
+          VERSION="${{ inputs.VERSION }}"
+          BRANCH="${{ inputs.BRANCH }}"
+
+          if [[ -z "$BRANCH" ]]; then
+            BRANCH="${{ secrets.TEST_SERVER_BRANCH }}"
+          fi
+          if [[ -z "$BRANCH" ]]; then
+            BRANCH="main"
+          fi
+
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::VERSION is empty"; exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH"   >> "$GITHUB_OUTPUT"
+          echo "Will deploy VERSION=$VERSION from branch=$BRANCH"
+
+  deploy:
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-test-server
+      cancel-in-progress: false
+    steps:
+      - name: Sanity check secrets
+        shell: bash
+        run: |
+          missing=0
+          for v in TEST_SERVER_HOST TEST_SERVER_USER TEST_SERVER_SSH_KEY TEST_SERVER_PROJECT_PATH; do
+            if [[ -z "${!v}" ]]; then
+              echo "::error::Missing secret: $v"
+              missing=1
+            fi
+          done
+          [[ $missing -eq 0 ]] || exit 1
+        env:
+          TEST_SERVER_HOST: ${{ secrets.TEST_SERVER_HOST }}
+          TEST_SERVER_USER: ${{ secrets.TEST_SERVER_USER }}
+          TEST_SERVER_SSH_KEY: ${{ secrets.TEST_SERVER_SSH_KEY }}
+          TEST_SERVER_PROJECT_PATH: ${{ secrets.TEST_SERVER_PROJECT_PATH }}
+
+      - name: Deploy via SSH (mimics manual run on the server)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.TEST_SERVER_HOST }}
+          username: ${{ secrets.TEST_SERVER_USER }}
+          key: ${{ secrets.TEST_SERVER_SSH_KEY }}
+          port: ${{ secrets.TEST_SERVER_PORT || 22 }}
+          # Передаём вычисленные параметры в shell-сессию
+          envs: DEPLOY_VERSION,DEPLOY_BRANCH,PROJECT_PATH
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            echo "==> Triggered by: ${GITHUB_ACTOR:-unknown}"
+            echo "==> Target VERSION: ${DEPLOY_VERSION}"
+            echo "==> Target branch:  ${DEPLOY_BRANCH}"
+            echo "==> Project path:   ${PROJECT_PATH}"
+
+            cd "${PROJECT_PATH}"
+
+            echo "==> [1/4] Fetching latest code"
+            git fetch --all --prune
+            git checkout "${DEPLOY_BRANCH}"
+            git reset --hard "origin/${DEPLOY_BRANCH}"
+
+            echo "==> [2/4] Writing VERSION file"
+            echo "${DEPLOY_VERSION}" > VERSION
+            cat VERSION
+
+            echo "==> [3/4] Running 'make update' (this is what a user runs manually)"
+            make update
+
+            echo "==> [4/4] Showing container status"
+            docker compose ps
+        env:
+          DEPLOY_VERSION: ${{ needs.resolve-version.outputs.version }}
+          DEPLOY_BRANCH:  ${{ needs.resolve-version.outputs.branch }}
+          PROJECT_PATH:   ${{ secrets.TEST_SERVER_PROJECT_PATH }}
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Deploy to test server"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| status | ${{ job.status }} |"
+            echo "| version | \`${{ needs.resolve-version.outputs.version }}\` |"
+            echo "| branch | \`${{ needs.resolve-version.outputs.branch }}\` |"
+            echo "| host | \`${{ secrets.TEST_SERVER_HOST }}\` |"
+            echo "| triggered by | ${{ github.event_name }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
