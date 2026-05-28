@@ -23,11 +23,24 @@ jobs:
 
       - name: Read version from VERSION file
         id: read_version
-        run: echo "VERSION=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          set -e
+          VERSION=$(cat VERSION | tr -d '\r' | xargs)
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::VERSION file is empty"; exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid VERSION format: '$VERSION' (expected X.Y.Z)"; exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
   retag-and-push:
     needs: read-version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         image: [
@@ -46,7 +59,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Retag and push image ${{ matrix.image }}
         run: |
@@ -87,8 +100,7 @@ jobs:
             .env.example
             docker-compose.yml
             traefik/**
-            tls/**
-            jwt/**
+            jwt/update_keys.sh
 
       - name: Done
         run: echo "✅ Release completed for version ${{ needs.read-version.outputs.version }}"
