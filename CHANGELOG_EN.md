@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0] - 2026-05-28
+
+### Changed
+
+- Automated the release pipeline: a new “Start Release” workflow creates `onprem-release/X.Y.Z` branches across all five stack repositories in one click, bumps `VERSION`, and appends a `CHANGELOG` entry.
+- Added a “Deploy to test server” workflow that rolls out testing images to the dev server over SSH from GitHub Actions with a single click.
+- Switched the `make_release.yml` release workflow from a manually-issued PAT to the built-in `GITHUB_TOKEN` with explicit `packages: write` permissions, fixing GHCR authorization failures. Removed the empty `tls/.gitkeep` and the `jwt/` directory from the GitHub Release asset set — they were breaking publication.
+
 ## [1.1.1] - 2026-05-27
 
 ### Added
