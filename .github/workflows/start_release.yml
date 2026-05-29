@@ -1,0 +1,305 @@
+name: Start Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type (used if 'version' is empty)"
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+      version:
+        description: "Explicit X.Y.Z (overrides 'bump' if non-empty)"
+        type: string
+        required: false
+      cloud_backend_sha:
+        description: "cloud-backend SHA (empty = tip of onprem-release/<prev>)"
+        type: string
+        required: false
+      cloud_frontend_sha:
+        description: "cloud-frontend SHA (empty = tip of onprem-release/<prev>)"
+        type: string
+        required: false
+      cloud_tunnel_sha:
+        description: "cloud-tunnel SHA (empty = tip of onprem-release/<prev>)"
+        type: string
+        required: false
+      cloud_webssh_sha:
+        description: "cloud-webssh SHA (empty = tip of onprem-release/<prev>)"
+        type: string
+        required: false
+      changelog_section:
+        description: "CHANGELOG section heading"
+        type: choice
+        required: true
+        default: Изменено
+        options:
+          - Добавлено
+          - Изменено
+          - Исправлено
+      changelog_entry:
+        description: "Single-line CHANGELOG entry in Russian (optional; TODO if empty)"
+        type: string
+        required: false
+      changelog_entry_en:
+        description: "Single-line CHANGELOG entry in English (optional; TODO if empty)"
+        type: string
+        required: false
+
+concurrency:
+  group: start-release
+  cancel-in-progress: false
+
+env:
+  PRODUCT_REPOS: "cloud-backend cloud-frontend cloud-tunnel cloud-webssh"
+
+jobs:
+  compute:
+    name: Compute versions
+    runs-on: ubuntu-latest
+    outputs:
+      prev_version: ${{ steps.compute.outputs.prev_version }}
+      new_version: ${{ steps.compute.outputs.new_version }}
+      release_branch: ${{ steps.compute.outputs.release_branch }}
+      prev_branch: ${{ steps.compute.outputs.prev_branch }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Compute prev/new version
+        id: compute
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREV=$(cat VERSION | tr -d '\r' | xargs)
+          if [[ ! "$PREV" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid current VERSION on main: '$PREV'"; exit 1
+          fi
+
+          NEW="${VERSION_INPUT}"
+          if [[ -z "$NEW" ]]; then
+            IFS='.' read -r MAJ MIN PATCH <<<"$PREV"
+            case "${BUMP_INPUT}" in
+              patch) NEW="${MAJ}.${MIN}.$((PATCH+1))" ;;
+              minor) NEW="${MAJ}.$((MIN+1)).0" ;;
+              *) echo "::error::Unknown bump: ${BUMP_INPUT}"; exit 1 ;;
+            esac
+          fi
+          if [[ ! "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid new version: '$NEW'"; exit 1
+          fi
+          if [[ "$NEW" == "$PREV" ]]; then
+            echo "::error::New version equals current version ($PREV)"; exit 1
+          fi
+
+          {
+            echo "prev_version=$PREV"
+            echo "new_version=$NEW"
+            echo "release_branch=onprem-release/$NEW"
+            echo "prev_branch=onprem-release/$PREV"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "::notice::prev=$PREV, new=$NEW"
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+          BUMP_INPUT: ${{ inputs.bump }}
+
+  create-product-branches:
+    name: Create branch in ${{ matrix.repo }}
+    needs: compute
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repo: cloud-backend
+            sha_input_var: CLOUD_BACKEND_SHA
+          - repo: cloud-frontend
+            sha_input_var: CLOUD_FRONTEND_SHA
+          - repo: cloud-tunnel
+            sha_input_var: CLOUD_TUNNEL_SHA
+          - repo: cloud-webssh
+            sha_input_var: CLOUD_WEBSSH_SHA
+    steps:
+      - name: Resolve SHA and create onprem-release/${{ needs.compute.outputs.new_version }}
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          REPO: wirenboard/${{ matrix.repo }}
+          NEW_BRANCH: ${{ needs.compute.outputs.release_branch }}
+          PREV_BRANCH: ${{ needs.compute.outputs.prev_branch }}
+          CLOUD_BACKEND_SHA: ${{ inputs.cloud_backend_sha }}
+          CLOUD_FRONTEND_SHA: ${{ inputs.cloud_frontend_sha }}
+          CLOUD_TUNNEL_SHA: ${{ inputs.cloud_tunnel_sha }}
+          CLOUD_WEBSSH_SHA: ${{ inputs.cloud_webssh_sha }}
+          SHA_INPUT_VAR: ${{ matrix.sha_input_var }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SHA="${!SHA_INPUT_VAR:-}"
+
+          echo "==> Repo: $REPO"
+          echo "==> Target branch: $NEW_BRANCH"
+
+          # 1. Target branch must not exist yet.
+          if gh api "repos/$REPO/git/ref/heads/$NEW_BRANCH" >/dev/null 2>&1; then
+            echo "::error::Branch $NEW_BRANCH already exists in $REPO"; exit 1
+          fi
+
+          # 2. Resolve SHA if not provided.
+          if [[ -z "$SHA" ]]; then
+            echo "==> No explicit SHA — resolving tip of $PREV_BRANCH"
+            if ! SHA=$(gh api "repos/$REPO/git/ref/heads/$PREV_BRANCH" --jq '.object.sha' 2>/dev/null); then
+              echo "::error::Cannot resolve $PREV_BRANCH in $REPO. Either create it first or pass an explicit SHA via the workflow input."
+              exit 1
+            fi
+            echo "==> Using tip of $PREV_BRANCH: $SHA"
+          else
+            echo "==> Using explicit SHA: $SHA"
+          fi
+
+          # 3. SHA must point to an existing commit.
+          if ! gh api "repos/$REPO/git/commits/$SHA" >/dev/null 2>&1; then
+            echo "::error::Commit $SHA not found in $REPO"; exit 1
+          fi
+
+          # 4. Create the branch.
+          gh api -X POST "repos/$REPO/git/refs" \
+            -f "ref=refs/heads/$NEW_BRANCH" \
+            -f "sha=$SHA" >/dev/null
+
+          echo "::notice::Created $NEW_BRANCH @ $SHA in $REPO"
+
+  create-release-branch:
+    name: Create release branch in cloud-on-premise
+    needs: [compute, create-product-branches]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Branch must not already exist on origin
+        env:
+          RELEASE_BRANCH: ${{ needs.compute.outputs.release_branch }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" >/dev/null 2>&1; then
+            echo "::error::Branch $RELEASE_BRANCH already exists on origin (cloud-on-premise)"; exit 1
+          fi
+
+      - name: Create branch, bump VERSION, update CHANGELOGs
+        env:
+          NEW_VERSION: ${{ needs.compute.outputs.new_version }}
+          RELEASE_BRANCH: ${{ needs.compute.outputs.release_branch }}
+          CHANGELOG_SECTION: ${{ inputs.changelog_section }}
+          CHANGELOG_ENTRY: ${{ inputs.changelog_entry }}
+          CHANGELOG_ENTRY_EN: ${{ inputs.changelog_entry_en }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git checkout -b "$RELEASE_BRANCH"
+
+          # 1. Bump VERSION (no trailing newline — matches existing file).
+          printf '%s' "$NEW_VERSION" > VERSION
+
+          # 2. Update both CHANGELOGs. Heading map RU -> EN.
+          python3 <<'PY'
+          import os, pathlib, datetime, re
+
+          version  = os.environ["NEW_VERSION"]
+          ru_head  = os.environ["CHANGELOG_SECTION"]
+          ru_entry = os.environ.get("CHANGELOG_ENTRY", "").strip()
+          en_entry = os.environ.get("CHANGELOG_ENTRY_EN", "").strip()
+          today    = datetime.date.today().isoformat()
+
+          en_heading_map = {
+              "Добавлено":  "Added",
+              "Изменено":   "Changed",
+              "Исправлено": "Fixed",
+          }
+          en_head = en_heading_map[ru_head]
+
+          targets = [
+              ("CHANGELOG.md",    ru_head, ru_entry or "TODO"),
+              ("CHANGELOG_EN.md", en_head, en_entry or "TODO"),
+          ]
+
+          for path_str, heading, entry in targets:
+              p = pathlib.Path(path_str)
+              if not p.exists():
+                  print(f"WARN: {path_str} does not exist — skipping")
+                  continue
+              text = p.read_text(encoding="utf-8")
+
+              section = (
+                  f"## [{version}] - {today}\n\n"
+                  f"### {heading}\n\n"
+                  f"- {entry}\n\n"
+              )
+
+              m = re.search(r"^## \[", text, re.M)
+              if m:
+                  new_text = text[:m.start()] + section + text[m.start():]
+              else:
+                  sep = "" if text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+                  new_text = text + sep + section
+
+              p.write_text(new_text, encoding="utf-8")
+              print(f"==> Updated {path_str}")
+          PY
+
+          # 3. Commit and push.
+          git add VERSION CHANGELOG.md CHANGELOG_EN.md
+          git commit -m "Bump version to $NEW_VERSION"
+          git push -u origin "$RELEASE_BRANCH"
+
+  summary:
+    name: Summary
+    needs: [compute, create-product-branches, create-release-branch]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write step summary
+        shell: bash
+        env:
+          NEW_VERSION:    ${{ needs.compute.outputs.new_version }}
+          PREV_VERSION:   ${{ needs.compute.outputs.prev_version }}
+          RELEASE_BRANCH: ${{ needs.compute.outputs.release_branch }}
+          PRODUCT_STATUS: ${{ needs.create-product-branches.result }}
+          RELEASE_STATUS: ${{ needs.create-release-branch.result }}
+        run: |
+          {
+            echo "## Start Release ${NEW_VERSION}"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| previous version | \`${PREV_VERSION}\` |"
+            echo "| new version | \`${NEW_VERSION}\` |"
+            echo "| release branch | \`${RELEASE_BRANCH}\` |"
+            echo "| product repos branches | ${PRODUCT_STATUS} |"
+            echo "| cloud-on-premise branch | ${RELEASE_STATUS} |"
+            echo ""
+            echo "### Next steps"
+            echo ""
+            echo "1. (optional) Push extra commits to \`${RELEASE_BRANCH}\` in any of the 5 repos."
+            echo "2. Run **Build all on-premise images** with \`TARGET=testing\`, \`REF=${RELEASE_BRANCH}\`."
+            echo "3. Run **Deploy to test server** with \`VERSION=${NEW_VERSION}-testing\`, \`BRANCH=${RELEASE_BRANCH}\`."
+            echo "4. Manually verify on the dev server."
+            echo "5. Open PR \`${RELEASE_BRANCH}\` → \`main\` in cloud-on-premise and merge — \`make_release.yml\` will retag images and publish the GitHub Release."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,134 @@
+name: Deploy to test server
+
+on:
+  workflow_dispatch:
+    inputs:
+      VERSION:
+        description: "Version X.Y.Z (e.g. 1.2.0)"
+        required: true
+        type: string
+      TARGET:
+        description: "Image tag suffix"
+        required: true
+        type: choice
+        default: testing
+        options:
+          - testing
+          - release
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.compute.outputs.image_tag }}
+      branch:    ${{ steps.compute.outputs.branch }}
+    steps:
+      - name: Compute deploy parameters
+        id: compute
+        shell: bash
+        env:
+          VERSION_INPUT: ${{ inputs.VERSION }}
+          TARGET_INPUT:  ${{ inputs.TARGET }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${VERSION_INPUT}"
+          # Tolerate accidental "v" prefix.
+          VERSION="${VERSION#v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid VERSION '$VERSION' (expected X.Y.Z)"; exit 1
+          fi
+
+          case "${TARGET_INPUT}" in
+            testing) IMAGE_TAG="${VERSION}-testing" ;;
+            release) IMAGE_TAG="${VERSION}" ;;
+            *) echo "::error::Unknown TARGET '${TARGET_INPUT}'"; exit 1 ;;
+          esac
+
+          BRANCH="onprem-release/${VERSION}"
+
+          {
+            echo "image_tag=${IMAGE_TAG}"
+            echo "branch=${BRANCH}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "::notice::Will deploy ${IMAGE_TAG} from ${BRANCH}"
+
+  deploy:
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-test-server
+      cancel-in-progress: false
+    steps:
+      - name: Sanity check secrets
+        shell: bash
+        run: |
+          missing=0
+          for v in TEST_SERVER_HOST TEST_SERVER_USER TEST_SERVER_SSH_KEY TEST_SERVER_PROJECT_PATH; do
+            if [[ -z "${!v}" ]]; then
+              echo "::error::Missing secret: $v"
+              missing=1
+            fi
+          done
+          [[ $missing -eq 0 ]] || exit 1
+        env:
+          TEST_SERVER_HOST:         ${{ secrets.TEST_SERVER_HOST }}
+          TEST_SERVER_USER:         ${{ secrets.TEST_SERVER_USER }}
+          TEST_SERVER_SSH_KEY:      ${{ secrets.TEST_SERVER_SSH_KEY }}
+          TEST_SERVER_PROJECT_PATH: ${{ secrets.TEST_SERVER_PROJECT_PATH }}
+
+      - name: Deploy via SSH (mimics manual run on the server)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.TEST_SERVER_HOST }}
+          username: ${{ secrets.TEST_SERVER_USER }}
+          key: ${{ secrets.TEST_SERVER_SSH_KEY }}
+          port: ${{ secrets.TEST_SERVER_PORT || 22 }}
+          envs: DEPLOY_IMAGE_TAG,DEPLOY_BRANCH,PROJECT_PATH
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            echo "==> Triggered by: ${GITHUB_ACTOR:-unknown}"
+            echo "==> Target image tag: ${DEPLOY_IMAGE_TAG}"
+            echo "==> Target branch:    ${DEPLOY_BRANCH}"
+            echo "==> Project path:     ${PROJECT_PATH}"
+
+            cd "${PROJECT_PATH}"
+
+            echo "==> [1/4] Fetching latest code"
+            git fetch --all --prune
+            git checkout "${DEPLOY_BRANCH}"
+            git reset --hard "origin/${DEPLOY_BRANCH}"
+
+            echo "==> [2/4] Writing VERSION file"
+            echo "${DEPLOY_IMAGE_TAG}" > VERSION
+            cat VERSION
+
+            echo "==> [3/4] Running 'make update' (this is what a user runs manually)"
+            make update
+
+            echo "==> [4/4] Showing container status"
+            docker compose ps
+        env:
+          DEPLOY_IMAGE_TAG: ${{ needs.resolve-version.outputs.image_tag }}
+          DEPLOY_BRANCH:    ${{ needs.resolve-version.outputs.branch }}
+          PROJECT_PATH:     ${{ secrets.TEST_SERVER_PROJECT_PATH }}
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Deploy to test server"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| status | ${{ job.status }} |"
+            echo "| image tag | \`${{ needs.resolve-version.outputs.image_tag }}\` |"
+            echo "| branch | \`${{ needs.resolve-version.outputs.branch }}\` |"
+            echo "| host | \`${{ secrets.TEST_SERVER_HOST }}\` |"
+            echo "| triggered by | ${{ github.event_name }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

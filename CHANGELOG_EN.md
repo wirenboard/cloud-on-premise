@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0] - 2026-05-29
+
+### Added
+
+- Customizable organization invitation email via environment variables.
+
+### Fixed
+
+- Incorrect browser language detection.
+
 ## [1.1.1] - 2026-05-27
 
 ### Added
