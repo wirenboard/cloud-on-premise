@@ -1,24 +1,5 @@
 name: Start Release
 
-# Запускает релизный цикл on-premise одним нажатием:
-#   1. Читает текущий VERSION из main, вычисляет новую X.Y.Z (по bump или явному значению).
-#   2. В 4 продуктовых репо (cloud-backend, cloud-frontend, cloud-tunnel, cloud-webssh)
-#      создаёт ветку onprem-release/X.Y.Z через GitHub API:
-#        - если для репо передан SHA — ветка делается от него;
-#        - если SHA пустой — берётся tip предыдущей onprem-release/<prev>.
-#   3. В текущем репо ответвляется от main, бампает VERSION, добавляет запись
-#      в CHANGELOG.md и CHANGELOG_EN.md, коммитит и пушит onprem-release/X.Y.Z.
-#
-# После успешного запуска пользователь:
-#   - вносит при необходимости доп. правки в onprem-release/X.Y.Z;
-#   - запускает workflow "Build all on-premise images" с TARGET=testing, REF=onprem-release/X.Y.Z;
-#   - запускает workflow "Deploy to test server" с VERSION=X.Y.Z-testing, BRANCH=onprem-release/X.Y.Z;
-#   - после ручного теста на dev открывает PR в main и мержит — make_release.yml доделает релиз.
-#
-# Требуемые секреты:
-#   GHCR_TOKEN — classic PAT с scope `repo` для cross-repo операций
-#                (создание refs в 4 продуктовых репо через API).
-
 on:
   workflow_dispatch:
     inputs:
