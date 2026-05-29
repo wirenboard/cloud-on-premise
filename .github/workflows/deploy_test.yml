@@ -1,46 +1,83 @@
 name: Deploy to test server
 
+# Эмулирует ручной деплой через SSH — ровно то, что делает пользователь:
+# 1) git fetch + checkout релизной ветки в директории проекта
+# 2) обновляет VERSION файл
+# 3) make update  (== docker compose down + pull + up -d --build)
+#
+# Запускается ВРУЧНУЮ через Actions UI — Run workflow.
+# (Автотриггер через workflow_run намеренно отключён, так как
+#  build_images_manually.yml поддерживает оба TARGET'а — release и testing —
+#  и из workflow_run нельзя надёжно узнать, какой именно был выбран.
+#  Поэтому после успешной сборки testing-образов запусти этот workflow вручную.)
+#
+# Входы: достаточно ввести только версию X.Y.Z.
+#   VERSION  = 1.2.0                     (то, что вводит пользователь)
+#   TARGET   = testing | release         (суффикс тега, дефолт testing)
+#   →  IMAGE_TAG = 1.2.0-testing   или   1.2.0
+#   →  BRANCH    = onprem-release/1.2.0
+#
+# Требуемые секреты:
+#   TEST_SERVER_HOST          — IP/hostname тестового сервера
+#   TEST_SERVER_USER          — SSH-пользователь
+#   TEST_SERVER_SSH_KEY       — приватный SSH-ключ (содержимое файла, не путь)
+#   TEST_SERVER_PORT          — (опц.) SSH порт, по умолчанию 22
+#   TEST_SERVER_PROJECT_PATH  — путь к развёрнутому репо cloud-on-premise на сервере
+
 on:
   workflow_dispatch:
     inputs:
       VERSION:
-        description: "Image tag to deploy (e.g. 1.1.1-testing)"
+        description: "Version X.Y.Z (e.g. 1.2.0)"
         required: true
         type: string
-      BRANCH:
-        description: "Branch to checkout on the test server (defaults to TEST_SERVER_BRANCH or main)"
-        required: false
-        type: string
+      TARGET:
+        description: "Image tag suffix"
+        required: true
+        type: choice
+        default: testing
+        options:
+          - testing
+          - release
 
 jobs:
   resolve-version:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.compute.outputs.version }}
-      branch: ${{ steps.compute.outputs.branch }}
+      image_tag: ${{ steps.compute.outputs.image_tag }}
+      branch:    ${{ steps.compute.outputs.branch }}
     steps:
       - name: Compute deploy parameters
         id: compute
         shell: bash
+        env:
+          VERSION_INPUT: ${{ inputs.VERSION }}
+          TARGET_INPUT:  ${{ inputs.TARGET }}
         run: |
-          set -e
-          VERSION="${{ inputs.VERSION }}"
-          BRANCH="${{ inputs.BRANCH }}"
+          set -euo pipefail
 
-          if [[ -z "$BRANCH" ]]; then
-            BRANCH="${{ secrets.TEST_SERVER_BRANCH }}"
-          fi
-          if [[ -z "$BRANCH" ]]; then
-            BRANCH="main"
-          fi
+          VERSION="${VERSION_INPUT}"
+          # Tolerate accidental "v" prefix.
+          VERSION="${VERSION#v}"
 
-          if [[ -z "$VERSION" ]]; then
-            echo "::error::VERSION is empty"; exit 1
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid VERSION '$VERSION' (expected X.Y.Z)"; exit 1
           fi
 
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "branch=$BRANCH"   >> "$GITHUB_OUTPUT"
-          echo "Will deploy VERSION=$VERSION from branch=$BRANCH"
+          case "${TARGET_INPUT}" in
+            testing) IMAGE_TAG="${VERSION}-testing" ;;
+            release) IMAGE_TAG="${VERSION}" ;;
+            *) echo "::error::Unknown TARGET '${TARGET_INPUT}'"; exit 1 ;;
+          esac
+
+          BRANCH="onprem-release/${VERSION}"
+
+          {
+            echo "image_tag=${IMAGE_TAG}"
+            echo "branch=${BRANCH}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "::notice::Will deploy ${IMAGE_TAG} from ${BRANCH}"
 
   deploy:
     needs: resolve-version
@@ -61,9 +98,9 @@ jobs:
           done
           [[ $missing -eq 0 ]] || exit 1
         env:
-          TEST_SERVER_HOST: ${{ secrets.TEST_SERVER_HOST }}
-          TEST_SERVER_USER: ${{ secrets.TEST_SERVER_USER }}
-          TEST_SERVER_SSH_KEY: ${{ secrets.TEST_SERVER_SSH_KEY }}
+          TEST_SERVER_HOST:         ${{ secrets.TEST_SERVER_HOST }}
+          TEST_SERVER_USER:         ${{ secrets.TEST_SERVER_USER }}
+          TEST_SERVER_SSH_KEY:      ${{ secrets.TEST_SERVER_SSH_KEY }}
           TEST_SERVER_PROJECT_PATH: ${{ secrets.TEST_SERVER_PROJECT_PATH }}
 
       - name: Deploy via SSH (mimics manual run on the server)
@@ -73,16 +110,15 @@ jobs:
           username: ${{ secrets.TEST_SERVER_USER }}
           key: ${{ secrets.TEST_SERVER_SSH_KEY }}
           port: ${{ secrets.TEST_SERVER_PORT || 22 }}
-          # Передаём вычисленные параметры в shell-сессию
-          envs: DEPLOY_VERSION,DEPLOY_BRANCH,PROJECT_PATH
+          envs: DEPLOY_IMAGE_TAG,DEPLOY_BRANCH,PROJECT_PATH
           script_stop: true
           script: |
             set -euo pipefail
 
             echo "==> Triggered by: ${GITHUB_ACTOR:-unknown}"
-            echo "==> Target VERSION: ${DEPLOY_VERSION}"
-            echo "==> Target branch:  ${DEPLOY_BRANCH}"
-            echo "==> Project path:   ${PROJECT_PATH}"
+            echo "==> Target image tag: ${DEPLOY_IMAGE_TAG}"
+            echo "==> Target branch:    ${DEPLOY_BRANCH}"
+            echo "==> Project path:     ${PROJECT_PATH}"
 
             cd "${PROJECT_PATH}"
 
@@ -92,7 +128,7 @@ jobs:
             git reset --hard "origin/${DEPLOY_BRANCH}"
 
             echo "==> [2/4] Writing VERSION file"
-            echo "${DEPLOY_VERSION}" > VERSION
+            echo "${DEPLOY_IMAGE_TAG}" > VERSION
             cat VERSION
 
             echo "==> [3/4] Running 'make update' (this is what a user runs manually)"
@@ -101,9 +137,9 @@ jobs:
             echo "==> [4/4] Showing container status"
             docker compose ps
         env:
-          DEPLOY_VERSION: ${{ needs.resolve-version.outputs.version }}
-          DEPLOY_BRANCH:  ${{ needs.resolve-version.outputs.branch }}
-          PROJECT_PATH:   ${{ secrets.TEST_SERVER_PROJECT_PATH }}
+          DEPLOY_IMAGE_TAG: ${{ needs.resolve-version.outputs.image_tag }}
+          DEPLOY_BRANCH:    ${{ needs.resolve-version.outputs.branch }}
+          PROJECT_PATH:     ${{ secrets.TEST_SERVER_PROJECT_PATH }}
 
       - name: Summary
         if: always()
@@ -115,7 +151,7 @@ jobs:
             echo "| field | value |"
             echo "|---|---|"
             echo "| status | ${{ job.status }} |"
-            echo "| version | \`${{ needs.resolve-version.outputs.version }}\` |"
+            echo "| image tag | \`${{ needs.resolve-version.outputs.image_tag }}\` |"
             echo "| branch | \`${{ needs.resolve-version.outputs.branch }}\` |"
             echo "| host | \`${{ secrets.TEST_SERVER_HOST }}\` |"
             echo "| triggered by | ${{ github.event_name }} |"
