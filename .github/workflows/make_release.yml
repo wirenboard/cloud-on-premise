@@ -59,7 +59,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Retag and push image ${{ matrix.image }}
         run: |
@@ -100,7 +100,8 @@ jobs:
             .env.example
             docker-compose.yml
             traefik/**
-            jwt/update_keys.sh
+            tls/**
+            jwt/**
 
       - name: Done
         run: echo "✅ Release completed for version ${{ needs.read-version.outputs.version }}"
