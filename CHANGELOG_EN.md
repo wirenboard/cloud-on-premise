@@ -6,17 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- The organization invitation email subject and body can now be overridden via the `INVITE_EMAIL_SUBJECT` and `INVITE_EMAIL_BODY` environment variables. When unset (or empty) the built-in RU/EN translation is used, selected by the inviter's language. The body supports `\n` line breaks; the invitation link is always appended at the end.
-
-### Changed
-
-- Automated the release pipeline: a new “Start Release” workflow creates `onprem-release/X.Y.Z` branches across all five stack repositories in one click, bumps `VERSION`, and appends a `CHANGELOG` entry.
-- Added a “Deploy to test server” workflow that rolls out testing images to the dev server over SSH from GitHub Actions with a single click.
-- Switched the `make_release.yml` release workflow from a manually-issued PAT to the built-in `GITHUB_TOKEN` with explicit `packages: write` permissions, fixing GHCR authorization failures. Removed the empty `tls/.gitkeep` and the `jwt/` directory from the GitHub Release asset set — they were breaking publication.
+- Customizable organization invitation email via the `INVITE_EMAIL_SUBJECT` and `INVITE_EMAIL_BODY` environment variables (empty values fall back to the built-in localization).
 
 ### Fixed
 
-- Frontend: correct browser-locale detection (non-standard values now fall back to the nearest supported one) and reliable propagation of the `Accept-Language` header on backend requests — fixes cases where invitation emails arrived in an unexpected language.
+- Browser locale detection and `Accept-Language` header propagation — invitation emails no longer arrive in an unexpected language.
 
 ## [1.1.1] - 2026-05-27
 
