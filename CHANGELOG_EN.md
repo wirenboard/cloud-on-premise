@@ -6,11 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Customizable organization invitation email via the `INVITE_EMAIL_SUBJECT` and `INVITE_EMAIL_BODY` environment variables (empty values fall back to the built-in localization).
+- Customizable organization invitation email via environment variables.
 
 ### Fixed
 
-- Browser locale detection and `Accept-Language` header propagation — invitation emails no longer arrive in an unexpected language.
+- Incorrect browser language detection.
 
 ## [1.1.1] - 2026-05-27
 
