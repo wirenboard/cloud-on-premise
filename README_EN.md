@@ -225,6 +225,14 @@ POSTGRES_PASSWORD=postgres_password
 # Set the external port for Traefik
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
 
+# Override the organization invitation email subject and body.
+# Leave commented to keep the built-in RU/EN translation (selected by the
+# inviter's language).
+# Use \n in INVITE_EMAIL_BODY for line breaks; the invitation link is always
+# appended at the end of the body.
+#INVITE_EMAIL_SUBJECT="You have been invited to a Wiren Board Cloud organization"
+#INVITE_EMAIL_BODY="Hello!\nYou have been invited to our organization.\nClick the link to register:"
+
 ```
 
 > ⚠️ **The `EMAIL_URL` variable is generated automatically.**
