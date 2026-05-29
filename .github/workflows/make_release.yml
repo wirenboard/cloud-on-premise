@@ -100,7 +100,8 @@ jobs:
             .env.example
             docker-compose.yml
             traefik/**
-            jwt/update_keys.sh
+            tls/**
+            jwt/**
 
       - name: Done
         run: echo "✅ Release completed for version ${{ needs.read-version.outputs.version }}"
