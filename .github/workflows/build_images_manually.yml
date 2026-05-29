@@ -28,7 +28,7 @@ jobs:
   read_version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - id: read_version
         shell: bash
         run: |

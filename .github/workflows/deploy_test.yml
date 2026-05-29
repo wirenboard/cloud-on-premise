@@ -1,29 +1,5 @@
 name: Deploy to test server
 
-# Эмулирует ручной деплой через SSH — ровно то, что делает пользователь:
-# 1) git fetch + checkout релизной ветки в директории проекта
-# 2) обновляет VERSION файл
-# 3) make update  (== docker compose down + pull + up -d --build)
-#
-# Запускается ВРУЧНУЮ через Actions UI — Run workflow.
-# (Автотриггер через workflow_run намеренно отключён, так как
-#  build_images_manually.yml поддерживает оба TARGET'а — release и testing —
-#  и из workflow_run нельзя надёжно узнать, какой именно был выбран.
-#  Поэтому после успешной сборки testing-образов запусти этот workflow вручную.)
-#
-# Входы: достаточно ввести только версию X.Y.Z.
-#   VERSION  = 1.2.0                     (то, что вводит пользователь)
-#   TARGET   = testing | release         (суффикс тега, дефолт testing)
-#   →  IMAGE_TAG = 1.2.0-testing   или   1.2.0
-#   →  BRANCH    = onprem-release/1.2.0
-#
-# Требуемые секреты:
-#   TEST_SERVER_HOST          — IP/hostname тестового сервера
-#   TEST_SERVER_USER          — SSH-пользователь
-#   TEST_SERVER_SSH_KEY       — приватный SSH-ключ (содержимое файла, не путь)
-#   TEST_SERVER_PORT          — (опц.) SSH порт, по умолчанию 22
-#   TEST_SERVER_PROJECT_PATH  — путь к развёрнутому репо cloud-on-premise на сервере
-
 on:
   workflow_dispatch:
     inputs:
