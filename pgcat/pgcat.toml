@@ -1,0 +1,66 @@
+# pgcat connection pooler — single-node on-premise variant.
+# Placeholders (__FOO__) are substituted from .env values at container start
+# (see the pgcat service entrypoint in docker-compose.yml).
+#
+# Upstream runs two pools (app + grafana) in front of an external PostgreSQL;
+# on-premise both pools point at the bundled "postgres" service.
+
+[general]
+host = "0.0.0.0"
+port = 6432
+
+connect_timeout = 5000
+healthcheck_timeout = 1000
+healthcheck_delay = 30000
+shutdown_timeout = 60000
+ban_time = 60
+
+log_client_connections = false
+log_client_disconnections = false
+
+# No TLS to the bundled in-network PostgreSQL.
+server_tls = false
+
+# Virtual admin DB credentials (SHOW POOLS etc.).
+admin_username = "__POSTGRES_USER__"
+admin_password = "__POSTGRES_PASSWORD__"
+
+# Application pool. Clients connect to database "postgres" (the pool name).
+[pools.postgres]
+pool_mode = "transaction"
+default_role = "primary"
+query_parser_enabled = false
+query_parser_read_write_splitting = false
+primary_reads_enabled = true
+sharding_function = "pg_bigint_hash"
+
+[pools.postgres.users.0]
+username = "__POSTGRES_USER__"
+password = "__POSTGRES_PASSWORD__"
+pool_size = 200
+statement_timeout = 0
+
+[pools.postgres.shards.0]
+servers = [
+    [ "postgres", 5432, "primary" ]
+]
+database = "__POSTGRES_DB__"
+
+# Grafana pool (clients-grafana state DB).
+[pools.grafana]
+pool_mode = "session"
+default_role = "primary"
+query_parser_enabled = false
+primary_reads_enabled = true
+
+[pools.grafana.users.0]
+username = "__GRAFANA_DB_USER__"
+password = "__GRAFANA_DB_PASSWORD__"
+pool_size = 150
+statement_timeout = 300000
+
+[pools.grafana.shards.0]
+servers = [
+    [ "postgres", 5432, "primary" ]
+]
+database = "__GRAFANA_DB_NAME__"

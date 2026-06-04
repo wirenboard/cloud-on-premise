@@ -2,6 +2,38 @@
 
 Все значимые изменения в проекте фиксируются в этом файле.
 
+## [1.3.0] - 2026-06-04
+
+### Изменено
+
+- Хранилище метрик переведено с InfluxDB на TimescaleDB. Приём метрик от
+  контроллеров теперь выполняет сервис Telegraf (HTTPS + mTLS, ограничение
+  частоты запросов через Traefik), запись идёт в TimescaleDB. HA-обвязка
+  upstream (Patroni, etcd, HAProxy, pgBackRest) для одноузловой поставки не
+  используется — запускается один инстанс TimescaleDB.
+- Подключения бэкенда к основной базе PostgreSQL проходят через пул соединений
+  pgcat.
+- Воркеры Celery разделены по очередям: `worker` (default), `worker-metrics`,
+  `worker-grafana`, `worker-email`.
+- Обновлены версии образов: Redis `6-alpine` → `7.4.8-alpine`.
+
+### Добавлено
+
+- Сервис `clients-grafana` (Grafana 12.2.2) — пользовательские дашборды по
+  организациям; хранит состояние в отдельной базе на bundled PostgreSQL.
+- Сервис `tunnel-webhooks-backend` — отдельный инстанс бэкенда для обработки
+  вебхуков FRP-туннелей.
+- Сервис `postgres-backup` — ежедневный бэкап PostgreSQL в bundled MinIO (S3).
+- Новые переменные окружения: `TIMESCALE_*`, `TELEGRAF_TIMESCALE_*`,
+  `GRAFANA_DB_*`, `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`,
+  `INTERNAL_LICENSE_SERVICE_TOKEN`, очереди `CELERY_*_QUEUE`, параметры бэкапа
+  `POSTGRES_BACKUP_*` и опциональная интеграция с внешним Prometheus (`PROM_*`).
+
+### Удалено
+
+- Сервис InfluxDB и связанные переменные `INFLUXDB_USERNAME`,
+  `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`.
+
 ## [1.2.0] - 2026-05-29
 
 ### Добавлено

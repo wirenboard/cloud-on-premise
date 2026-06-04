@@ -1,0 +1,516 @@
+-- TimescaleDB bootstrap for single-node on-premise.
+-- Rendered from cloud-infrastructure stacks (timescale-init.sql.j2) with the
+-- HA cluster (Patroni/etcd/HAProxy) collapsed to a single node.
+--
+-- __TELEGRAF_USER__ / __TELEGRAF_PASSWORD__ / __GRAFANA_USER__ / __GRAFANA_PASSWORD__
+-- are substituted from the environment by 10-apply-init.sh.
+--
+-- Numeric tuning values are taken from upstream group_vars/all/vars.yml:
+--   chunk_interval_days=2, compression_after_days=7,
+--   default_retention_days=14, max_host_retention_days=14
+--   (global safety-net retention = 14 + 2 = 16 days),
+--   host_retention_job_hour_utc=3, job_interval_days=1,
+--   views_reader: 15s/30s/5s/32MB, all_reader: 30s/60s/10s/32MB.
+-- The exporter/backup/replicator roles are created for SQL parity but are
+-- unused on-premise (no Prometheus exporter / pgbackrest / Patroni replica).
+
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+CREATE SCHEMA IF NOT EXISTS auth;
+
+DO $$
+BEGIN
+  -- Telegraf read-write
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__TELEGRAF_USER__') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '__TELEGRAF_USER__', '__TELEGRAF_PASSWORD__');
+  END IF;
+
+  -- Grafana (read-only через VIEW + роль)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__GRAFANA_USER__') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '__GRAFANA_USER__', '__GRAFANA_PASSWORD__');
+  END IF;
+
+  -- Exporter user (unused on-premise, kept for SQL parity)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ts_exporter') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', 'ts_exporter', 'ts_exporter_unused');
+  END IF;
+
+  -- Backup user (unused on-premise, kept for SQL parity)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ts_backup') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', 'ts_backup', 'ts_backup_unused');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='views_reader') THEN
+    CREATE ROLE views_reader NOLOGIN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='all_reader') THEN
+    CREATE ROLE all_reader NOLOGIN;
+  END IF;
+END$$;
+
+-- Управление орг-ролями
+CREATE OR REPLACE PROCEDURE auth.ensure_org_role(org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=rname) THEN
+    EXECUTE format('CREATE ROLE %I NOLOGIN', rname);
+  END IF;
+END$$;
+
+CREATE OR REPLACE PROCEDURE auth.grant_org_role(db_user name, org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  CALL auth.ensure_org_role(org_id);
+  EXECUTE format('GRANT %I TO %I', rname, db_user);
+END$$;
+
+CREATE OR REPLACE PROCEDURE auth.revoke_org_role(db_user name, org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname=rname) THEN
+    EXECUTE format('REVOKE %I FROM %I', rname, db_user);
+  END IF;
+END$$;
+
+-- Привязка контроллера к организации host→org + политика хранения метрик.
+CREATE TABLE IF NOT EXISTS auth.host_org_map (
+  host            text        PRIMARY KEY,
+  organization_id uuid        NOT NULL,
+  retention_days  int         NOT NULL DEFAULT 14 CHECK (retention_days BETWEEN 1 AND 14),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'auth'
+      AND table_name   = 'host_org_map'
+      AND column_name  = 'retention_days'
+  ) THEN
+    ALTER TABLE auth.host_org_map ADD COLUMN retention_days int NOT NULL DEFAULT 14 CHECK (retention_days BETWEEN 1 AND 14);
+  END IF;
+END$$;
+
+-- Админ-предикат
+CREATE OR REPLACE FUNCTION auth.is_admin()
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+  SELECT pg_has_role(session_user, 'pg_read_all_data', 'member') OR pg_has_role(session_user, 'all_reader', 'member');
+$$;
+
+-- Список доступных org из членств в ролях org_<uuid_с_подчёркиваниями>
+CREATE OR REPLACE FUNCTION auth.allowed_orgs_from_roles()
+RETURNS SETOF uuid
+LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+  SELECT replace(substring(r.rolname from 5), '_', '-')::uuid
+  FROM pg_roles r
+  WHERE r.rolname LIKE 'org_%'
+    AND pg_has_role(session_user, r.rolname, 'member');
+$$;
+
+-- VIEW для быстрого получения списка контроллеров с RLS фильтрацией
+CREATE OR REPLACE VIEW public.org_controllers AS
+SELECT h.host, h.organization_id
+FROM auth.host_org_map h
+WHERE auth.is_admin()
+   OR h.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+ORDER BY h.host;
+
+-- Быстрый каталог доступных MQTT topic по host.
+CREATE TABLE IF NOT EXISTS public.mqtt_metrics_topics (
+  host            text        NOT NULL,
+  topic           text        NOT NULL,
+  first_seen      timestamptz NOT NULL,
+  PRIMARY KEY (host, topic)
+);
+
+CREATE OR REPLACE VIEW public.mqtt_metrics_topics_readable AS
+SELECT org.organization_id, t.host, t.topic, t.first_seen
+FROM public.mqtt_metrics_topics t
+JOIN auth.host_org_map org ON org.host = t.host
+WHERE auth.is_admin()
+   OR org.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+ORDER BY t.host, t.topic;
+
+-- Проверяет host↔org по карте и проставляет organization_id в строку.
+CREATE OR REPLACE FUNCTION public.populate_mqtt_metrics_dimensions()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  v_expected_org uuid;
+BEGIN
+  IF NEW.host IS NULL OR NEW.host = '' THEN
+    RAISE LOG 'empty host in %, row skipped', TG_TABLE_NAME;
+    RETURN NULL;
+  END IF;
+
+  IF NEW.topic IS NULL OR NEW.topic = '' THEN
+    RAISE LOG 'empty topic in % for host %, row skipped', TG_TABLE_NAME, NEW.host;
+    RETURN NULL;
+  END IF;
+
+  SELECT organization_id
+    INTO v_expected_org
+  FROM auth.host_org_map
+  WHERE host = NEW.host;
+
+  IF v_expected_org IS NULL THEN
+    RAISE LOG 'unknown host in host_org_map: %, row skipped (table: %)', NEW.host, TG_TABLE_NAME;
+    RETURN NULL;
+  END IF;
+
+  NEW.organization_id := v_expected_org;
+
+  INSERT INTO public.mqtt_metrics_topics(host, topic, first_seen)
+  VALUES (NEW.host, NEW.topic, NEW.time)
+  ON CONFLICT (host, topic) DO NOTHING;
+
+  RETURN NEW;
+END
+$$;
+
+-- Универсальная идемпотентная процедура подготовки измерений.
+CREATE OR REPLACE PROCEDURE ensure_measurement(meas text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  measurement regclass;
+  trigger_name text := format('populate_%s_dimensions', meas);
+  v_readable_view_name text := format('%s_readable', meas);
+  v_numeric_readable_view_name text := format('%s_numeric_readable', meas);
+  v_index record;
+  v_readable_sql text;
+  v_numeric_readable_sql text;
+BEGIN
+  PERFORM set_config('search_path', 'public', true);
+
+  IF meas <> 'mqtt_metrics' THEN
+    RAISE LOG 'unsupported metrics measurement %, only mqtt_metrics is created', meas;
+    RETURN;
+  END IF;
+
+  EXECUTE format(
+    $ddl$
+      CREATE TABLE IF NOT EXISTS public.%I (
+        time            timestamptz NOT NULL,
+        organization_id uuid,
+        host            text,
+        topic           text,
+        value           text
+      )
+    $ddl$,
+    meas
+  );
+
+  measurement := format('public.%I', meas)::regclass;
+
+  PERFORM create_hypertable(
+    measurement,
+    'time',
+    chunk_time_interval => INTERVAL '2 days',
+    if_not_exists       => TRUE
+  );
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = trigger_name AND tgrelid = measurement) THEN
+    EXECUTE format(
+      'CREATE TRIGGER %I BEFORE INSERT ON public.%I FOR EACH ROW EXECUTE FUNCTION public.populate_mqtt_metrics_dimensions()',
+      trigger_name,
+      meas
+    );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM timescaledb_information.hypertables
+    WHERE hypertable_name = meas
+      AND hypertable_schema = 'public'
+      AND compression_enabled = TRUE
+  ) THEN
+    EXECUTE format(
+      $sql$
+        ALTER TABLE public.%I SET (
+          timescaledb.compress,
+          timescaledb.compress_orderby = 'time DESC',
+          timescaledb.compress_segmentby = 'organization_id,host'
+        )
+      $sql$,
+      meas
+    );
+  END IF;
+
+  PERFORM add_compression_policy(measurement, INTERVAL '7 days', if_not_exists => TRUE);
+
+  PERFORM add_retention_policy(measurement, INTERVAL '16 days', if_not_exists => TRUE);
+
+  PERFORM alter_job(job_id, config => coalesce(config, '{}'::jsonb) || jsonb_build_object('drop_after', '16 days'))
+  FROM timescaledb_information.jobs
+  WHERE proc_name = 'policy_retention'
+    AND hypertable_name = meas;
+
+  FOR v_index IN
+    SELECT meas || '_' || v.suffix AS indexname, v.columns, v.where_clause
+    FROM (VALUES
+    ('org_time_desc_idx',            '(organization_id, time DESC)',              ''),
+    ('org_host_time_desc_idx',       '(organization_id, host, time DESC)',        ''),
+    ('host_time_desc_idx',           '(host, time DESC)',                         ''),
+    ('topic_time_desc_idx',          '(topic, time DESC)',                        ''),
+    ('host_topic_time_desc_idx',     '(host, topic, time DESC)',                  ''),
+    ('org_host_topic_time_desc_idx', '(organization_id, host, topic, time DESC)', '')
+    ) AS v(suffix, columns, where_clause)
+  LOOP
+    EXECUTE format(
+      'CREATE INDEX IF NOT EXISTS %I ON public.%I %s %s',
+      v_index.indexname,
+      meas,
+      v_index.columns,
+      v_index.where_clause
+    );
+  END LOOP;
+
+  EXECUTE format('ALTER TABLE public.%I ALTER COLUMN organization_id SET STATISTICS 1000', meas);
+  EXECUTE format('ALTER TABLE public.%I ALTER COLUMN host SET STATISTICS 1000', meas);
+  EXECUTE format('ALTER TABLE public.%I ALTER COLUMN topic SET STATISTICS 1000', meas);
+
+  v_readable_sql := format(
+    $view$
+      SELECT
+        m.time,
+        m.organization_id,
+        m.host,
+        m.topic,
+        m.value,
+        CASE
+          WHEN m.value ~ '^[+-]?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))([eE][+-]?[0-9]+)?$'
+            THEN m.value::double precision
+          ELSE NULL
+        END AS value_numeric
+      FROM public.%I m
+      WHERE auth.is_admin()
+        OR m.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+    $view$,
+    meas
+  );
+
+  EXECUTE format('CREATE OR REPLACE VIEW public.%I AS %s', v_readable_view_name, v_readable_sql);
+
+  v_numeric_readable_sql := format(
+    $view$
+      SELECT
+        m.time,
+        m.organization_id,
+        m.host,
+        m.topic,
+        m.value::double precision AS value
+      FROM public.%I m
+      WHERE (auth.is_admin() OR m.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles()))
+        AND m.value ~ '^[+-]?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))([eE][+-]?[0-9]+)?$'
+    $view$,
+    meas
+  );
+
+  EXECUTE format('CREATE OR REPLACE VIEW public.%I AS %s', v_numeric_readable_view_name, v_numeric_readable_sql);
+
+  EXECUTE format('GRANT SELECT ON TABLE public.%I TO all_reader', meas);
+  EXECUTE format('GRANT SELECT ON public.%I TO views_reader, all_reader', v_readable_view_name);
+  EXECUTE format('GRANT SELECT ON public.%I TO views_reader, all_reader', v_numeric_readable_view_name);
+
+  IF (SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename = meas) IS DISTINCT FROM '__TELEGRAF_USER__' THEN
+    EXECUTE format('ALTER TABLE public.%I OWNER TO %I', meas, '__TELEGRAF_USER__');
+  END IF;
+
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.%I FROM views_reader, all_reader', meas);
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON TABLE public.%I FROM views_reader, all_reader', v_readable_view_name);
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON TABLE public.%I FROM views_reader, all_reader', v_numeric_readable_view_name);
+END;
+$$;
+
+-- Per-host retention job.
+CREATE OR REPLACE PROCEDURE auth.run_host_retention()
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  v_ht_name      text;
+  v_chunk_schema text;
+  v_chunk_name   text;
+  v_is_compressed boolean;
+  v_deleted_rows  bigint;
+  v_total_deleted bigint := 0;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM auth.host_org_map WHERE retention_days IS NOT NULL LIMIT 1) THEN
+    RAISE NOTICE 'run_host_retention: no hosts with retention_days set, nothing to do';
+    RETURN;
+  END IF;
+
+  FOR v_ht_name IN
+    SELECT 'mqtt_metrics'::text
+  LOOP
+    FOR v_chunk_schema, v_chunk_name, v_is_compressed IN
+      SELECT
+        c.chunk_schema,
+        c.chunk_name,
+        c.is_compressed
+      FROM timescaledb_information.chunks c
+      WHERE c.hypertable_name   = v_ht_name
+        AND c.hypertable_schema = 'public'
+        AND c.range_end         < now()
+        AND c.range_end         >= now() - INTERVAL '16 days'
+        AND EXISTS (
+          SELECT 1
+          FROM auth.host_org_map org
+          WHERE org.retention_days IS NOT NULL
+            AND c.range_start < now() - (org.retention_days || ' days')::interval
+        )
+      ORDER BY c.range_start
+    LOOP
+      IF v_is_compressed THEN
+        PERFORM decompress_chunk(format('%I.%I', v_chunk_schema, v_chunk_name)::regclass);
+      END IF;
+
+      EXECUTE format(
+        $q$
+          DELETE FROM %I.%I t
+          USING auth.host_org_map org
+          WHERE org.retention_days IS NOT NULL
+            AND t.host = org.host
+            AND t.time < now() - (org.retention_days || ' days')::interval
+        $q$,
+        v_chunk_schema, v_chunk_name
+      );
+
+      GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
+      v_total_deleted := v_total_deleted + v_deleted_rows;
+
+      RAISE NOTICE 'run_host_retention: %.% (ht: %) → deleted % rows',
+        v_chunk_schema, v_chunk_name, v_ht_name, v_deleted_rows;
+
+      IF v_is_compressed THEN
+        PERFORM compress_chunk(format('%I.%I', v_chunk_schema, v_chunk_name)::regclass);
+      END IF;
+
+    END LOOP;
+  END LOOP;
+
+  RAISE NOTICE 'run_host_retention: finished, total deleted rows across all tables: %', v_total_deleted;
+END;
+$$;
+
+-- Ночной job per-host retention (03:00 UTC, каждые 24 часа).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM timescaledb_information.jobs
+    WHERE proc_schema = 'auth' AND proc_name = 'run_host_retention'
+  ) THEN
+    PERFORM add_job(
+      'auth.run_host_retention',
+      INTERVAL '1 days',
+      initial_start  => date_trunc('day', now() AT TIME ZONE 'UTC') + INTERVAL '27 hours',
+      fixed_schedule => TRUE,
+      timezone       => 'UTC'
+    );
+  END IF;
+END$$;
+
+-- Системные роли для сервисных пользователей (exporter/backup unused on-premise).
+GRANT pg_read_all_settings TO "ts_backup";
+GRANT pg_monitor TO "ts_exporter";
+
+-- Разрешить графана юзеру читать из всех таблиц и вьюх
+GRANT all_reader TO "__GRAFANA_USER__";
+
+-- Разрешить читать VIEW со списком контроллеров
+GRANT SELECT ON public.org_controllers TO views_reader, all_reader;
+GRANT SELECT ON public.mqtt_metrics_topics_readable TO views_reader, all_reader;
+GRANT SELECT ON public.mqtt_metrics_topics TO all_reader;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.mqtt_metrics_topics FROM views_reader, all_reader;
+
+-- Не разрешать выполнять наши внутренние функции и процедуры читателям
+REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
+REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_reader;
+
+-- Запрещаем доступ к pg_stat_statements для PUBLIC
+REVOKE SELECT ON public.pg_stat_statements FROM PUBLIC;
+REVOKE SELECT ON public.pg_stat_statements_info FROM PUBLIC;
+DO $$
+BEGIN
+  EXECUTE format('GRANT SELECT ON public.pg_stat_statements TO %I', 'ts_exporter');
+  EXECUTE format('GRANT SELECT ON public.pg_stat_statements_info TO %I', 'ts_exporter');
+END$$;
+
+-- Лимиты для reader-ролей.
+ALTER ROLE views_reader SET statement_timeout = '15s';
+ALTER ROLE views_reader SET idle_in_transaction_session_timeout = '30s';
+ALTER ROLE views_reader SET lock_timeout = '5s';
+ALTER ROLE views_reader SET work_mem = '32MB';
+ALTER ROLE all_reader SET statement_timeout = '30s';
+ALTER ROLE all_reader SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE all_reader SET lock_timeout = '10s';
+ALTER ROLE all_reader SET work_mem = '32MB';
+
+DO $$
+DECLARE
+  v_role name;
+  v_service_roles name[] := ARRAY[
+    '__TELEGRAF_USER__'::name,
+    '__GRAFANA_USER__'::name,
+    'ts_exporter'::name,
+    'ts_backup'::name
+  ];
+BEGIN
+  FOR v_role IN
+    SELECT r.rolname
+    FROM pg_roles r
+    WHERE r.rolcanlogin
+      AND pg_has_role(r.rolname, 'views_reader', 'member')
+      AND NOT (r.rolname = ANY(v_service_roles))
+  LOOP
+    EXECUTE format('ALTER ROLE %I SET statement_timeout = %L', v_role, '15s');
+    EXECUTE format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', v_role, '30s');
+    EXECUTE format('ALTER ROLE %I SET lock_timeout = %L', v_role, '5s');
+    EXECUTE format('ALTER ROLE %I SET work_mem = %L', v_role, '32MB');
+  END LOOP;
+
+  FOR v_role IN
+    SELECT r.rolname
+    FROM pg_roles r
+    WHERE r.rolcanlogin
+      AND pg_has_role(r.rolname, 'all_reader', 'member')
+      AND NOT (r.rolname = ANY(v_service_roles))
+  LOOP
+    EXECUTE format('ALTER ROLE %I SET statement_timeout = %L', v_role, '30s');
+    EXECUTE format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', v_role, '60s');
+    EXECUTE format('ALTER ROLE %I SET lock_timeout = %L', v_role, '10s');
+    EXECUTE format('ALTER ROLE %I SET work_mem = %L', v_role, '32MB');
+  END LOOP;
+END$$;
+
+-- Применить ensure_measurement для уже существующих гипертаблиц.
+CREATE OR REPLACE PROCEDURE _apply_ensure_measurement_all()
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_ht_name text;
+BEGIN
+  FOR v_ht_name IN
+    SELECT hypertable_name
+    FROM timescaledb_information.hypertables
+    WHERE hypertable_schema = 'public'
+    ORDER BY hypertable_name
+  LOOP
+    RAISE NOTICE 'Processing hypertable: %', v_ht_name;
+    CALL ensure_measurement(v_ht_name);
+    EXECUTE format('ANALYZE public.%I', v_ht_name);
+  END LOOP;
+END$$;

@@ -34,15 +34,22 @@ REQUIRED_VARS := \
   ADMIN_EMAIL \
   ADMIN_USERNAME \
   ADMIN_PASSWORD \
-  INFLUXDB_USERNAME \
-  INFLUXDB_PASSWORD \
   TUNNEL_DASHBOARD_USER \
   TUNNEL_DASHBOARD_PASSWORD \
   POSTGRES_USER \
   POSTGRES_PASSWORD \
   POSTGRES_DB \
+  TIMESCALE_USER \
+  TIMESCALE_PASSWORD \
+  TIMESCALE_DB \
+  TELEGRAF_TIMESCALE_USER \
+  TELEGRAF_TIMESCALE_PASSWORD \
+  GRAFANA_DB_NAME \
+  GRAFANA_DB_USER \
+  GRAFANA_DB_PASSWORD \
+  GRAFANA_ADMIN_USER \
+  GRAFANA_ADMIN_PASSWORD \
   TUNNEL_AUTH_TOKEN \
-  INFLUXDB_TOKEN \
   SECRET_KEY \
   ABSOLUTE_SERVER_REGEX \
   EMAIL_URL \
@@ -83,7 +90,7 @@ help:
 	@printf "  update                   Update images, rebuild and start\n"
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
-	@printf "  generate-influx-token    Generate Influx token\n"
+	@printf "  generate-metrics-secrets Generate TimescaleDB/Telegraf/Grafana secrets\n"
 	@printf "  generate-django-secret   Generate Django secret key\n\n"
 	@printf "  generate-email-url       Generate/update Email URL"
 
@@ -196,10 +203,13 @@ generate-tunnel-token:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating SSH/HTTP tunnel token ------"
 	$(call gen_token,TUNNEL_AUTH_TOKEN,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 64)
 
-.PHONY: generate-influx-token
-generate-influx-token:
-	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating Influx token ------"
-	$(call gen_token,INFLUXDB_TOKEN,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 64)
+.PHONY: generate-metrics-secrets
+generate-metrics-secrets:
+	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating metrics DB secrets (TimescaleDB / Telegraf / Grafana) ------"
+	$(call gen_token,TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
+	$(call gen_token,TELEGRAF_TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
+	$(call gen_token,GRAFANA_DB_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
+	$(call gen_token,GRAFANA_ADMIN_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32)
 
 .PHONY: generate-django-secret
 generate-django-secret:
@@ -253,7 +263,7 @@ generate-jwt:
 generate-env:
 	@printf  "\n\n\033[1;37m%s\033[0m\n" "=====================[ GENERATING SECRETS AND ENVIRONMENT VARIABLES ]====================="
 	@${MAKE} generate-tunnel-token
-	@${MAKE} generate-influx-token
+	@${MAKE} generate-metrics-secrets
 	@${MAKE} generate-django-secret
 	@${MAKE} generate-absolute-server-regex
 	@${MAKE} generate-email-url

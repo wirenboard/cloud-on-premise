@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.0] - 2026-06-04
+
+### Changed
+
+- Metrics storage migrated from InfluxDB to TimescaleDB. Controller metrics are
+  now ingested by a Telegraf service (HTTPS + mTLS, request rate limiting via
+  Traefik) and written into TimescaleDB. The upstream HA layer (Patroni, etcd,
+  HAProxy, pgBackRest) is not used for the single-node deployment — a single
+  TimescaleDB instance runs instead.
+- The backend now reaches the main PostgreSQL database through the pgcat
+  connection pooler.
+- Celery workers split by queue: `worker` (default), `worker-metrics`,
+  `worker-grafana`, `worker-email`.
+- Image bumps: Redis `6-alpine` → `7.4.8-alpine`.
+
+### Added
+
+- `clients-grafana` service (Grafana 12.2.2) — per-organisation dashboards;
+  keeps its state in a dedicated database on the bundled PostgreSQL.
+- `tunnel-webhooks-backend` service — a separate backend instance handling FRP
+  tunnel webhooks.
+- `postgres-backup` service — nightly PostgreSQL backup into the bundled MinIO
+  (S3).
+- New environment variables: `TIMESCALE_*`, `TELEGRAF_TIMESCALE_*`,
+  `GRAFANA_DB_*`, `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`,
+  `INTERNAL_LICENSE_SERVICE_TOKEN`, `CELERY_*_QUEUE`, `POSTGRES_BACKUP_*`, and
+  optional external Prometheus integration (`PROM_*`).
+
+### Removed
+
+- The InfluxDB service and the related `INFLUXDB_USERNAME`, `INFLUXDB_PASSWORD`,
+  `INFLUXDB_TOKEN` variables.
+
 ## [1.2.0] - 2026-05-29
 
 ### Added
