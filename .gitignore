@@ -11,6 +11,10 @@ tls/*.pem
 # env
 .env
 
+# migration_doctor working file + DB/Influx backups created by `make upgrade`
+migration/conflicts.yaml
+backups/
+
 branding/*.svg
 branding/*.ico
 branding/*.png
