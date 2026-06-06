@@ -96,8 +96,6 @@ services:
       retries: 5
     volumes:
       - postgresData:/var/lib/postgresql/data
-      # Creates the Grafana database on first init (alongside the app DB).
-      - ./postgres/init-grafana-db.sh:/docker-entrypoint-initdb.d/init-grafana-db.sh:ro
 
   pgcat:
     image: ghcr.io/postgresml/pgcat:v1.2.0
@@ -109,9 +107,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_DB: ${POSTGRES_DB:-db}
-      GRAFANA_DB_USER: ${GRAFANA_DB_USER:-grafana}
-      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-grafana_db_password}
-      GRAFANA_DB_NAME: ${GRAFANA_DB_NAME:-grafana}
     # pgcat.toml has no env interpolation; we render it from a template on start
     # so the single-node credentials line up with the .env values.
     entrypoint:
@@ -121,9 +116,6 @@ services:
         sed -e "s/__POSTGRES_USER__/$${POSTGRES_USER}/g" \
             -e "s/__POSTGRES_PASSWORD__/$${POSTGRES_PASSWORD}/g" \
             -e "s/__POSTGRES_DB__/$${POSTGRES_DB}/g" \
-            -e "s/__GRAFANA_DB_USER__/$${GRAFANA_DB_USER}/g" \
-            -e "s/__GRAFANA_DB_PASSWORD__/$${GRAFANA_DB_PASSWORD}/g" \
-            -e "s/__GRAFANA_DB_NAME__/$${GRAFANA_DB_NAME}/g" \
             /etc/pgcat/pgcat.template.toml > /tmp/pgcat.toml
         exec pgcat /tmp/pgcat.toml
     volumes:
@@ -150,8 +142,10 @@ services:
       # Roles/passwords consumed by the rendered init.sql (see timescale/ dir).
       TELEGRAF_TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER:-telegraf}
       TELEGRAF_TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD:-telegraf_password}
-      GRAFANA_TIMESCALE_USER: ${GRAFANA_DB_USER:-grafana}
-      GRAFANA_TIMESCALE_PASSWORD: ${GRAFANA_DB_PASSWORD:-grafana_db_password}
+      # Read-only role Grafana uses to query the TimescaleDB metrics *datasource*
+      # (not Grafana's internal config DB — that is SQLite).
+      GRAFANA_TIMESCALE_USER: ${GRAFANA_TIMESCALE_USER:-grafana}
+      GRAFANA_TIMESCALE_PASSWORD: ${GRAFANA_TIMESCALE_PASSWORD:-grafana_timescale_password}
       TZ: UTC
     volumes:
       - timescaleData:/home/postgres/pgdata
@@ -251,8 +245,14 @@ services:
       WEBSSH_UPSTREAM: "webssh:8888"
       BACKEND_APP_UPSTREAM: "backend:8000"
       CLOUD_ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
+      # CLOUD_ABSOLUTE_SERVER_NAME_REGEX is auto-derived from CLOUD_ABSOLUTE_URL by
+      # the authorizer when left unset; we still pass ours for an exact match.
       CLOUD_ABSOLUTE_SERVER_NAME_REGEX: ${ABSOLUTE_SERVER_REGEX}
-      BACKEND_APP_PUBLIC_KEY: ${PUBLIC_KEY}
+      # The backend JWT public key is now a mounted keyfile (the authorizer reads
+      # it from this path), replacing the old PEM-in-an-env-var approach.
+      BACKEND_APP_PUBLIC_KEY_PATH: "/backend_app_public_key.pem"
+    volumes:
+      - ./jwt/public.pem:/backend_app_public_key.pem:ro
     labels:
       <<: *traefik-common
       traefik.http.routers.tunnel_auth.tls.domains[0].main: "ssh.${ABSOLUTE_SERVER}"
@@ -453,9 +453,6 @@ services:
     environment:
       GF_PATHS_CONFIG: /clients-grafana.ini
       ABSOLUTE_SERVER: ${ABSOLUTE_SERVER}
-      GRAFANA_DB_NAME: ${GRAFANA_DB_NAME:-grafana}
-      GRAFANA_DB_USER: ${GRAFANA_DB_USER:-grafana}
-      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-grafana_db_password}
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-grafana_admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana_password}
     volumes:
@@ -476,7 +473,9 @@ services:
       start_period: 40s
       retries: 6
     depends_on:
-      pgcat:
+      # Grafana's internal config DB is now SQLite (on the clientsGrafanaData
+      # volume); it only needs TimescaleDB up as its metrics datasource.
+      timescale:
         condition: service_healthy
 
   minio:

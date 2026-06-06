@@ -2,8 +2,9 @@
 # Placeholders (__FOO__) are substituted from .env values at container start
 # (see the pgcat service entrypoint in docker-compose.yml).
 #
-# Upstream runs two pools (app + grafana) in front of an external PostgreSQL;
-# on-premise both pools point at the bundled "postgres" service.
+# A single application pool sits in front of the bundled "postgres" service.
+# (Grafana keeps its internal config DB in built-in SQLite, so there is no
+# grafana pool here.)
 
 [general]
 host = "0.0.0.0"
@@ -45,22 +46,3 @@ servers = [
     [ "postgres", 5432, "primary" ]
 ]
 database = "__POSTGRES_DB__"
-
-# Grafana pool (clients-grafana state DB).
-[pools.grafana]
-pool_mode = "session"
-default_role = "primary"
-query_parser_enabled = false
-primary_reads_enabled = true
-
-[pools.grafana.users.0]
-username = "__GRAFANA_DB_USER__"
-password = "__GRAFANA_DB_PASSWORD__"
-pool_size = 150
-statement_timeout = 300000
-
-[pools.grafana.shards.0]
-servers = [
-    [ "postgres", 5432, "primary" ]
-]
-database = "__GRAFANA_DB_NAME__"
