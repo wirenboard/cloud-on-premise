@@ -355,11 +355,13 @@ Run all commands from the repo root.
 | `make generate-env`      | Generate missing tokens/secrets                              |
 | `make generate-jwt`      | Generate or update JWT keys                                  |
 | `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                          |
-| `generate-influx-token`  | Generate Influx token                                        |
 | `generate-django-secret` | Generate Django SECRET_KEY                                   |
 | `generate-email-url`     | Generate/update email URL                                    |
 | `make run`               | Full launch cycle (generate-env, build and start containers) |
 | `make update`            | Stop containers, update images, rebuild and restart          |
+| `make upgrade`           | 1.x → 2.0 upgrade: backup, fix users, migrate, start         |
+| `make fix-users MODE=…`  | Run migration_doctor (`scan` / `auto` / `resolve` / `dump` / `apply`) |
+| `make backup`            | Back up PostgreSQL (+ InfluxDB if running) into `./backups`  |
 
 ### Usage Examples
 
@@ -376,6 +378,66 @@ make check-env
 # Command help
 make help
 ```
+
+---
+
+## ⬆️ Upgrading from 1.x to 2.0
+
+The **2.0** release is incompatible with 1.x, but **user data is not discarded**
+— it is migrated in place. The key change: **email becomes the login** — it is
+mandatory, unique, and must equal the `username`. The upstream migration that
+enforces this (`users/0013`) does not backfill data, so the database must be
+repaired before migrating.
+
+A single command does the whole thing:
+
+```sh
+make upgrade
+```
+
+What `make upgrade` does:
+
+1. **Mandatory backup** (before ANY DB change): `pg_dump` of the main PostgreSQL
+   and `influxd backup` of the InfluxDB metrics (if that service is still
+   running) into `./backups`. InfluxDB is **not** converted to TimescaleDB — it
+   is kept alongside so you can consult the historical metrics later. New metrics
+   accumulate in TimescaleDB.
+2. **User-table scan** (`migration_doctor`, read-only): finds rows that violate
+   the 2.0 invariants — blank email, `username != email`, duplicate email
+   (case-insensitive) — and prints a table with counts.
+3. **Gate**: if any conflict remains, the upgrade **stops** (non-zero exit),
+   migration does NOT run, and the fix command is printed.
+4. Once clean, it runs `migrate` and brings up the 2.0 stack.
+
+### Resolving user conflicts
+
+`migration_doctor` runs inside the still-running backend container (via the
+Django ORM, touching only `username`/`email`) and is idempotent — run it until 0
+conflicts remain.
+
+```sh
+# Read-only conflict report:
+make fix-users MODE=scan
+
+# Apply the safe auto-fixes (lowercase email; collapse case/whitespace-only
+# differences; admin email from ADMIN_EMAIL):
+make fix-users MODE=auto
+
+# Interactive wizard: prompts for the correct email per conflict, validating the
+# address and checking for collisions:
+make fix-users MODE=resolve
+
+# Headless (no TTY): dump conflicts to a file, edit it, apply:
+make fix-users MODE=dump          # writes migration/conflicts.yaml
+#   ...edit the new_email field on each row...
+make fix-users MODE=apply         # reads the file back
+```
+
+When `make fix-users MODE=scan` reports `Conflicts: 0`, re-run `make upgrade`:
+migration applies and the 2.0 image comes up.
+
+> The backup `./backups/pg-<ts>.sql.gz` is your safety net. If migration is
+> interrupted for any reason, restore the database from that dump and retry.
 
 ---
 
