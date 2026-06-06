@@ -389,6 +389,32 @@ mandatory, unique, and must equal the `username`. The upstream migration that
 enforces this (`users/0013`) does not backfill data, so the database must be
 repaired before migrating.
 
+### Migration conditions — read before running
+
+Upgrade **only if** you are currently on a 1.x version (see the `VERSION` file or the
+"About" screen). Before `make upgrade`, make sure:
+
+- **There is room for the backup.** The backup (`pg_dump` + `influxd backup`) is written
+  to `./backups` — ensure there is disk space for a copy of the database. The command
+  takes the backup itself, **before** any change; a manual backup is not required but does
+  no harm.
+- **The 1.x stack is running.** `migration_doctor` works inside the still-running 1.x
+  backend container. Do not stop the containers before upgrading — `make upgrade` manages
+  them for you.
+- **Every user must have a valid, unique email equal to the login.** That is the point of
+  the migration. Conflicts you may have to resolve by hand:
+  - **admin with no email** (typical 1.x case: `username="admin"`, `email=""`) — set
+    `ADMIN_EMAIL` in `.env` and it is fixed automatically;
+  - **users with no email** — a real email must be supplied for each;
+  - **duplicate emails** (case-insensitive) — only one owner can keep it; the rest need a
+    different address.
+- **InfluxDB metrics are not converted.** Metric history is preserved as a backup
+  alongside; new metrics accumulate in TimescaleDB from scratch. Keep
+  `./backups/influx-<ts>/` if the historical metrics DB matters to you.
+- **If there are no conflicts** (everyone already has a valid, unique email = login) the
+  migration runs **with zero manual steps**: `make upgrade` backs up, scans, migrates, and
+  brings up the 2.0 stack on its own.
+
 A single command does the whole thing:
 
 ```sh
