@@ -44,9 +44,8 @@ REQUIRED_VARS := \
   TIMESCALE_DB \
   TELEGRAF_TIMESCALE_USER \
   TELEGRAF_TIMESCALE_PASSWORD \
-  GRAFANA_DB_NAME \
-  GRAFANA_DB_USER \
-  GRAFANA_DB_PASSWORD \
+  GRAFANA_TIMESCALE_USER \
+  GRAFANA_TIMESCALE_PASSWORD \
   GRAFANA_ADMIN_USER \
   GRAFANA_ADMIN_PASSWORD \
   TUNNEL_AUTH_TOKEN \
@@ -88,6 +87,9 @@ help:
 	@printf "  stop                     Stop containers\n"
 	@printf "  restart                  Restart containers (with cert check)\n"
 	@printf "  update                   Update images, rebuild and start\n"
+	@printf "  upgrade                  1.x -> 2.0 upgrade: backup, fix users, migrate, start\n"
+	@printf "  fix-users                Run migration_doctor (MODE=scan|auto|resolve|dump|apply)\n"
+	@printf "  backup                   Back up PostgreSQL (+ InfluxDB if present) into ./backups\n"
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
 	@printf "  generate-metrics-secrets Generate TimescaleDB/Telegraf/Grafana secrets\n"
@@ -208,7 +210,7 @@ generate-metrics-secrets:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating metrics DB secrets (TimescaleDB / Telegraf / Grafana) ------"
 	$(call gen_token,TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
 	$(call gen_token,TELEGRAF_TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
-	$(call gen_token,GRAFANA_DB_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
+	$(call gen_token,GRAFANA_TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
 	$(call gen_token,GRAFANA_ADMIN_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32)
 
 .PHONY: generate-django-secret
@@ -314,3 +316,95 @@ restart:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@VERSION=$(VERSION) docker compose down && docker compose up -d --build
+
+#------------------------------------------------------------------------------
+# [ 1.x -> 2.0 UPGRADE ] ------------------------------------------------------
+#
+# The 2.0 release makes the user `email` unique and adds a DB constraint that
+# `username == email`. On a populated 1.x database the upstream migration
+# `users/0013` aborts unless the data is repaired first. `make upgrade` does the
+# whole thing safely: BACKUP -> scan for conflicts -> GATE (stop if any) ->
+# migrate -> bring the 2.0 stack up. Nothing mutates the DB before the backup.
+#------------------------------------------------------------------------------
+
+BACKUP_DIR     := backups
+MIGRATION_DIR  := migration
+TS             := $(shell date +%Y%m%d-%H%M%S)
+# The doctor runs inside the STILL-RUNNING (1.x) backend container via the Django
+# shell, touching only username/email. `exec` if the backend is up, else `run`.
+DOCTOR_CMD     = uv run --no-dev ./manage.py shell -c "exec(open('/migration/migration_doctor.py').read())"
+
+.PHONY: backup
+backup:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ BACKUP (PostgreSQL + InfluxDB) ]====================="
+	@$(call require_version)
+	@mkdir -p "$(BACKUP_DIR)"
+	@printf "$(GRAY)------ PostgreSQL dump ------$(NC)\n" 2>/dev/null || printf "------ PostgreSQL dump ------\n"
+	@POSTGRES_USER=$$(grep -E '^[[:space:]]*POSTGRES_USER=' $(ENV_FILE) | cut -d= -f2- | tr -d '[:space:]'); \
+	POSTGRES_DB=$$(grep -E '^[[:space:]]*POSTGRES_DB=' $(ENV_FILE) | cut -d= -f2- | tr -d '[:space:]'); \
+	out="$(BACKUP_DIR)/pg-$(TS).sql.gz"; \
+	printf "Dumping database %s -> %s\n" "$$POSTGRES_DB" "$$out"; \
+	VERSION=$(VERSION) docker compose exec -T postgres \
+	  pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" | gzip > "$$out"; \
+	if [ ! -s "$$out" ]; then \
+	  printf "$(RED)ERROR: PostgreSQL backup is empty — aborting.$(NC)\n"; rm -f "$$out"; exit 1; \
+	fi; \
+	printf "$(GREEN)PostgreSQL backup written: %s$(NC)\n" "$$out"
+	@printf "\n------ InfluxDB backup (only if a 1.x influxdb service is still running) ------\n"
+	@if VERSION=$(VERSION) docker compose ps --services 2>/dev/null | grep -qx influxdb; then \
+	  out="$(BACKUP_DIR)/influx-$(TS)"; \
+	  printf "Backing up InfluxDB -> %s (kept for the operator; NOT converted to TimescaleDB)\n" "$$out"; \
+	  VERSION=$(VERSION) docker compose exec -T influxdb influxd backup -portable /tmp/influx-backup >/dev/null 2>&1 || \
+	    VERSION=$(VERSION) docker compose exec -T influxdb influxd backup /tmp/influx-backup >/dev/null 2>&1 || true; \
+	  cid=$$(VERSION=$(VERSION) docker compose ps -q influxdb); \
+	  mkdir -p "$$out"; \
+	  docker cp "$$cid:/tmp/influx-backup/." "$$out/" 2>/dev/null || true; \
+	  printf "$(GREEN)InfluxDB backup written: %s$(NC)\n" "$$out"; \
+	else \
+	  printf "$(YELLOW)No running influxdb service found — skipping InfluxDB backup.$(NC)\n"; \
+	  printf "(If you upgraded the metrics store earlier, the InfluxDB data was already handled.)\n"; \
+	fi
+
+# fix-users — run the migration_doctor. MODE defaults to scan (read-only).
+#   make fix-users MODE=scan       # read-only conflict report
+#   make fix-users MODE=auto       # apply safe auto-fixes
+#   make fix-users MODE=resolve    # auto-fix + interactive wizard
+#   make fix-users MODE=dump       # write migration/conflicts.yaml
+#   make fix-users MODE=apply      # read migration/conflicts.yaml back
+MODE ?= scan
+.PHONY: fix-users
+fix-users:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ migration_doctor: $(MODE) ]====================="
+	@$(call require_version)
+	@if VERSION=$(VERSION) docker compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then \
+	  VERSION=$(VERSION) docker compose exec \
+	    -v "$$PWD/$(MIGRATION_DIR):/migration" backend $(DOCTOR_CMD) -- $(MODE); \
+	else \
+	  VERSION=$(VERSION) docker compose run --rm \
+	    -v "$$PWD/$(MIGRATION_DIR):/migration" backend $(DOCTOR_CMD) -- $(MODE); \
+	fi
+
+.PHONY: upgrade
+upgrade:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ 1.x -> 2.0 UPGRADE ]====================="
+	@$(call require_version)
+	@${MAKE} generate-env
+	@${MAKE} check-certs
+	@printf "\n$(YELLOW)Step 1/4: mandatory backup (before ANY DB change).$(NC)\n"
+	@${MAKE} backup
+	@printf "\n$(YELLOW)Step 2/4: scanning the user table for 2.0 conflicts.$(NC)\n"
+	@if ! ${MAKE} fix-users MODE=scan; then \
+	  printf "\n$(RED)Conflicts found — migration is BLOCKED.$(NC)\n"; \
+	  printf "Resolve them, then re-run \`make upgrade\`:\n"; \
+	  printf "  $(GREEN)make fix-users MODE=resolve$(NC)   (interactive wizard)\n"; \
+	  printf "  $(GREEN)make fix-users MODE=dump$(NC) then edit $(MIGRATION_DIR)/conflicts.yaml then $(GREEN)make fix-users MODE=apply$(NC)\n"; \
+	  printf "  ($(GREEN)make fix-users MODE=auto$(NC) applies the safe fixes automatically.)\n"; \
+	  exit 1; \
+	fi
+	@printf "\n$(GREEN)No user conflicts. Proceeding.$(NC)\n"
+	@printf "\n$(YELLOW)Step 3/4: applying database migrations on the 2.0 backend image.$(NC)\n"
+	@VERSION=$(VERSION) docker compose pull
+	@VERSION=$(VERSION) docker compose run --rm backend uv run --no-dev ./manage.py migrate
+	@printf "\n$(YELLOW)Step 4/4: bringing up the 2.0 stack.$(NC)\n"
+	@VERSION=$(VERSION) docker compose up -d --build
+	@printf "\n$(GREEN)Upgrade to $(VERSION) complete.$(NC)\n"
