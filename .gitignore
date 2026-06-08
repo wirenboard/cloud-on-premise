@@ -32,3 +32,6 @@ branding/*.png
 # Claude Code
 CLAUDE.md
 .mcp.json
+
+# Internal working docs (kept local, not shipped in release branch)
+doc/
