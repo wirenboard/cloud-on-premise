@@ -21,9 +21,10 @@ x-backend-common-env: &backend-common-env
   SECRET_KEY: ${SECRET_KEY}
   JWT_PRIVATE_KEY: ${PRIVATE_KEY}
   JWT_PUBLIC_KEY: ${PUBLIC_KEY}
-  # App DB goes through the pgcat connection pooler. The pool name "postgres"
-  # is the database name as seen by the client (see pgcat config).
-  DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@pgcat:6432/postgres"
+  # Single-node on-premise: the backend connects straight to PostgreSQL.
+  # (No pgcat pooler — pooling/sharding/read-splitting are upstream HA concerns
+  # that don't apply here.)
+  DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db}"
   # TimescaleDB metrics store. Single-node on-premise: primary == replica.
   TIMESCALE_PRIMARY_DB_URL: "postgresql://${TIMESCALE_USER:-timescale}:${TIMESCALE_PASSWORD:-timescale_password}@timescale:5432/${TIMESCALE_DB:-metrics}?application_name=django_backend&connect_timeout=5&sslmode=disable&target_session_attrs=read-write"
   TIMESCALE_REPLICA_DB_URL: "postgresql://${TIMESCALE_USER:-timescale}:${TIMESCALE_PASSWORD:-timescale_password}@timescale:5432/${TIMESCALE_DB:-metrics}?application_name=django_backend&connect_timeout=5&sslmode=disable"
@@ -96,39 +97,6 @@ services:
       retries: 5
     volumes:
       - postgresData:/var/lib/postgresql/data
-
-  pgcat:
-    image: ghcr.io/postgresml/pgcat:v1.2.0
-    restart: always
-    command:
-      - "pgcat"
-      - "/etc/pgcat/pgcat.toml"
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: ${POSTGRES_DB:-db}
-    # pgcat.toml has no env interpolation; we render it from a template on start
-    # so the single-node credentials line up with the .env values.
-    entrypoint:
-      - "/bin/sh"
-      - "-c"
-      - |
-        sed -e "s/__POSTGRES_USER__/$${POSTGRES_USER}/g" \
-            -e "s/__POSTGRES_PASSWORD__/$${POSTGRES_PASSWORD}/g" \
-            -e "s/__POSTGRES_DB__/$${POSTGRES_DB}/g" \
-            /etc/pgcat/pgcat.template.toml > /tmp/pgcat.toml
-        exec pgcat /tmp/pgcat.toml
-    volumes:
-      - ./pgcat/pgcat.toml:/etc/pgcat/pgcat.template.toml:ro
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 2 sh -c '</dev/tcp/127.0.0.1/6432' || exit 1"]
-      interval: 10s
-      timeout: 3s
-      start_period: 20s
-      retries: 6
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   timescale:
     # timescaledb-ha image, but run as a plain single PostgreSQL instance
@@ -334,7 +302,7 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      pgcat:
+      postgres:
         condition: service_healthy
       timescale:
         condition: service_healthy
@@ -353,7 +321,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      pgcat:
+      postgres:
         condition: service_healthy
 
   agent_backend:

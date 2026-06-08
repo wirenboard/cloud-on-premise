@@ -8,16 +8,24 @@ All notable changes to this project are documented in this file.
 > Upgrade with `make upgrade`, which makes a **mandatory backup first** and will
 > **refuse to migrate** until all user-account conflicts are resolved.
 
-### Breaking
+### What changes for users
 
-- A user's **email is now the login**: it is mandatory, unique
-  (case-insensitive), and must equal the username. The upstream migration that
-  enforces this (`users/0013`) has no data backfill, so a populated 1.x database
-  must be repaired before migrating (see below).
-- Removed the registration endpoint `/users-sign-up/` (replaced upstream by
-  `/users/registrations/`); the bundled frontend is upgraded in lockstep.
+- **Log in with your email now.** Email becomes the login: mandatory and unique
+  (case-insensitive). Accounts with no email, or whose login doesn't match their
+  email, are no longer allowed — the upgrade repairs them in place **without
+  losing data** (details under the admin section below).
+- **Registration URL changed.** The old `/users-sign-up/` endpoint is removed
+  (replaced upstream by `/users/registrations/`); the bundled frontend is upgraded
+  in lockstep, so the registration page keeps working for users.
+- **Past metrics history doesn't carry over into the new charts.** The metrics
+  store moves to TimescaleDB: existing InfluxDB data is **backed up**, but Grafana
+  dashboards start accumulating metrics fresh. Charts for the period before the
+  upgrade will be empty (historical data can be restored from the backup
+  separately if needed).
 
-### Added
+### For administrators / DevOps
+
+#### Upgrade & data safety
 
 - **`make upgrade`** — guided 1.x → 2.0 upgrade. Flow: mandatory backup
   (`pg_dump` + `influxd backup`, before any DB-mutating step) → scan the user
@@ -31,30 +39,30 @@ All notable changes to this project are documented in this file.
   **`conflicts.yaml`** edit-and-apply flow, both validated (valid email, no new
   collision). Idempotent; re-run until 0 conflicts.
 - **`make backup`** — standalone PostgreSQL + InfluxDB backup into `./backups`.
+- The DB-level break is introduced by the upstream `users/0013` migration (makes
+  email a unique login) — it has **no data backfill**, which is why a populated
+  1.x database must be repaired with the tools above before migrating.
 
-### Changed
+#### Infrastructure
 
-- **Grafana's internal config DB** (dashboards/users/orgs) moved from the
-  external Postgres/pgcat pool to **built-in SQLite** under `/var/lib/grafana`
-  (persisted on the `clientsGrafanaData` volume). TimescaleDB remains Grafana's
-  metrics **datasource**, unchanged.
+- **The backend connects to PostgreSQL directly** (`postgres:5432`). The pgcat
+  connection pooler is removed as redundant for a single-node deployment
+  (pooling/sharding/read-splitting are upstream-HA concerns that don't apply here).
+- **Grafana's internal config DB** (dashboards/users/orgs) moved from external
+  Postgres to **built-in SQLite** under `/var/lib/grafana` (persisted on the
+  `clientsGrafanaData` volume). TimescaleDB remains Grafana's metrics
+  **datasource**, unchanged.
 - **Tunnel authorizer** now reads the backend JWT public key from a **mounted
   keyfile** (`BACKEND_APP_PUBLIC_KEY_PATH`) instead of a PEM-in-env-var.
 
-### Removed
+#### Removed
 
-- Grafana's external state database: `postgres/init-grafana-db.sh`, the pgcat
-  grafana pool, and the `GRAFANA_DB_NAME` / `GRAFANA_DB_USER` /
-  `GRAFANA_DB_PASSWORD` variables. The metrics-datasource role vars are now
-  `GRAFANA_TIMESCALE_USER` / `GRAFANA_TIMESCALE_PASSWORD`.
+- The pgcat service and its config (`pgcat/pgcat.toml`).
+- Grafana's external state database: `postgres/init-grafana-db.sh` and the
+  `GRAFANA_DB_NAME` / `GRAFANA_DB_USER` / `GRAFANA_DB_PASSWORD` variables. The
+  metrics-datasource role vars are now `GRAFANA_TIMESCALE_USER` /
+  `GRAFANA_TIMESCALE_PASSWORD`.
 - The `BACKEND_APP_PUBLIC_KEY` (PEM-content) env on the tunnel authorizer.
-
-### Metrics history
-
-- The InfluxDB → TimescaleDB store change is **not** auto-converted. On upgrade
-  the existing InfluxDB database is **backed up and kept** alongside the
-  deployment; new metrics accumulate in TimescaleDB. Restore/consult the backup
-  later if you need the historical data.
 
 ## [1.3.0] - 2026-06-04
 
@@ -65,8 +73,6 @@ All notable changes to this project are documented in this file.
   Traefik) and written into TimescaleDB. The upstream HA layer (Patroni, etcd,
   HAProxy, pgBackRest) is not used for the single-node deployment — a single
   TimescaleDB instance runs instead.
-- The backend now reaches the main PostgreSQL database through the pgcat
-  connection pooler.
 - Celery workers split by queue: `worker` (default), `worker-metrics`,
   `worker-grafana`, `worker-email`.
 - Image bumps: Redis `6-alpine` → `7.4.8-alpine`.
