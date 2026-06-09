@@ -51,6 +51,12 @@ Wildcard `*.ssh` / `*.http` — это per-controller доступ к тунне
 
 ## 4. Диаграмма направлений
 
+![Сетевая схема On-Premise](../assets/onprem-network.png)
+
+> Картинка выше сгенерирована из mermaid-исходника ниже
+> (`assets/onprem-network.mmd`). Правим `.mmd` → перегенерим PNG:
+> `docker run --rm -u "$(id -u):$(id -g)" -v "$PWD/assets":/data minlag/mermaid-cli -i /data/onprem-network.mmd -o /data/onprem-network.png -b white --scale 2`
+
 ```mermaid
 flowchart TB
     browser["Браузер оператора"]

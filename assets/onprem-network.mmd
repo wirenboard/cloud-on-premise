@@ -1,0 +1,34 @@
+flowchart TB
+    browser["Браузер оператора"]
+    ctrl["Контроллеры WB<br/>(на местах)"]
+    wbcloud["on-premise-metrics.wirenboard.cloud<br/>(сервер метрик WB)"]
+    smtp["SMTP-сервер"]
+    acme["Let's Encrypt ACME"]
+
+    subgraph host["Сервер On-Premise"]
+        traefik["Traefik :443 (public)"]
+        tunnel["tunnel (FRP) :7107 / :7501 (public)"]
+        subgraph dnet["docker-сеть (внутренняя, не публичная)"]
+            backend["backend / agent_backend :8000"]
+            frontend["frontend"]
+            webssh["webssh :8888"]
+            influx["InfluxDB"]
+            pg["PostgreSQL"]
+            redis["Redis"]
+            minio["MinIO"]
+        end
+    end
+
+    browser -->|HTTPS :443| traefik
+    ctrl -->|туннель :7107 FRP| tunnel
+    traefik --> frontend
+    traefik --> backend
+    traefik -->|ssh./http. прокси| webssh
+    backend --> pg
+    backend --> redis
+    backend --> minio
+    backend --> influx
+    tunnel -->|webhook| backend
+    backend -.->|метрики, обязательно| wbcloud
+    backend -.->|почта :587| smtp
+    traefik -.->|TLS :443| acme
