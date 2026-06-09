@@ -58,45 +58,61 @@ Wildcard `*.ssh` / `*.http` — это per-controller доступ к тунне
 > `docker run --rm -u "$(id -u):$(id -g)" -v "$PWD/assets":/data minlag/mermaid-cli -i /data/onprem-network.mmd -o /data/onprem-network.png -b white --scale 2`
 
 ```mermaid
-flowchart TB
-    browser["Браузер оператора"]
-    ctrl["Контроллеры WB<br/>(на местах)"]
-    wbcloud["on-premise-metrics.wirenboard.cloud<br/>(сервер метрик WB)"]
-    smtp["SMTP-сервер"]
-    acme["Let's Encrypt ACME"]
+%%{init: {"flowchart": {"curve": "linear", "nodeSpacing": 55, "rankSpacing": 90}} }%%
+flowchart LR
+    subgraph clients["Клиенты — вход"]
+        direction TB
+        browser["Браузер<br/>оператора"]
+        ctrl["Контроллеры WB<br/>(на местах)"]
+    end
 
     subgraph host["Сервер On-Premise"]
-        traefik["Traefik :443 (public)"]
-        tunnel["tunnel (FRP) :7107 / :7501 (public)"]
-        subgraph dnet["docker-сеть (внутренняя, не публичная)"]
-            backend["backend / agent_backend :8000"]
+        direction TB
+        subgraph edge["Публичные порты"]
+            direction TB
+            traefik["Traefik<br/>:443"]
+            tunnel["tunnel (FRP)<br/>:7107 / :7501"]
+        end
+        subgraph app["Приложение — внутр. сеть"]
+            direction TB
             frontend["frontend"]
+            backend["backend /<br/>agent_backend :8000"]
             webssh["webssh :8888"]
-            influx["InfluxDB"]
+        end
+        subgraph data["Данные — внутр. сеть"]
+            direction TB
             pg["PostgreSQL"]
             redis["Redis"]
+            influx["InfluxDB"]
             minio["MinIO"]
         end
     end
 
-    %% Ingress
+    subgraph ext["Внешние сервисы — исход (egress)"]
+        direction TB
+        wbcloud["on-premise-metrics.<br/>wirenboard.cloud"]
+        smtp["SMTP :587"]
+        acme["Let's Encrypt<br/>ACME"]
+    end
+
     browser -->|HTTPS :443| traefik
-    ctrl -->|туннель :7107 (FRP)| tunnel
+    ctrl -->|туннель :7107| tunnel
     traefik --> frontend
     traefik --> backend
-    traefik -->|ssh./http. прокси| webssh
-
-    %% Внутренние
+    traefik -->|ssh./http.| webssh
+    tunnel -->|webhook| backend
     backend --> pg
     backend --> redis
-    backend --> minio
     backend --> influx
-    tunnel -->|webhook| backend
+    backend --> minio
+    backend -.->|метрики| wbcloud
+    backend -.->|почта| smtp
+    traefik -.->|TLS| acme
 
-    %% Egress наружу (инициирует облако)
-    backend -.->|метрики, обязательно| wbcloud
-    backend -.->|почта :587| smtp
-    traefik -.->|TLS :443| acme
+    classDef pub fill:#ffe3e3,stroke:#c92a2a,color:#000;
+    classDef extn fill:#e7f0ff,stroke:#1c5fd6,color:#000;
+    class traefik,tunnel pub;
+    class wbcloud,smtp,acme extn;
 ```
 
 ## 5. Кто инициирует соединения
