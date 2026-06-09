@@ -146,7 +146,7 @@ Working setup:
 3. In your internal DNS, create A records pointing the cloud's full hostname and all subdomains (see [1. DNS Records](#1-dns-records)) to the server's local IP.
 4. Set `ABSOLUTE_SERVER=cloud.example.com`.
 
-> 💡 The `*.ssh.your-domain.com` and `*.http.your-domain.com` entries require wildcard DNS records. Consumer router DNS (e.g. FRITZ!Box) does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
+> 💡 The `*.ssh.your-domain.com` and `*.http.your-domain.com` entries require wildcard DNS records. Consumer router DNS does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
 
 Controllers must resolve the same hostname via the same internal DNS as the rest of the network.
 

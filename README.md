@@ -148,7 +148,7 @@ your-domain.com
 3. Во внутреннем DNS создайте A-записи, указывающие полный hostname облака и все поддомены (см. [1. DNS-записи](#1-dns-записи)) на локальный IP сервера.
 4. Укажите `ABSOLUTE_SERVER=cloud.example.com`.
 
-> 💡 Для `*.ssh.your-domain.com` и `*.http.your-domain.com` во внутреннем DNS нужны wildcard-записи. DNS бытовых роутеров (например, FRITZ!Box) их не поддерживает — используйте dnsmasq, Pi-hole, AdGuard Home или полноценный DNS-сервер.
+> 💡 Для `*.ssh.your-domain.com` и `*.http.your-domain.com` во внутреннем DNS нужны wildcard-записи. DNS бытовых роутеров их не поддерживает — используйте dnsmasq, Pi-hole, AdGuard Home или полноценный DNS-сервер.
 
 Контроллеры должны резолвить тот же hostname через тот же внутренний DNS, что и остальные устройства сети.
 
