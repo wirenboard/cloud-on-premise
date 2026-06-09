@@ -97,6 +97,8 @@ The following ports must be open for the cloud to operate:
 MX, SPF, DKIM, and DMARC records must be configured to enable email sending.
 This is required for sending organization invitations, password resets, etc.
 
+> If email is disabled (see [Working Without Email](#working-without-email)), you can skip this step.
+
 
 ### 4. TLS Certificates
 
@@ -172,7 +174,8 @@ cp .env.example .env
 nano .env
 ```
 
-Fill in the required variables, e.g.:
+Fill in the required variables as in the example below.
+The `EMAIL_*` variables can be left unset if email sending is disabled — see [Working Without Email](#working-without-email).
 
 `ABSOLUTE_SERVER` must match the full public hostname of the cloud. If the cloud will be available at `https://cloud.example.com`, set `ABSOLUTE_SERVER=cloud.example.com`.
 
@@ -227,6 +230,10 @@ POSTGRES_PASSWORD=postgres_password
 # Set the external port for Traefik
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
 
+# Disable email sending (True/False). With False, no emails are sent;
+# invitations and password resets are handled via the admin panel.
+#EMAIL_ENABLED=False
+
 # Override the organization invitation email subject and body.
 # Leave commented to keep the built-in RU/EN translation (selected by the
 # inviter's language).
@@ -242,6 +249,8 @@ POSTGRES_PASSWORD=postgres_password
 > After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.
 > This rebuilds `EMAIL_URL` and applies the new settings.
 > Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value, and email delivery will fail.
+
+> 💡 Email sending can be disabled entirely — see [Working Without Email](#working-without-email).
 
 ### 2. Automatic Initialization and Launch
 
@@ -349,6 +358,24 @@ SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 ```
 
 For JWT, place `private.pem` and `public.pem` in the `jwt` directory; otherwise, they will be generated automatically.
+
+### Working Without Email
+
+If you do not have an SMTP server, the cloud can run without sending email. Set the following in `.env`:
+
+```dotenv
+EMAIL_ENABLED=False
+```
+
+With `EMAIL_ENABLED=False`:
+
+- emails are silently not sent — no errors are raised;
+- the `EMAIL_*` variables can be left unset: `make run` and `make check-env` do not require them, and `EMAIL_URL` generation is skipped;
+- DNS records for email (section [3. DNS Records for Email](#3-dns-records-for-email)) are not needed;
+- invitations: the administrator copies the invitation link in the [admin panel](#admin-panel) and passes it to the user by any convenient means — registration of the invited user via the link works without email confirmation;
+- password reset: performed by the administrator via the [admin panel](#admin-panel).
+
+> ⚠️ By default (when `EMAIL_ENABLED` is unset), email sending is enabled.
 
 ---
 
