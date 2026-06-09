@@ -133,6 +133,25 @@ To get a certificate using Certbot, see: [Manual Wildcard Certificate Setup Exam
 
 ---
 
+### Deploying in a Private LAN (no public access)
+
+The cloud can run entirely inside a local network, without a public IP address. However, the certificate must still be a valid public one (see step 4): the controller agent `wb-cloud-agent` strictly verifies TLS, so with a self-signed certificate no activation link will be issued — even if the web interface opens in a browser.
+
+> ⚠️ The `make run-no-cert-check` target only skips the local check of certificate files before startup. It does **not** disable TLS verification on controllers and does not make a self-signed certificate work.
+
+Working setup:
+
+1. Take a subdomain of a real domain you own, e.g. `cloud.example.com`.
+2. Obtain a wildcard certificate via DNS challenge — no public access to the server is required for this, see [Manual Wildcard Certificate Setup Example](#-manual-wildcard-certificate-setup-example).
+3. In your internal DNS, create A records pointing the cloud's full hostname and all subdomains (see [1. DNS Records](#1-dns-records)) to the server's local IP.
+4. Set `ABSOLUTE_SERVER=cloud.example.com`.
+
+> 💡 The `*.ssh.your-domain.com` and `*.http.your-domain.com` entries require wildcard DNS records. Consumer router DNS (e.g. FRITZ!Box) does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
+
+Controllers must resolve the same hostname via the same internal DNS as the rest of the network.
+
+---
+
 ### 5. Custom Logo and Icons
 
 This step is optional.
