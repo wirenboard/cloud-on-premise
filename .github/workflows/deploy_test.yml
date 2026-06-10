@@ -102,7 +102,7 @@ jobs:
             git reset --hard "origin/${DEPLOY_BRANCH}"
 
             if [ ! -f .env ]; then
-              echo "::error::.env is missing in '${PROJECT_PATH}'. One-time setup: copy default.env.example to .env and fill in stand-specific values (domains, passwords, EMAIL_ENABLED, ...)."
+              echo "::error::.env is missing in '${PROJECT_PATH}'. One-time setup: cp .env.example .env and fill in stand-specific values (domains, passwords, EMAIL_ENABLED, ...)."
               exit 1
             fi
 
