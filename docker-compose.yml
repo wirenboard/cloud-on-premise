@@ -3,9 +3,9 @@ x-traefik-common: &traefik-common
   traefik.docker.network: ${DOCKER_NET_NAME:-wb_net}
 
 x-backend-common-env: &backend-common-env
-  EMAIL_URL: ${EMAIL_URL}
-  EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM}
-  EMAIL_ENABLED: ${EMAIL_ENABLED:-True}
+  EMAIL_URL: ${EMAIL_URL:-}
+  EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-}
+  EMAIL_ENABLED: "${EMAIL_ENABLED:-True}"
   INVITE_EMAIL_SUBJECT: ${INVITE_EMAIL_SUBJECT:-}
   INVITE_EMAIL_BODY: ${INVITE_EMAIL_BODY:-}
   CELERY_BROKER_URL: "redis://redis:6379/0"
