@@ -16,15 +16,16 @@ on:
           - testing
           - release
 
+concurrency:
+  group: deploy-test-server
+  cancel-in-progress: false
+
 jobs:
-  resolve-version:
+  deploy:
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.compute.outputs.image_tag }}
-      branch:    ${{ steps.compute.outputs.branch }}
     steps:
       - name: Compute deploy parameters
-        id: compute
+        id: params
         shell: bash
         env:
           VERSION_INPUT: ${{ inputs.VERSION }}
@@ -55,13 +56,6 @@ jobs:
 
           echo "::notice::Will deploy ${IMAGE_TAG} from ${BRANCH}"
 
-  deploy:
-    needs: resolve-version
-    runs-on: ubuntu-latest
-    concurrency:
-      group: deploy-test-server
-      cancel-in-progress: false
-    steps:
       - name: Sanity check secrets
         shell: bash
         run: |
@@ -86,22 +80,31 @@ jobs:
           username: ${{ secrets.TEST_SERVER_USER }}
           key: ${{ secrets.TEST_SERVER_SSH_KEY }}
           port: ${{ secrets.TEST_SERVER_PORT || 22 }}
-          envs: DEPLOY_IMAGE_TAG,DEPLOY_BRANCH,PROJECT_PATH
-          script_stop: true
+          command_timeout: 30m
+          envs: DEPLOY_IMAGE_TAG,DEPLOY_BRANCH,PROJECT_PATH,TRIGGERED_BY
           script: |
             set -euo pipefail
 
-            echo "==> Triggered by: ${GITHUB_ACTOR:-unknown}"
+            echo "==> Triggered by: ${TRIGGERED_BY:-unknown}"
             echo "==> Target image tag: ${DEPLOY_IMAGE_TAG}"
             echo "==> Target branch:    ${DEPLOY_BRANCH}"
             echo "==> Project path:     ${PROJECT_PATH}"
 
+            if [ ! -d "${PROJECT_PATH}/.git" ]; then
+              echo "==> Project dir not found - cloning repository (first deploy on this server)"
+              git clone https://github.com/wirenboard/cloud-on-premise.git "${PROJECT_PATH}"
+            fi
             cd "${PROJECT_PATH}"
 
             echo "==> [1/4] Fetching latest code"
             git fetch --all --prune
             git checkout "${DEPLOY_BRANCH}"
             git reset --hard "origin/${DEPLOY_BRANCH}"
+
+            if [ ! -f .env ]; then
+              echo "::error::.env is missing in '${PROJECT_PATH}'. One-time setup: copy default.env.example to .env and fill in stand-specific values (domains, passwords, EMAIL_ENABLED, ...)."
+              exit 1
+            fi
 
             echo "==> [2/4] Writing VERSION file"
             echo "${DEPLOY_IMAGE_TAG}" > VERSION
@@ -113,9 +116,10 @@ jobs:
             echo "==> [4/4] Showing container status"
             docker compose ps
         env:
-          DEPLOY_IMAGE_TAG: ${{ needs.resolve-version.outputs.image_tag }}
-          DEPLOY_BRANCH:    ${{ needs.resolve-version.outputs.branch }}
+          DEPLOY_IMAGE_TAG: ${{ steps.params.outputs.image_tag }}
+          DEPLOY_BRANCH:    ${{ steps.params.outputs.branch }}
           PROJECT_PATH:     ${{ secrets.TEST_SERVER_PROJECT_PATH }}
+          TRIGGERED_BY:     ${{ github.actor }}
 
       - name: Summary
         if: always()
@@ -127,8 +131,8 @@ jobs:
             echo "| field | value |"
             echo "|---|---|"
             echo "| status | ${{ job.status }} |"
-            echo "| image tag | \`${{ needs.resolve-version.outputs.image_tag }}\` |"
-            echo "| branch | \`${{ needs.resolve-version.outputs.branch }}\` |"
+            echo "| image tag | \`${{ steps.params.outputs.image_tag }}\` |"
+            echo "| branch | \`${{ steps.params.outputs.branch }}\` |"
             echo "| host | \`${{ secrets.TEST_SERVER_HOST }}\` |"
-            echo "| triggered by | ${{ github.event_name }} |"
+            echo "| triggered by | ${{ github.actor }} |"
           } >> "$GITHUB_STEP_SUMMARY"
