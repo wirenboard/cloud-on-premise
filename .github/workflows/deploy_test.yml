@@ -80,7 +80,7 @@ jobs:
           TEST_SERVER_PROJECT_PATH: ${{ secrets.TEST_SERVER_PROJECT_PATH }}
 
       - name: Deploy via SSH (mimics manual run on the server)
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.TEST_SERVER_HOST }}
           username: ${{ secrets.TEST_SERVER_USER }}
