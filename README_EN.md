@@ -485,6 +485,14 @@ openssl rsa -in /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem -check -noout
 
 If port 443 is already used by another web server, configure as follows:
 
+> ⚠️ In all examples below `your-domain.com` is the **full cloud hostname** — the
+> same value as `ABSOLUTE_SERVER`. If the cloud is deployed on a subdomain
+> (e.g. `cloud.example.com`), substitute the whole subdomain: in regexes this
+> becomes `cloud\.example\.com` (dots escaped as `\.`), and the wildcard forms
+> become `[^.]+\.cloud\.example\.com` etc. An SNI that does not match the regex
+> will not be forwarded to the cloud's Traefik — the browser will show a
+> certificate error or a dropped connection.
+
 ### 1. Set the following in `.env`:
 ```dotenv
 TRAEFIK_EXTERNAL_PORT=127.0.0.1:8443
@@ -613,6 +621,12 @@ tcp:
 where `<cloud-host>` is the address of the on-premise cloud server, and `your-domain.com` is the cloud's full hostname (same as `ABSOLUTE_SERVER`).
 
 > ⚠️ The `HostSNIRegexp` rule requires Traefik **v3**: Traefik v2 TCP routers have no `HostSNIRegexp`, so this config will not work there.
+
+> ⚠️ Mind the YAML quoting: inside **double** quotes backslashes are doubled
+> (`your-domain\\.com`, as in the example above); inside **single** quotes they
+> stay single (`your-domain\.com`). A single `\.` inside double quotes produces
+> `yaml: found unknown escape character`, the file provider drops the whole file,
+> and Traefik starts serving its default certificate instead of passing TLS through.
 
 > The rule matches the same hosts your cloud's wildcard certificate covers (see the "TLS Certificates" section): `your-domain.com` itself, any first-level subdomain (`app.`, `agent.`, `ssh.`, `http.`, etc.), and per-controller `<id>.http.`/`<id>.ssh.`. Substitute your own `ABSOLUTE_SERVER` domain for `your-domain.com`.
 
