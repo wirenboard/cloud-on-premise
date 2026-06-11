@@ -8,12 +8,17 @@ All notable changes to this project are documented in this file.
 
 - Email sending can now be fully disabled via the `EMAIL_ENABLED=False` variable: the `EMAIL_*` variables are no longer required, invitations and password resets are handled through the admin panel.
 - Admin panel action for generating a one-time password reset link (works without email).
-- Documentation: external reverse proxy in front of the cloud (nginx and Traefik, L4 TCP passthrough); network diagram, ports and firewall rules (`doc/SECURITY_NETWORK.md`); admin panel section; deployment in a private LAN without public access (public certificate + internal DNS).
+- Documentation: external reverse proxy in front of the cloud (nginx and Traefik, L4 TCP passthrough); network diagram, ports and firewall rules (`doc/SECURITY_NETWORK.md`, RU/EN); admin panel section; deployment in a private LAN without public access (public certificate + internal DNS).
+
+### Changed
+
+- `EMAIL_ENABLED=True` is now explicitly present in `.env.example` (main section). Nothing changes for existing installations: when the variable is unset, email sending stays enabled as before.
 
 ### Fixed
 
 - Backend crash on startup when `EMAIL_URL` is empty.
 - nginx configuration example (SNI-based routing): the regex did not match the cloud's root domain.
+- External reverse-proxy documentation: clarified that `your-domain.com` is the full cloud hostname including the subdomain (the `ABSOLUTE_SERVER` value); the Traefik example (case C) now warns about backslash escaping in YAML quotes (the `unknown escape character` error makes Traefik serve its default certificate instead of passing TLS through).
 
 ## [1.2.0] - 2026-05-29
 
