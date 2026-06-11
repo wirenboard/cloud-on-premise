@@ -203,6 +203,10 @@ nano .env
 ```dotenv
 ABSOLUTE_SERVER=my-domain-name.com
 
+# Отправка email (True/False). При False письма не отправляются; приглашения
+# и сброс пароля выполняются через административную панель — см. «Работа без email».
+EMAIL_ENABLED=True
+
 # Настройка отправки email
 # Установите smtp+ssl если используете SSL
 EMAIL_PROTOCOL=smtp+tls
@@ -250,10 +254,6 @@ POSTGRES_PASSWORD=postgres_password
 
 # Установить внешний порт для Traefik
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
-
-# Отключить отправку email (True/False). При False письма не отправляются;
-# приглашения и сброс пароля выполняются через административную панель.
-#EMAIL_ENABLED=False
 
 # Переопределение темы и тела письма-приглашения в организацию.
 # Если оставить закомментированными, используется встроенная локализация (RU/EN

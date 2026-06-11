@@ -201,6 +201,10 @@ The `EMAIL_*` variables can be left unset if email sending is disabled — see [
 ```dotenv
 ABSOLUTE_SERVER=my-domain-name.com
 
+# Email sending (True/False). When False, no emails are sent; invitations and
+# password resets are handled via the admin panel — see "Working Without Email".
+EMAIL_ENABLED=True
+
 # Email setup
 # Set smtp+ssl if using SSL
 EMAIL_PROTOCOL=smtp+tls
@@ -248,10 +252,6 @@ POSTGRES_PASSWORD=postgres_password
 
 # Set the external port for Traefik
 #TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
-
-# Disable email sending (True/False). With False, no emails are sent;
-# invitations and password resets are handled via the admin panel.
-#EMAIL_ENABLED=False
 
 # Override the organization invitation email subject and body.
 # Leave commented to keep the built-in RU/EN translation (selected by the
