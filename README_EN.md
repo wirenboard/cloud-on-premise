@@ -87,13 +87,17 @@ The following ports must be open for the cloud to operate:
 
 > ⚠️ If any of these ports are already in use, you can override them in the `.env` file.
 
-> If port `443` is already occupied by another web server, see: [Using with External Web Server](#-using-with-external-web-server-nginxapachecaddy)
+> If port `443` is already occupied by another web server, see: [Using with External Web Server](#-using-with-external-web-server-nginxapachecaddytraefik)
 >
+
+> 🔒 Detailed network diagram, connection directions, and firewall rules — [doc/SECURITY_NETWORK.md](./doc/SECURITY_NETWORK.md)
 
 ### 3. DNS Records for Email
 
 MX, SPF, DKIM, and DMARC records must be configured to enable email sending.
 This is required for sending organization invitations, password resets, etc.
+
+> If email is disabled (see [Working Without Email](#working-without-email)), you can skip this step.
 
 
 ### 4. TLS Certificates
@@ -126,6 +130,25 @@ Otherwise, you must obtain a new certificate.
 Place `fullchain.pem` and `privkey.pem` in the `./tls` directory or set the `TLS_CERTS_PATH` environment variable.
 
 To get a certificate using Certbot, see: [Manual Wildcard Certificate Setup Example](#-manual-wildcard-certificate-setup-example)
+
+---
+
+### Deploying in a Private LAN (no public access)
+
+The cloud can run entirely inside a local network, without a public IP address. However, the certificate must still be a valid public one (see step 4): the controller agent `wb-cloud-agent` strictly verifies TLS, so with a self-signed certificate no activation link will be issued — even if the web interface opens in a browser.
+
+> ⚠️ The `make run-no-cert-check` target only skips the local check of certificate files before startup. It does **not** disable TLS verification on controllers and does not make a self-signed certificate work.
+
+Working setup:
+
+1. Take a subdomain of a real domain you own, e.g. `cloud.example.com`.
+2. Obtain a wildcard certificate via DNS challenge — no public access to the server is required for this, see [Manual Wildcard Certificate Setup Example](#-manual-wildcard-certificate-setup-example).
+3. In your internal DNS, create A records pointing the cloud's full hostname and all subdomains (see [1. DNS Records](#1-dns-records)) to the server's local IP.
+4. Set `ABSOLUTE_SERVER=cloud.example.com`.
+
+> 💡 The `*.ssh.your-domain.com` and `*.http.your-domain.com` entries require wildcard DNS records. Consumer router DNS does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
+
+Controllers must resolve the same hostname via the same internal DNS as the rest of the network.
 
 ---
 
@@ -170,12 +193,17 @@ cp .env.example .env
 nano .env
 ```
 
-Fill in the required variables, e.g.:
+Fill in the required variables as in the example below.
+The `EMAIL_*` variables can be left unset if email sending is disabled — see [Working Without Email](#working-without-email).
 
 `ABSOLUTE_SERVER` must match the full public hostname of the cloud. If the cloud will be available at `https://cloud.example.com`, set `ABSOLUTE_SERVER=cloud.example.com`.
 
 ```dotenv
 ABSOLUTE_SERVER=my-domain-name.com
+
+# Email sending (True/False). When False, no emails are sent; invitations and
+# password resets are handled via the admin panel — see "Working Without Email".
+EMAIL_ENABLED=True
 
 # Email setup
 # Set smtp+ssl if using SSL
@@ -241,6 +269,8 @@ POSTGRES_PASSWORD=postgres_password
 > This rebuilds `EMAIL_URL` and applies the new settings.
 > Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value, and email delivery will fail.
 
+> 💡 Email sending can be disabled entirely — see [Working Without Email](#working-without-email).
+
 ### 2. Automatic Initialization and Launch
 
 Install `make` if it is not already installed:
@@ -268,7 +298,16 @@ Only one admin user will be available initially, using credentials from `ADMIN_U
 
 > ⚠️ You may change the password or create another admin user. However, the user specified in `.env` will be recreated on each restart if deleted.
 
-The admin must create the first organization manually. New users can be added via an admin panel or email invitation.
+The admin must create the first organization manually via the [admin panel](#admin-panel). New users can be added via the [admin panel](#admin-panel) or email invitation.
+
+### Admin Panel
+
+The admin panel (Django admin) is available at `https://app.your-domain.com/admin/`.
+Log in with the admin credentials from the `ADMIN_USERNAME` and `ADMIN_PASSWORD` environment variables.
+
+It is used by the administrator to create the first organization, invite and manage users, and manage system objects.
+
+> ⚠️ The admin panel grants full access to the instance data — do not expose it publicly unless necessary.
 
 ### Controller Setup
 
@@ -338,6 +377,24 @@ SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 ```
 
 For JWT, place `private.pem` and `public.pem` in the `jwt` directory; otherwise, they will be generated automatically.
+
+### Working Without Email
+
+If you do not have an SMTP server, the cloud can run without sending email. Set the following in `.env`:
+
+```dotenv
+EMAIL_ENABLED=False
+```
+
+With `EMAIL_ENABLED=False`:
+
+- emails are silently not sent — no errors are raised;
+- the `EMAIL_*` variables can be left unset: `make run` and `make check-env` do not require them, and `EMAIL_URL` generation is skipped;
+- DNS records for email (section [3. DNS Records for Email](#3-dns-records-for-email)) are not needed;
+- invitations: the administrator copies the invitation link in the [admin panel](#admin-panel) and passes it to the user by any convenient means — registration of the invited user via the link works without email confirmation;
+- password reset: performed by the administrator via the [admin panel](#admin-panel).
+
+> ⚠️ By default (when `EMAIL_ENABLED` is unset), email sending is enabled.
 
 ---
 
@@ -424,9 +481,17 @@ openssl rsa -in /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem -check -noout
 
 ---
 
-## 🛡 Using with External Web Server (Nginx/Apache/Caddy)
+## 🛡 Using with External Web Server (Nginx/Apache/Caddy/Traefik)
 
 If port 443 is already used by another web server, configure as follows:
+
+> ⚠️ In all examples below `your-domain.com` is the **full cloud hostname** — the
+> same value as `ABSOLUTE_SERVER`. If the cloud is deployed on a subdomain
+> (e.g. `cloud.example.com`), substitute the whole subdomain: in regexes this
+> becomes `cloud\.example\.com` (dots escaped as `\.`), and the wildcard forms
+> become `[^.]+\.cloud\.example\.com` etc. An SNI that does not match the regex
+> will not be forwarded to the cloud's Traefik — the browser will show a
+> certificate error or a dropped connection.
 
 ### 1. Set the following in `.env`:
 ```dotenv
@@ -464,7 +529,7 @@ Use `ssl_preread` with a `map` to route by SNI: on-premise domain names go to Tr
 # /etc/nginx/nginx.conf — top-level, not inside http {}
 stream {
     map $ssl_preread_server_name $upstream {
-        ~\.your-domain\.com  127.0.0.1:8443;  # on-premise → Traefik
+        ~^(.+\.)?your-domain\.com$  127.0.0.1:8443;  # on-premise → Traefik
         default              127.0.0.1:444;   # other sites → Nginx HTTP
     }
 
@@ -490,5 +555,83 @@ server {
 ```
 
 > Ensure port 8443 is bound only to 127.0.0.1 and not exposed publicly.
+
+#### Case C: External Traefik (TCP passthrough)
+
+If another Traefik already sits in front of the cloud (e.g. an edge reverse proxy in a DMZ), route traffic by SNI at L4 and **always with `passthrough`** — for the same reason as Nginx above: the external Traefik must not terminate TLS, otherwise the controllers' mTLS authentication on `agent.*` breaks.
+
+Unlike the Nginx examples, the external proxy must forward **all three entry points** of the cloud, not just 443:
+
+- `443` — web UI, API and agent endpoint;
+- `7107` — tunnels;
+- `7501` — tunnel dashboard (optional).
+
+**1. Static config of the external Traefik.** Declare all three entry points — otherwise Traefik drops the `tunnel`/`tunnelui` routers with an `entryPoint ... doesn't exist` error in the log:
+
+```toml
+[entryPoints.websecure]
+  address = ":443"
+[entryPoints.tunnel]
+  address = ":7107"
+[entryPoints.tunnelui]
+  address = ":7501"
+```
+
+Make sure these ports are published (exposed) on the external Traefik itself.
+
+**2. Dynamic config** (file provider) — route by SNI to the cloud host:
+
+```yaml
+tcp:
+  routers:
+    wbc-https:
+      entryPoints: ["websecure"]
+      rule: "HostSNIRegexp(`^(your-domain\\.com|[^.]+\\.your-domain\\.com|[^.]+\\.(http|ssh)\\.your-domain\\.com)$`)"
+      tls:
+        passthrough: true          # ⚠️ do not terminate TLS — required for controller mTLS
+      service: wbc-https
+
+    # Controller tunnels
+    wbc-tunnel:
+      entryPoints: ["tunnel"]
+      rule: "HostSNI(`*`)"
+      service: wbc-tunnel
+
+    # Tunnel UI
+    wbc-tunnel-ui:
+      entryPoints: ["tunnelui"]
+      rule: "HostSNI(`*`)"
+      service: wbc-tunnel-ui
+
+  services:
+    wbc-https:
+      loadBalancer:
+        servers:
+          - address: "<cloud-host>:443"
+    wbc-tunnel:
+      loadBalancer:
+        servers:
+          - address: "<cloud-host>:7107"
+    wbc-tunnel-ui:
+      loadBalancer:
+        servers:
+          - address: "<cloud-host>:7501"
+```
+
+where `<cloud-host>` is the address of the on-premise cloud server, and `your-domain.com` is the cloud's full hostname (same as `ABSOLUTE_SERVER`).
+
+> ⚠️ The `HostSNIRegexp` rule requires Traefik **v3**: Traefik v2 TCP routers have no `HostSNIRegexp`, so this config will not work there.
+
+> ⚠️ Mind the YAML quoting: inside **double** quotes backslashes are doubled
+> (`your-domain\\.com`, as in the example above); inside **single** quotes they
+> stay single (`your-domain\.com`). A single `\.` inside double quotes produces
+> `yaml: found unknown escape character`, the file provider drops the whole file,
+> and Traefik starts serving its default certificate instead of passing TLS through.
+
+> The rule matches the same hosts your cloud's wildcard certificate covers (see the "TLS Certificates" section): `your-domain.com` itself, any first-level subdomain (`app.`, `agent.`, `ssh.`, `http.`, etc.), and per-controller `<id>.http.`/`<id>.ssh.`. Substitute your own `ABSOLUTE_SERVER` domain for `your-domain.com`.
+
+> If you only need to expose controller traffic through the external proxy, keeping the cloud web interface unreachable from outside, narrow the regexp down to `agent.your-domain.com` and the per-controller `<id>.http.`/`<id>.ssh.` hosts.
+
+> If the external Traefik runs on the same server as the cloud, additionally move the cloud's internal Traefik to a local port via `TRAEFIK_EXTERNAL_PORT` (see the top of this section) and proxy to `127.0.0.1` so the ports do not conflict.
 
 ---

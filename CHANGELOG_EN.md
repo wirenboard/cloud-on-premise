@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.0] - 2026-06-09
+
+### Added
+
+- Email sending can now be fully disabled via the `EMAIL_ENABLED=False` variable: the `EMAIL_*` variables are no longer required, invitations and password resets are handled through the admin panel.
+- Admin panel action for generating a one-time password reset link (works without email).
+- Documentation: external reverse proxy in front of the cloud (nginx and Traefik, L4 TCP passthrough); network diagram, ports and firewall rules (`doc/SECURITY_NETWORK.md`); admin panel section; deployment in a private LAN without public access (public certificate + internal DNS).
+
+### Fixed
+
+- Backend crash on startup when `EMAIL_URL` is empty.
+- nginx configuration example (SNI-based routing): the regex did not match the cloud's root domain.
+
 ## [1.2.0] - 2026-05-29
 
 ### Added
