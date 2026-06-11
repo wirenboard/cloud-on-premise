@@ -1,5 +1,7 @@
 # Сетевая схема и порты (On-Premise)
 
+> 🇬🇧 [English version](./SECURITY_NETWORK_EN.md)
+
 > **Назначение.** Данные для настройки фаервола: какие порты
 > открывать, кто и в каком направлении инициирует соединения, какие исходящие
 > каналы есть у инсталляции. Сверено с `docker-compose.yml`, `.env.example`,
@@ -54,6 +56,12 @@ Wildcard `*.ssh` / `*.http` — это per-controller доступ к тунне
 ```mermaid
 %%{init: {"flowchart": {"curve": "linear", "nodeSpacing": 55, "rankSpacing": 90}} }%%
 flowchart LR
+    subgraph ext["Внешние сервисы — исход (egress)"]
+        direction TB
+        wbcloud["on-premise-metrics.<br/>wirenboard.cloud"]
+        smtp["SMTP :587"]
+    end
+
     subgraph clients["Клиенты — вход"]
         direction TB
         browser["Браузер<br/>оператора"]
@@ -78,16 +86,14 @@ flowchart LR
             direction TB
             pg["PostgreSQL"]
             redis["Redis"]
-            influx["InfluxDB"]
             minio["MinIO"]
+            influx["InfluxDB"]
         end
     end
 
-    subgraph ext["Внешние сервисы — исход (egress)"]
-        direction TB
-        wbcloud["on-premise-metrics.<br/>wirenboard.cloud"]
-        smtp["SMTP :587"]
-    end
+    %% невидимые якоря: egress-блок слева, над блоком клиентов
+    wbcloud ~~~ browser
+    smtp ~~~ ctrl
 
     browser -->|"HTTPS :443"| traefik
     ctrl -->|"туннель :7107"| tunnel
@@ -101,10 +107,10 @@ flowchart LR
     tunnel -->|webhook| backend
     backend --> pg
     backend --> redis
-    backend --> influx
     backend --> minio
-    backend -.->|метрики| wbcloud
-    backend -.->|почта| smtp
+    backend --> influx
+    wbcloud <-.-|"метрики — только FREE-версия"| backend
+    smtp <-.-|"почта — если EMAIL_ENABLED=True"| backend
 
     classDef pub fill:#ffe3e3,stroke:#c92a2a,color:#000;
     classDef extn fill:#e7f0ff,stroke:#1c5fd6,color:#000;
@@ -112,7 +118,7 @@ flowchart LR
     class wbcloud,smtp extn;
 ```
 
-_Легенда: **красный** — публичные порты (открыты наружу), **синий** — внешние сервисы (исходящие соединения, egress); пунктир — исходящий трафик._
+_Легенда: **красный** — публичные порты (открыты наружу), **синий** — внешние сервисы (исходящие соединения, egress); пунктир — исходящий трафик. **Метрики** уходят к WB только в бесплатной (FREE) версии; **почта** — только при `EMAIL_ENABLED=True` (по умолчанию включена)._
 
 ## 5. Кто инициирует соединения
 
@@ -123,8 +129,8 @@ _Легенда: **красный** — публичные порты (откр�
 | Туннели контроллеров | **Контроллер WB** | tunnel (FRP) | 7107 | **вход** (контроллер дозванивается в облако) |
 | Tunnel dashboard | Браузер админа | tunnel | 7501 | вход (опц., см. §7) |
 | БД / кэш / хранилище / метрики | backend, worker | postgres / redis / minio / influx | — | внутри сети |
-| **Метрики к WB** | backend | `on-premise-metrics.wirenboard.cloud` | 443 | **исход (egress)** |
-| Почта | backend | SMTP (`EMAIL_SERVER`) | `EMAIL_PORT` (в примере 587) | исход |
+| **Метрики к WB** | backend | `on-premise-metrics.wirenboard.cloud` | 443 | **исход (egress)** — только в бесплатной (FREE) версии |
+| Почта | backend | SMTP (`EMAIL_SERVER`) | `EMAIL_PORT` (в примере 587) | исход — только при `EMAIL_ENABLED=True` |
 
 ## 6. Агентский API, туннели и метрики
 
@@ -175,8 +181,8 @@ webssh:8888 — они только внутри docker-сети.
 
 | Назначение | Хост | Порт | Можно закрыть? |
 |------------|------|------|----------------|
-| Метрики WB | `on-premise-metrics.wirenboard.cloud` | 443 | Закрытие = нельзя добавлять контроллеры (в бесплатной версии обязательно) |
-| Почта | `EMAIL_SERVER` (SMTP) | `EMAIL_PORT` (в примере 587) | Да, если email-уведомления не нужны |
+| Метрики WB | `on-premise-metrics.wirenboard.cloud` | 443 | Закрытие = нельзя добавлять контроллеры (в бесплатной версии отправка обязательна) |
+| Почта | `EMAIL_SERVER` (SMTP) | `EMAIL_PORT` (в примере 587) | Да — задайте `EMAIL_ENABLED=False` (приглашения тогда передаются ссылкой из админ-панели) |
 | Docker-образы (установка/обновление) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, influx, minio, traefik) | 443 | Нужен только на время установки/обновления; в остальное время можно закрыть |
 
 > **TLS-сертификаты.** Инсталляция сама наружу за сертификатами **не ходит** —
