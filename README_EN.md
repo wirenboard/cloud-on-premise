@@ -393,10 +393,10 @@ With `EMAIL_ENABLED=False`:
 - DNS records for email (section [3. DNS Records for Email](#3-dns-records-for-email)) are not needed;
 - **inviting a user to an organization** (two steps, since no email is sent):
   1. in the frontend, the organization owner or admin invites the user by email (in the organization members section);
-  2. open the [admin panel](#admin-panel) → **Organizations** → the relevant organization → the **Invites** block, and copy the value of the **link** field. Pass the link to the user by any means — they will register via it without email confirmation.
+  2. open the [admin panel](#admin-panel) → **Organizations** → the relevant organization → the **Organization invites** block, and copy the value of the **link** field. Pass the link to the user by any means — they will register via it without email confirmation.
 
   > You cannot create an invitation directly from the admin panel — it only shows the link of already existing invitations. The invitation itself is created in the frontend (step 1).
-- **resetting a user's password:** in the [admin panel](#admin-panel) open the **Users** section, select the user with a checkbox, choose the **“Generate password reset link”** action from the actions list, and click “Go”. The link appears in a green message at the top of the page — copy it and pass it to the user. Users without a usable password (e.g. signed in via social login) are skipped.
+- **resetting a user's password:** in the [admin panel](#admin-panel) open the **Users** section, select the user with a checkbox, choose the **“Generate password reset link”** action from the **Action** dropdown list, and click “Go”. The link appears in a green message at the top of the page — copy it and pass it to the user. Users without a usable password (e.g. signed in via social login) are skipped.
 
 > ⚠️ By default (when `EMAIL_ENABLED` is unset), email sending is enabled.
 
