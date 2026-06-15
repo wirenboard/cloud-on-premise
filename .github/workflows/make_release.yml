@@ -68,12 +68,15 @@ jobs:
 
           SOURCE_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:${VERSION}-testing"
           TARGET_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:${VERSION}"
+          LATEST_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:latest"
 
-          echo "Retagging $SOURCE_IMAGE → $TARGET_IMAGE"
+          echo "Retagging $SOURCE_IMAGE → $TARGET_IMAGE, $LATEST_IMAGE"
 
           docker pull "$SOURCE_IMAGE"
           docker tag "$SOURCE_IMAGE" "$TARGET_IMAGE"
+          docker tag "$SOURCE_IMAGE" "$LATEST_IMAGE"
           docker push "$TARGET_IMAGE"
+          docker push "$LATEST_IMAGE"
 
   create-release:
     needs: [read-version, retag-and-push]
@@ -85,11 +88,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Extract changelog section for release notes
+        shell: bash
+        run: |
+          VERSION=${{ needs.read-version.outputs.version }}
+          {
+            awk -v ver="$VERSION" '$0 ~ "^## \\["ver"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md
+            echo ""
+            echo "---"
+            echo ""
+            awk -v ver="$VERSION" '$0 ~ "^## \\["ver"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG_EN.md
+          } > /tmp/release_notes.md
+          if [[ ! -s /tmp/release_notes.md ]]; then
+            echo "::warning::CHANGELOG.md has no section for ${VERSION} — release body will be empty"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.read-version.outputs.version }}
           name: Release v${{ needs.read-version.outputs.version }}
+          body_path: /tmp/release_notes.md
           files: |
             VERSION
             CHANGELOG.md
