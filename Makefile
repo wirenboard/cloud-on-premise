@@ -322,4 +322,4 @@ restart:
 	@$(call require_version)
 	@${MAKE} generate-env
 	@${MAKE} check-certs
-	@VERSION=$(VERSION) docker compose down && VERSION=$(VERSION) docker compose up -d --build
+	@export VERSION=$(VERSION); docker compose down && docker compose up -d --build
