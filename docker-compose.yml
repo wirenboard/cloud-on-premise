@@ -171,6 +171,10 @@ services:
     restart: always
     environment:
       BACKEND_APP_URL: "http://backend:8000/"
+      SERVICE_NAME: ${SERVICE_NAME:-Wiren Board Cloud}
+      HTML_TITLE: ${SERVICE_NAME:-Wiren Board}
+      SERVICE_STATUS_URL: ${SERVICE_STATUS_URL:-}
+      SERVICE_DOCS_URL: ${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud}
       FOOTER_LINKS: '[{"url": "https://wirenboard.com/", "caption": "mainSiteLink"}]'
       FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"Сайт компании Wiren Board"}'
       FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"Wiren Board website"}'

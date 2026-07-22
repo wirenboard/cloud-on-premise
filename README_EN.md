@@ -152,7 +152,7 @@ Controllers must resolve the same hostname via the same internal DNS as the rest
 
 ---
 
-### 5. Custom Logo and Icons
+### 5. Custom Logo, Icons and Service Name
 
 This step is optional.
 
@@ -172,10 +172,16 @@ branding/apple-touch-icon.png
 
 You can also replace only some of these files.
 
-If the project is already running, restart the frontend after replacing the files:
+Besides the assets, the service name and links can be overridden via environment variables in `.env`:
+
+- `SERVICE_NAME` — service name: browser tab title, login screen caption and mentions in UI texts. Defaults to `Wiren Board Cloud`.
+- `SERVICE_STATUS_URL` — service status page link shown when a tunnel takes long to open. Unset by default — the link is hidden.
+- `SERVICE_DOCS_URL` — documentation link on the controller onboarding screen. Defaults to the Wiren Board Cloud wiki page; an empty value hides the link.
+
+If the project is already running, restart the frontend after replacing the files or changing the variables:
 
 ```shell
-docker compose restart frontend
+docker compose up -d frontend
 ```
 
 ---
