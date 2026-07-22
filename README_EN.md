@@ -159,16 +159,18 @@ This step is optional.
 The frontend and the web console read branding assets from the local `branding/` directory, which is mounted into the `frontend` and `webssh` containers.
 If you do not add your own files there, the application will continue using the default Wiren Board logo and icons.
 
-To replace the logo and icons, place your files in that directory with the exact names listed below:
+To replace the logo and icons, place your files in that directory with the exact names listed below. File requirements:
 
-```text
-branding/logo.svg
-branding/favicon.svg
-branding/favicon.ico
-branding/favicon-192.png
-branding/favicon-512.png
-branding/apple-touch-icon.png
-```
+| File | Format and size | Used for |
+|---|---|---|
+| `branding/logo.svg` | SVG, landscape, 160×40 as a reference (rendered 160px wide, height scales proportionally) | logo in the web UI and web console header |
+| `branding/favicon.svg` | SVG, square | tab icon in modern browsers |
+| `branding/favicon.ico` | ICO, 16–64 px sizes | tab icon in older browsers |
+| `branding/favicon-192.png` | PNG, exactly 192×192 | app icon (web manifest) |
+| `branding/favicon-512.png` | PNG, exactly 512×512 | app icon (web manifest) |
+| `branding/apple-touch-icon.png` | PNG, 180×180 | iOS home screen icon |
+
+Sizes are not validated automatically: a file with wrong proportions is served as is and may render incorrectly.
 
 You can also replace only some of these files.
 
