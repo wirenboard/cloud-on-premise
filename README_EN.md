@@ -156,7 +156,7 @@ Controllers must resolve the same hostname via the same internal DNS as the rest
 
 This step is optional.
 
-The frontend reads branding assets from the local `branding/` directory, which is mounted into the `frontend` container.
+The frontend and the web console read branding assets from the local `branding/` directory, which is mounted into the `frontend` and `webssh` containers.
 If you do not add your own files there, the application will continue using the default Wiren Board logo and icons.
 
 To replace the logo and icons, place your files in that directory with the exact names listed below:
@@ -172,11 +172,22 @@ branding/apple-touch-icon.png
 
 You can also replace only some of these files.
 
-If the project is already running, restart the frontend after replacing the files:
+If the project is already running, restart the frontend and the web console after replacing the files:
 
 ```shell
-docker compose restart frontend
+docker compose restart frontend webssh
 ```
+
+Besides the assets, you can override the product name and the links shown in the web UI. Uncomment and fill in these variables in `.env`:
+
+```text
+SERVICE_NAME       — product name used in UI texts (default: "Wiren Board Cloud")
+HTML_TITLE         — browser tab title (default: "Wiren Board")
+SERVICE_STATUS_URL — service status page link
+SERVICE_DOCS_URL   — documentation link
+```
+
+If the variables are not set, the Wiren Board defaults are used. Restart the frontend after changing `.env`.
 
 ---
 
