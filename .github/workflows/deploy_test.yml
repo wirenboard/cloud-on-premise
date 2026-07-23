@@ -98,7 +98,8 @@ jobs:
 
             echo "==> [1/4] Fetching latest code"
             git fetch --all --prune
-            git checkout "${DEPLOY_BRANCH}"
+            # -f: the deploy itself leaves VERSION locally modified, plain checkout would abort
+            git checkout -f "${DEPLOY_BRANCH}"
             git reset --hard "origin/${DEPLOY_BRANCH}"
 
             if [ ! -f .env ]; then
