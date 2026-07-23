@@ -178,7 +178,7 @@ services:
       FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"Wiren Board website"}'
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       HTML_TITLE: "${HTML_TITLE:-Wiren Board}"
-      SERVICE_STATUS_URL: "${SERVICE_STATUS_URL:-https://status.wirenboard.cloud/}"
+      SERVICE_STATUS_URL: "${SERVICE_STATUS_URL:-}"
       SERVICE_DOCS_URL: "${SERVICE_DOCS_URL:-https://wirenboard.com/wiki/Wiren_Board_Cloud}"
     volumes:
       - ./branding:/branding:ro

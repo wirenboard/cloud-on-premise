@@ -187,7 +187,7 @@ docker compose restart frontend webssh
 ```text
 SERVICE_NAME       — название продукта в текстах интерфейса (по умолчанию «Wiren Board Cloud»)
 HTML_TITLE         — заголовок вкладки браузера (по умолчанию «Wiren Board»)
-SERVICE_STATUS_URL — ссылка на страницу статуса сервисов
+SERVICE_STATUS_URL — ссылка на страницу статуса ваших сервисов (если не задана, подсказка со ссылкой на статус не показывается)
 SERVICE_DOCS_URL   — ссылка на документацию
 ```
 

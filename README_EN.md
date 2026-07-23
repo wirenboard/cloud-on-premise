@@ -185,7 +185,7 @@ Besides the assets, you can override the product name and the links shown in the
 ```text
 SERVICE_NAME       — product name used in UI texts (default: "Wiren Board Cloud")
 HTML_TITLE         — browser tab title (default: "Wiren Board")
-SERVICE_STATUS_URL — service status page link
+SERVICE_STATUS_URL — your service status page link (when not set, the status hint is hidden)
 SERVICE_DOCS_URL   — documentation link
 ```
 
