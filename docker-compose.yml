@@ -162,6 +162,9 @@ services:
   webssh:
     image: ghcr.io/wirenboard/on-premise/wbc-webssh:${VERSION}
     restart: always
+    environment:
+      SERVICE_NAME: "${SERVICE_NAME:-Wiren Board}"
+      ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
     volumes:
       - ./branding:/branding:ro
     depends_on:
