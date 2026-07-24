@@ -187,6 +187,7 @@ SERVICE_NAME       — product name used in UI texts (default: "Wiren Board Clou
 HTML_TITLE         — browser tab title (default: "Wiren Board")
 SERVICE_STATUS_URL — your service status page link (when not set, the status hint is hidden)
 SERVICE_DOCS_URL   — documentation link
+PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
 ```
 
 If the variables are not set, the Wiren Board defaults are used. Restart the frontend after changing `.env`.
