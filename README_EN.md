@@ -188,6 +188,9 @@ HTML_TITLE         — browser tab title (default: "Wiren Board")
 SERVICE_STATUS_URL — your service status page link (when not set, the status hint is hidden)
 SERVICE_DOCS_URL   — documentation link
 PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
+FOOTER_SITE_URL    — company site link in the footer (default: https://wirenboard.com/)
+FOOTER_SITE_LABEL_RU — caption of that link for Russian (default: "Сайт компании Wiren Board")
+FOOTER_SITE_LABEL_EN — caption of that link for English (default: "Wiren Board website")
 ```
 
 If the variables are not set, the Wiren Board defaults are used. Restart the frontend and the web console after changing `.env`.

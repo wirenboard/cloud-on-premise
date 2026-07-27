@@ -177,9 +177,9 @@ services:
     restart: always
     environment:
       BACKEND_APP_URL: "http://backend:8000/"
-      FOOTER_LINKS: '[{"url": "https://wirenboard.com/", "caption": "mainSiteLink"}]'
-      FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"Сайт компании Wiren Board"}'
-      FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"Wiren Board website"}'
+      FOOTER_LINKS: '[{"url": "${FOOTER_SITE_URL:-https://wirenboard.com/}", "caption": "mainSiteLink"}]'
+      FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"${FOOTER_SITE_LABEL_RU:-Сайт компании Wiren Board}"}'
+      FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"${FOOTER_SITE_LABEL_EN:-Wiren Board website}"}'
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       HTML_TITLE: "${HTML_TITLE:-Wiren Board}"
       SERVICE_STATUS_URL: "${SERVICE_STATUS_URL:-}"
