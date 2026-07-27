@@ -156,27 +156,41 @@ Controllers must resolve the same hostname via the same internal DNS as the rest
 
 This step is optional.
 
-The frontend reads branding assets from the local `branding/` directory, which is mounted into the `frontend` container.
+The frontend and the web console read branding assets from the local `branding/` directory, which is mounted into the `frontend` and `webssh` containers.
 If you do not add your own files there, the application will continue using the default Wiren Board logo and icons.
 
-To replace the logo and icons, place your files in that directory with the exact names listed below:
+To replace the logo and icons, place your files in that directory with the exact names listed below. File requirements:
 
-```text
-branding/logo.svg
-branding/favicon.svg
-branding/favicon.ico
-branding/favicon-192.png
-branding/favicon-512.png
-branding/apple-touch-icon.png
-```
+| File | Format and size | Used for |
+|---|---|---|
+| `branding/logo.svg` | SVG, landscape, 160×40 as a reference (rendered 160px wide, height scales proportionally) | logo in the web UI and web console header |
+| `branding/favicon.svg` | SVG, square | tab icon in modern browsers |
+| `branding/favicon.ico` | ICO, 16–64 px sizes | tab icon in older browsers |
+| `branding/favicon-192.png` | PNG, exactly 192×192 | app icon (web manifest) |
+| `branding/favicon-512.png` | PNG, exactly 512×512 | app icon (web manifest) |
+| `branding/apple-touch-icon.png` | PNG, 180×180 | iOS home screen icon |
+
+Sizes are not validated automatically: a file with wrong proportions is served as is and may render incorrectly.
 
 You can also replace only some of these files.
 
-If the project is already running, restart the frontend after replacing the files:
+If the project is already running, restart the frontend and the web console after replacing the files:
 
 ```shell
-docker compose restart frontend
+docker compose restart frontend webssh
 ```
+
+Besides the assets, you can override the product name, links, and color shown in the web UI and the web console. Uncomment and fill in these variables in `.env`:
+
+```text
+SERVICE_NAME       — product name used in UI texts (default: "Wiren Board Cloud")
+HTML_TITLE         — browser tab title (default: "Wiren Board")
+SERVICE_STATUS_URL — your service status page link (when not set, the status hint is hidden)
+SERVICE_DOCS_URL   — documentation link
+PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
+```
+
+If the variables are not set, the Wiren Board defaults are used. Restart the frontend and the web console after changing `.env`.
 
 ---
 

@@ -162,6 +162,12 @@ services:
   webssh:
     image: ghcr.io/wirenboard/on-premise/wbc-webssh:${VERSION}
     restart: always
+    environment:
+      SERVICE_NAME: "${SERVICE_NAME:-Wiren Board}"
+      ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
+      PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
+    volumes:
+      - ./branding:/branding:ro
     depends_on:
       tunnel:
         condition: service_started
@@ -174,6 +180,11 @@ services:
       FOOTER_LINKS: '[{"url": "https://wirenboard.com/", "caption": "mainSiteLink"}]'
       FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"Сайт компании Wiren Board"}'
       FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"Wiren Board website"}'
+      SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
+      HTML_TITLE: "${HTML_TITLE:-Wiren Board}"
+      SERVICE_STATUS_URL: "${SERVICE_STATUS_URL:-}"
+      SERVICE_DOCS_URL: "${SERVICE_DOCS_URL:-https://wirenboard.com/wiki/Wiren_Board_Cloud}"
+      PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
     volumes:
       - ./branding:/branding:ro
     labels:
