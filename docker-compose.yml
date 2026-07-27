@@ -181,7 +181,7 @@ services:
       FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"${FOOTER_SITE_LABEL_RU:-Сайт компании Wiren Board}"}'
       FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"${FOOTER_SITE_LABEL_EN:-Wiren Board website}"}'
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
-      HTML_TITLE: "${HTML_TITLE:-Wiren Board}"
+      HTML_TITLE: "${HTML_TITLE:-${SERVICE_NAME:-Wiren Board}}"
       SERVICE_STATUS_URL: "${SERVICE_STATUS_URL:-}"
       SERVICE_DOCS_URL: "${SERVICE_DOCS_URL:-https://wirenboard.com/wiki/Wiren_Board_Cloud}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
