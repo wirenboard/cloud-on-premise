@@ -180,7 +180,7 @@ If the project is already running, restart the frontend and the web console afte
 docker compose restart frontend webssh
 ```
 
-Besides the assets, you can override the product name and the links shown in the web UI. Uncomment and fill in these variables in `.env`:
+Besides the assets, you can override the product name, links, and color shown in the web UI and the web console. Uncomment and fill in these variables in `.env`:
 
 ```text
 SERVICE_NAME       — product name used in UI texts (default: "Wiren Board Cloud")
@@ -190,7 +190,7 @@ SERVICE_DOCS_URL   — documentation link
 PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
 ```
 
-If the variables are not set, the Wiren Board defaults are used. Restart the frontend after changing `.env`.
+If the variables are not set, the Wiren Board defaults are used. Restart the frontend and the web console after changing `.env`.
 
 ---
 
