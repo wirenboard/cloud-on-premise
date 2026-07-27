@@ -79,7 +79,6 @@ jobs:
           docker push "$TARGET_IMAGE"
           docker push "$LATEST_IMAGE"
 
-          # Третий тег — sha коммита продуктового репо, из которого собран образ
           SHA=$(gh api "repos/${{ github.repository_owner }}/${{ matrix.repo }}/branches/onprem-release/${VERSION}" --jq .commit.sha 2>/dev/null || true)
           if [[ -n "$SHA" ]]; then
             SHA_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:${SHA}"
