@@ -184,7 +184,6 @@ Besides the assets, you can override the product name, links, and color shown in
 
 ```text
 SERVICE_NAME       — product name: UI texts and the browser tab title (default: "Wiren Board Cloud")
-HTML_TITLE         — optional: a separate browser tab title when it should differ from SERVICE_NAME (e.g. a shorter one)
 SERVICE_STATUS_URL — your service status page link (when not set, the status hint is hidden)
 SERVICE_DOCS_URL   — documentation link
 PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
