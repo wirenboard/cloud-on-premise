@@ -43,16 +43,15 @@ jobs:
       packages: write
     strategy:
       matrix:
-        image: [
-          wbc-backend,
-          wbc-worker,
-          wbc-agent-backend,
-          wbc-scheduler,
-          wbc-frontend,
-          wbc-tunnel,
-          wbc-tunnel-auth,
-          wbc-webssh
-        ]
+        include:
+          - { image: wbc-backend,       repo: cloud-backend }
+          - { image: wbc-worker,        repo: cloud-backend }
+          - { image: wbc-agent-backend, repo: cloud-backend }
+          - { image: wbc-scheduler,     repo: cloud-backend }
+          - { image: wbc-frontend,      repo: cloud-frontend }
+          - { image: wbc-tunnel,        repo: cloud-tunnel }
+          - { image: wbc-tunnel-auth,   repo: cloud-tunnel }
+          - { image: wbc-webssh,        repo: cloud-webssh }
     steps:
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -62,6 +61,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Retag and push image ${{ matrix.image }}
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           VERSION=${{ needs.read-version.outputs.version }}
           IMAGE=${{ matrix.image }}
@@ -77,6 +78,17 @@ jobs:
           docker tag "$SOURCE_IMAGE" "$LATEST_IMAGE"
           docker push "$TARGET_IMAGE"
           docker push "$LATEST_IMAGE"
+
+          # Третий тег — sha коммита продуктового репо, из которого собран образ
+          SHA=$(gh api "repos/${{ github.repository_owner }}/${{ matrix.repo }}/branches/onprem-release/${VERSION}" --jq .commit.sha 2>/dev/null || true)
+          if [[ -n "$SHA" ]]; then
+            SHA_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:${SHA}"
+            echo "Tagging $SHA_IMAGE"
+            docker tag "$SOURCE_IMAGE" "$SHA_IMAGE"
+            docker push "$SHA_IMAGE"
+          else
+            echo "::warning::${{ matrix.repo }} has no onprem-release/${VERSION} branch — skipping sha tag for ${IMAGE}"
+          fi
 
   create-release:
     needs: [read-version, retag-and-push]
