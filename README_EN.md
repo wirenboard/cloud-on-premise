@@ -184,12 +184,12 @@ Besides the assets, you can override the product name, links, and color shown in
 
 ```text
 SERVICE_NAME       — product name: UI texts and the browser tab title (default: "Wiren Board Cloud")
-SERVICE_STATUS_URL — your service status page link (when not set, the status hint is hidden)
-SERVICE_DOCS_URL   — documentation link
+SERVICE_STATUS_URL — your service status page link (not set or empty — the status link is hidden)
+SERVICE_DOCS_URL   — documentation link (not set — Wiren Board wiki; empty — the docs link is hidden)
 PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
-FOOTER_SITE_URL    — company site link in the footer (default: https://wirenboard.com/)
+FOOTER_SITE_URL    — company site link in the footer (not set — wirenboard.com; empty — the link is hidden)
 FOOTER_SITE_LABEL_RU — caption of that link for Russian (default: "Сайт компании Wiren Board")
-FOOTER_SITE_LABEL_EN — caption of that link for English (default: "Wiren Board website")
+FOOTER_SITE_LABEL_EN — caption of that link for English (default: "Wiren Board website"); when only one label is set, it is used for both languages
 ```
 
 If the variables are not set, the Wiren Board defaults are used. Restart the frontend and the web console after changing `.env`.
