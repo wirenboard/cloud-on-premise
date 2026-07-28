@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.0] - 2026-07-28
+
+### Added
+
+- The company site footer link can now be overridden via the `FOOTER_SITE_URL`, `FOOTER_SITE_LABEL_RU`, `FOOTER_SITE_LABEL_EN` environment variables (see the Branding section in `.env.example`). When not set, the Wiren Board defaults are used.
+
+### Changed
+
+- The browser tab title now follows `SERVICE_NAME`: rebranding requires setting just one variable. The `HTML_TITLE` variable is retired — if still present in `.env`, it is simply ignored.
+
+### Security
+
+- Tunnel authorizer: closed two `tunnel_key` authorization bypasses. The nginx `auth_jwt` module is now built from the `wirenboard/ngx-http-auth-jwt-module` fork (2.0.2-wb3): the JWT signing algorithm is pinned and spoofed client claim headers are stripped.
+
 ## [1.4.0] - 2026-07-25
 
 ### Added
@@ -57,13 +71,13 @@ All notable changes to this project are documented in this file.
 
 - First stable release.
 
-## [0.6.1] - 2025-08-14
+## [0.1.1] - 2025-08-14
 
 ### Changed
 
 - Minor fixes and stability improvements.
 
-## [0.6.0] - 2025-08-01
+## [0.1.0] - 2025-08-01
 
 ### Added
 
