@@ -15,12 +15,18 @@ OUT="$(mktemp)"
 : "${TELEGRAF_TIMESCALE_PASSWORD:=telegraf_password}"
 : "${GRAFANA_TIMESCALE_USER:=grafana}"
 : "${GRAFANA_TIMESCALE_PASSWORD:=grafana_db_password}"
+: "${METRICS_RETENTION_DAYS:=30}"
+# Chunks are dropped a couple of days later than the per-host retention job, so a
+# job that skips a run cannot take data with it.
+RETENTION_SAFETY_DAYS=$((METRICS_RETENTION_DAYS + 2))
 
 sed \
   -e "s/__TELEGRAF_USER__/${TELEGRAF_TIMESCALE_USER}/g" \
   -e "s/__TELEGRAF_PASSWORD__/${TELEGRAF_TIMESCALE_PASSWORD}/g" \
   -e "s/__GRAFANA_USER__/${GRAFANA_TIMESCALE_USER}/g" \
   -e "s/__GRAFANA_PASSWORD__/${GRAFANA_TIMESCALE_PASSWORD}/g" \
+  -e "s/__RETENTION_DAYS__/${METRICS_RETENTION_DAYS}/g" \
+  -e "s/__RETENTION_SAFETY_DAYS__/${RETENTION_SAFETY_DAYS}/g" \
   "$TMPL" > "$OUT"
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$OUT"

@@ -61,7 +61,7 @@ your-domain.com
 *.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
-*.apps.your-domain.com   # optional — for controller web services
+*.apps.your-domain.com
 ```
 
 These cover the required subdomains:
@@ -76,8 +76,8 @@ ssh.your-domain.com
 http.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
-apps.your-domain.com     # optional — for controller web services
-*.apps.your-domain.com   # optional — for controller web services
+apps.your-domain.com
+*.apps.your-domain.com
 ```
 
 ### 2. Ports
@@ -113,7 +113,7 @@ Certificates must be issued by a trusted CA:
 
 If you already have a certificate for this hostname, check the SANs (Subject Alternative Names):
 
-The certificate must be issued for the same value as `ABSOLUTE_SERVER`, including the subdomain. For example, if the cloud runs on `cloud.example.com`, the certificate must cover `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, and `*.ssh.cloud.example.com`. If you plan to use [controller web services](#controller-web-services-optional), also `apps.cloud.example.com` and `*.apps.cloud.example.com`.
+The certificate must be issued for the same value as `ABSOLUTE_SERVER`, including the subdomain. For example, if the cloud runs on `cloud.example.com`, the certificate must cover `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, `*.ssh.cloud.example.com`, and `*.apps.cloud.example.com`.
 
 ```bash
 openssl x509 -in "path/to/your/certs/fullchain.pem" -noout -text | grep -A1 "Subject Alternative Name"
@@ -126,11 +126,13 @@ your-domain.com
 *.your-domain.com
 *.http.your-domain.com
 *.ssh.your-domain.com
-apps.your-domain.com     # optional — for controller web services
-*.apps.your-domain.com   # optional — for controller web services
+apps.your-domain.com
+*.apps.your-domain.com
 ```
 
 Otherwise, you must obtain a new certificate.
+
+> ⚠️ `make check-certs` validates this list and refuses to start the cloud if a domain is missing. In particular, a certificate without `*.apps.your-domain.com` fails the check.
 
 Place `fullchain.pem` and `privkey.pem` in the `./tls` directory or set the `TLS_CERTS_PATH` environment variable.
 
@@ -151,7 +153,7 @@ Working setup:
 3. In your internal DNS, create A records pointing the cloud's full hostname and all subdomains (see [1. DNS Records](#1-dns-records)) to the server's local IP.
 4. Set `ABSOLUTE_SERVER=cloud.example.com`.
 
-> 💡 The `*.ssh.your-domain.com`, `*.http.your-domain.com`, and `*.apps.your-domain.com` (optional — for controller web services) entries require wildcard DNS records. Consumer router DNS does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
+> 💡 The `*.ssh.your-domain.com`, `*.http.your-domain.com`, and `*.apps.your-domain.com` entries require wildcard DNS records. Consumer router DNS does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
 
 Controllers must resolve the same hostname via the same internal DNS as the rest of the network.
 
@@ -222,67 +224,50 @@ The `EMAIL_*` variables can be left unset if email sending is disabled — see [
 ```dotenv
 ABSOLUTE_SERVER=my-domain-name.com
 
+# Cloud administrator. The email is also the login
+ADMIN_EMAIL=admin@mail.com
+ADMIN_PASSWORD=password
+
 # Email sending (True/False). When False, no emails are sent; invitations and
 # password resets are handled via the admin panel — see "Working Without Email".
 EMAIL_ENABLED=True
-
-# Email setup
-# Set smtp+ssl if using SSL
-EMAIL_PROTOCOL=smtp+tls
-EMAIL_LOGIN=mymail@mail.com
-EMAIL_PASSWORD=password
-EMAIL_SERVER=smtp.mail.com
+EMAIL_HOST=smtp.mail.com
 EMAIL_PORT=587
+EMAIL_HOST_USER=mymail@mail.com
+EMAIL_HOST_PASSWORD=password
 EMAIL_NOTIFICATIONS_FROM=mymail@mail.com
+# TLS on port 587. For the SSL port 465 set EMAIL_USE_SSL=True instead
+EMAIL_USE_TLS=True
 
-# Admin credentials
-ADMIN_EMAIL=admin@mail.com
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=password
-
-# Metrics database (TimescaleDB)
-TIMESCALE_DB=metrics
-TIMESCALE_USER=timescale
-TIMESCALE_PASSWORD=timescale_password
-# Role Telegraf uses to write ingested metrics into TimescaleDB
-TELEGRAF_TIMESCALE_USER=telegraf
-TELEGRAF_TIMESCALE_PASSWORD=telegraf_password
-
-# Grafana (user dashboards): read-only role for the metrics DB and the Grafana admin
-GRAFANA_TIMESCALE_USER=grafana
-GRAFANA_TIMESCALE_PASSWORD=grafana_timescale_password
-GRAFANA_ADMIN_USER=grafana_admin
-GRAFANA_ADMIN_PASSWORD=grafana_password
-
-# Tunnel Dashboard admin and port configuration
-TUNNEL_DASHBOARD_USER=tunnel_admin
-TUNNEL_DASHBOARD_PASSWORD=tunnel_password
-TUNNEL_DASHBOARD_PORT=7501
-
-# Tunnel port configuration – change if the port is already in use
-TUNNEL_PORT=7107
-
-# Postgres admin
+# Application database
 POSTGRES_DB=db_name
 POSTGRES_USER=postgres_user
 POSTGRES_PASSWORD=postgres_password
+
+# Metrics dashboards (Grafana). This account signs in at metrics.<your domain>
+GRAFANA_ADMIN_USER=grafana_admin
+GRAFANA_ADMIN_PASSWORD=grafana_password
+
+# Tunnel service ports and its dashboard account
+TUNNEL_PORT=7107
+TUNNEL_DASHBOARD_PORT=7501
+TUNNEL_DASHBOARD_USER=tunnel_admin
+TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 
 #--------------------------------------------------------------------------
 # Optional ----------------------------------------------------------------
 #--------------------------------------------------------------------------
 
-# Create MinIO admin
-#MINIO_ROOT_USER=minio_admin
-#MINIO_ROOT_PASSWORD=minio_password
+# How long controller metrics are kept. Raise it if you have the disk space
+#METRICS_RETENTION_DAYS=30
 
-# Set Docker network name if required. Default is "wb-net"
-#DOCKER_NET_NAME=my-docker-network
+# Session geolocation. When True, the DB-IP City Lite database (~62 MB) is
+# downloaded on `make run` — see "Session Geolocation"
+#GEOIP_ENABLED=True
 
-# Set the path to the directory with TLS certificates if required. Default is "./tls"
-#TLS_CERTS_PATH=path/to/my/certs/
-
-# Set the external port for Traefik
-#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
+# Nightly PostgreSQL backup into the bundled MinIO (S3)
+#POSTGRES_BACKUP_SCHEDULE=30 23 * * *
+#POSTGRES_BACKUP_KEEP_DAYS=3
 
 # Override the organization invitation email subject and body.
 # Leave commented to keep the built-in RU/EN translation (selected by the
@@ -292,13 +277,20 @@ POSTGRES_PASSWORD=postgres_password
 #INVITE_EMAIL_SUBJECT="You have been invited to a Wiren Board Cloud organization"
 #INVITE_EMAIL_BODY="Hello!\nYou have been invited to our organization.\nClick the link to register:"
 
+# Set the path to the directory with TLS certificates if required. Default is "./tls"
+#TLS_CERTS_PATH=path/to/my/certs/
+
+# Set Docker network name if required. Default is "wb_net"
+#DOCKER_NET_NAME=my-docker-network
+
+# Set the external port for Traefik
+#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
+
 ```
 
-> ⚠️ **The `EMAIL_URL` variable is generated automatically.**
-> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_SERVER`, `EMAIL_PORT`, etc.
-> After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.
-> This rebuilds `EMAIL_URL` and applies the new settings.
-> Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value, and email delivery will fail.
+> ⚠️ The `EMAIL_*` variables are passed to the containers as they are — `EMAIL_URL` is no longer assembled and the `make generate-email-url` target is gone.
+> For the submission port 587 keep `EMAIL_USE_TLS=True`; for the SSL port 465 drop it and set `EMAIL_USE_SSL=True` instead.
+> After editing `.env`, restart the stack: `make restart`.
 
 > 💡 Email sending can be disabled entirely — see [Working Without Email](#working-without-email).
 
@@ -325,7 +317,8 @@ make run
 ### User Registration
 
 User self-registration is disabled in the On-Premise cloud.
-Only one admin user will be available initially, using credentials from `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
+Only one admin user will be available initially, using credentials from `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+In 2.0 the email is the login, so the administrator signs in with the `ADMIN_EMAIL` value.
 
 > ⚠️ You may change the password or create another admin user. However, the user specified in `.env` will be recreated on each restart if deleted.
 
@@ -334,7 +327,7 @@ The admin must create the first organization manually via the [admin panel](#adm
 ### Admin Panel
 
 The admin panel (Django admin) is available at `https://app.your-domain.com/admin/`.
-Log in with the admin credentials from the `ADMIN_USERNAME` and `ADMIN_PASSWORD` environment variables.
+Log in with the admin credentials from the `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables.
 
 It is used by the administrator to create the first organization, invite and manage users, and manage system objects.
 
@@ -387,13 +380,12 @@ Your controller is now successfully linked to the cloud.
 
 > ⚠️ Sending controller metrics to the On-Premise cloud is supported only on `wb-cloud-agent` versions up to and including `1.6.14`. On newer agent versions, controller metrics will not be sent to the On-Premise cloud.
 
-### Controller Web Services (optional)
+### Controller Web Services
 
-The cloud can publish the web interfaces of services running on a controller
+The cloud publishes the web interfaces of services running on a controller
 (e.g. Node-RED) through the cloud tunnel. Each service gets an address of the
 form `<serial>-<port>.apps.your-domain.com`, reachable only after cloud
-authorization. Up to 20 services can be published per controller
-(the `MAX_SERVICES_PER_CONTROLLER` variable).
+authorization. Up to 20 services can be published per controller.
 
 What the cloud operator must provide:
 
@@ -403,39 +395,32 @@ What the cloud operator must provide:
   only via the DNS-01 challenge (HTTP-01 cannot issue wildcards) — the same
   mechanism used for the rest of the cloud certificate.
 
-If the `apps` DNS records and certificate are not configured, the cloud works
-fully, but links to controller services will not open (the buttons are still
-visible in the UI — the feature ships with the images).
+`*.apps.your-domain.com` is part of the mandatory certificate domain set:
+without it `make check-certs` — and therefore `make run` — fails.
 
-Optional tuning in `.env`:
-
-```dotenv
-# Warmed tunnel channels per controller
-#TUNNEL_POOL_COUNT=5
-
-# Maximum published services per controller
-#MAX_SERVICES_PER_CONTROLLER=20
-
-# FRP port limit per client; keep >= MAX_SERVICES_PER_CONTROLLER + 2
-#FRP_MAX_PORTS_PER_CLIENT=22
-```
-
-### Session Geolocation (GeoIP, optional)
+### Session Geolocation (GeoIP)
 
 The cloud can show the country and city by IP address in the user's active
-sessions list. This requires a local GeoIP database:
+sessions list. To enable it, uncomment in `.env`:
 
-1. Download the free DB-IP "IP to City Lite" database in MMDB format:
-   [db-ip.com/db/download/ip-to-city-lite](https://db-ip.com/db/download/ip-to-city-lite) (CC BY 4.0 license).
-2. Place the file as `./geoip/dbip-city-lite.mmdb`.
-3. Uncomment in `.env`: `GEOIP_CITY_DB_PATH=/data/geoip/dbip-city-lite.mmdb`.
-4. Restart the stack: `make restart`.
+```dotenv
+GEOIP_ENABLED=True
+```
 
-Geolocation works fully offline: the file can be downloaded on another machine
-and transferred to the server; the cloud makes no outbound requests. DB-IP
-updates the database monthly — update at will (just replace the file).
+On `make run` (specifically during `make generate-env`) the DB-IP "IP to City
+Lite" database (~62 MB, CC BY 4.0 license) is downloaded into `./geoip`
+automatically.
 
-Without the file everything works, the location in the sessions list simply
+If the server has no internet access, the script prints the fallback: download
+the "IP to City Lite" database in MMDB format from
+[db-ip.com/db/download/ip-to-city-lite](https://db-ip.com/db/download/ip-to-city-lite)
+on any machine with internet access, put the unpacked file at
+`./geoip/dbip-city-lite.mmdb`, and run `make restart`.
+
+Geolocation itself works fully offline: the cloud makes no outbound requests.
+DB-IP updates the database monthly — update at will (just replace the file).
+
+Without the database everything works, the location in the sessions list simply
 stays empty. Private addresses (LAN/VPN) are not geolocated — this is by design.
 
 ---
@@ -468,7 +453,7 @@ EMAIL_ENABLED=False
 With `EMAIL_ENABLED=False`:
 
 - emails are silently not sent — no errors are raised;
-- the `EMAIL_*` variables can be left unset: `make run` and `make check-env` do not require them, and `EMAIL_URL` generation is skipped;
+- the `EMAIL_*` variables can be left unset: `make run` and `make check-env` do not require them;
 - DNS records for email (section [3. DNS Records for Email](#3-dns-records-for-email)) are not needed;
 - **inviting a user to an organization** (two steps, since no email is sent):
   1. in the frontend, the organization owner or admin invites the user by email (in the organization members section);
@@ -496,8 +481,10 @@ Run all commands from the repo root.
 | `make generate-jwt`      | Generate or update JWT keys                                  |
 | `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                          |
 | `generate-django-secret` | Generate Django SECRET_KEY                                   |
-| `generate-email-url`     | Generate/update email URL                                    |
-| `make run`               | Full launch cycle (generate-env, build and start containers) |
+| `make run`               | Full launch cycle (generate-env, cert check, build and start containers) |
+| `make run-no-cert-check` | Same without the TLS certificate check (not recommended)     |
+| `make stop`              | Stop containers                                              |
+| `make restart`           | Restart containers (with the cert check)                     |
 | `make update`            | Stop containers, update images, rebuild and restart          |
 | `make upgrade`           | 1.x → 2.0 upgrade: backup, fix users, migrate, start         |
 | `make fix-users MODE=…`  | Run migration_doctor (`scan` / `auto` / `resolve` / `dump` / `apply`) |
@@ -534,6 +521,11 @@ repaired before migrating.
 Upgrade **only if** you are currently on a 1.x version (see the `VERSION` file or the
 "About" screen). Before `make upgrade`, make sure:
 
+- **The certificate has been reissued with `*.apps.<domain>`.** In 2.0 controller web
+  services are a standard feature, so `*.apps.your-domain.com` belongs to the mandatory
+  domain set. If your 1.x certificate does not cover it, `make upgrade` stops at
+  `make check-certs` before the backup: reissue the certificate (see
+  [4. TLS Certificates](#4-tls-certificates)) and add the `*.apps` DNS record.
 - **There is room for the backup.** The backup (`pg_dump` + `influxd backup`) is written
   to `./backups` — ensure there is disk space for a copy of the database. The command
   takes the backup itself, **before** any change; a manual backup is not required but does
@@ -563,17 +555,23 @@ make upgrade
 
 What `make upgrade` does:
 
-1. **Mandatory backup** (before ANY DB change): `pg_dump` of the main PostgreSQL
+1. **`.env` preparation**: if `EMAIL_ENABLED` is unset, `True` is appended (the 1.x
+   behaviour); the old email variables (`EMAIL_SERVER`, `EMAIL_LOGIN`,
+   `EMAIL_PASSWORD`, `EMAIL_PROTOCOL`) are converted to the 2.0 names
+   (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`/`EMAIL_USE_SSL`).
+   Then `make generate-env` and `make check-certs` run.
+2. **Mandatory backup** (before ANY DB change): `pg_dump` of the main PostgreSQL
    and `influxd backup` of the InfluxDB metrics (if that service is still
    running) into `./backups`. InfluxDB is **not** converted to TimescaleDB — it
    is kept alongside so you can consult the historical metrics later. New metrics
    accumulate in TimescaleDB.
-2. **User-table scan** (`migration_doctor`, read-only): finds rows that violate
+3. **User-table scan** (`migration_doctor`, read-only): finds rows that violate
    the 2.0 invariants — blank email, `username != email`, duplicate email
-   (case-insensitive) — and prints a table with counts.
-3. **Gate**: if any conflict remains, the upgrade **stops** (non-zero exit),
-   migration does NOT run, and the fix command is printed.
-4. Once clean, it runs `migrate` and brings up the 2.0 stack.
+   (case-insensitive) — and prints a table with counts. If any conflict remains,
+   the upgrade **stops** (non-zero exit), migration does NOT run, and the fix
+   command is printed.
+4. **`migrate` on the 2.0 image** (`docker compose pull` + `manage.py migrate`).
+5. **Bringing up the 2.0 stack** (`docker compose up -d --build`).
 
 ### Resolving user conflicts
 
@@ -637,7 +635,7 @@ sudo certbot certonly --manual --preferred-challenges dns \
   -d "*.apps.$DOMAIN_NAME"
 ```
 
-> The last two `-d` lines (`apps`) are optional — needed only for [controller web services](#controller-web-services-optional).
+> All six `-d` lines are mandatory: without `*.apps.$DOMAIN_NAME` the certificate fails `make check-certs`.
 
 Add DNS TXT records as prompted by Certbot. Use `dig` to verify.
 
@@ -803,7 +801,7 @@ where `<cloud-host>` is the address of the on-premise cloud server, and `your-do
 > `yaml: found unknown escape character`, the file provider drops the whole file,
 > and Traefik starts serving its default certificate instead of passing TLS through.
 
-> The rule matches the same hosts your cloud's wildcard certificate covers (see the "TLS Certificates" section): `your-domain.com` itself, any first-level subdomain (`app.`, `agent.`, `ssh.`, `http.`, etc.), per-controller `<id>.http.`/`<id>.ssh.`, and `<serial>-<port>.apps.` (optional — for controller web services). Substitute your own `ABSOLUTE_SERVER` domain for `your-domain.com`.
+> The rule matches the same hosts your cloud's wildcard certificate covers (see the "TLS Certificates" section): `your-domain.com` itself, any first-level subdomain (`app.`, `agent.`, `ssh.`, `http.`, etc.), per-controller `<id>.http.`/`<id>.ssh.`, and `<serial>-<port>.apps.`. Substitute your own `ABSOLUTE_SERVER` domain for `your-domain.com`.
 
 > If you only need to expose controller traffic through the external proxy, keeping the cloud web interface unreachable from outside, narrow the regexp down to `agent.your-domain.com` and the per-controller `<id>.http.`/`<id>.ssh.` hosts.
 

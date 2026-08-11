@@ -62,7 +62,7 @@ your-domain.com
 *.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
-*.apps.your-domain.com   # опционально — для веб-сервисов контроллеров
+*.apps.your-domain.com
 ```
 
 Они покрывают все следующие поддомены необходимые для работы сервиса:
@@ -77,8 +77,8 @@ ssh.your-domain.com
 http.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
-apps.your-domain.com     # опционально — для веб-сервисов контроллеров
-*.apps.your-domain.com   # опционально — для веб-сервисов контроллеров
+apps.your-domain.com
+*.apps.your-domain.com
 ```
 
 ### 2. Порты
@@ -113,7 +113,7 @@ apps.your-domain.com     # опционально — для веб-сервис
 
 Если у вас есть сертификат для этого домена, то проверьте его SAN (перечень поддоменов):
 
-Сертификат должен быть выпущен для того же значения, которое указано в `ABSOLUTE_SERVER`, включая поддомен. Например, если облако работает на `cloud.example.com`, сертификат нужен для `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com` и `*.ssh.cloud.example.com`. Если планируете использовать [веб-сервисы контроллеров](#веб-сервисы-контроллеров-опционально) — также для `apps.cloud.example.com` и `*.apps.cloud.example.com`.
+Сертификат должен быть выпущен для того же значения, которое указано в `ABSOLUTE_SERVER`, включая поддомен. Например, если облако работает на `cloud.example.com`, сертификат нужен для `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, `*.ssh.cloud.example.com` и `*.apps.cloud.example.com`.
 
 ```bash
 openssl x509 -in "path/to/your/certs/fullchain.pem" -noout -text | grep -A1 "Subject Alternative Name"
@@ -126,11 +126,13 @@ your-domain.com
 *.your-domain.com
 *.http.your-domain.com
 *.ssh.your-domain.com
-apps.your-domain.com     # опционально — для веб-сервисов контроллеров
-*.apps.your-domain.com   # опционально — для веб-сервисов контроллеров
+apps.your-domain.com
+*.apps.your-domain.com
 ```
 
 В противном случае вам придется получить новый.
+
+> ⚠️ `make check-certs` проверяет этот список и не даёт запустить облако, если какого-то домена нет. В частности, сертификат без `*.apps.your-domain.com` не пройдёт проверку.
 
 ---
 
@@ -153,7 +155,7 @@ apps.your-domain.com     # опционально — для веб-сервис
 3. Во внутреннем DNS создайте A-записи, указывающие полный hostname облака и все поддомены (см. [1. DNS-записи](#1-dns-записи)) на локальный IP сервера.
 4. Укажите `ABSOLUTE_SERVER=cloud.example.com`.
 
-> 💡 Для `*.ssh.your-domain.com`, `*.http.your-domain.com` и `*.apps.your-domain.com` (опционально — для веб-сервисов контроллеров) во внутреннем DNS нужны wildcard-записи. DNS бытовых роутеров их не поддерживает — используйте dnsmasq, Pi-hole, AdGuard Home или полноценный DNS-сервер.
+> 💡 Для `*.ssh.your-domain.com`, `*.http.your-domain.com` и `*.apps.your-domain.com` во внутреннем DNS нужны wildcard-записи. DNS бытовых роутеров их не поддерживает — используйте dnsmasq, Pi-hole, AdGuard Home или полноценный DNS-сервер.
 
 Контроллеры должны резолвить тот же hostname через тот же внутренний DNS, что и остальные устройства сети.
 
@@ -224,67 +226,50 @@ nano .env
 ```dotenv
 ABSOLUTE_SERVER=my-domain-name.com
 
+# Администратор облака. Email одновременно является логином
+ADMIN_EMAIL=admin@mail.com
+ADMIN_PASSWORD=password
+
 # Отправка email (True/False). При False письма не отправляются; приглашения
 # и сброс пароля выполняются через административную панель — см. «Работа без email».
 EMAIL_ENABLED=True
-
-# Настройка отправки email
-# Установите smtp+ssl если используете SSL
-EMAIL_PROTOCOL=smtp+tls
-EMAIL_LOGIN=mymail@mail.com
-EMAIL_PASSWORD=password
-EMAIL_SERVER=smtp.mail.com
+EMAIL_HOST=smtp.mail.com
 EMAIL_PORT=587
+EMAIL_HOST_USER=mymail@mail.com
+EMAIL_HOST_PASSWORD=password
 EMAIL_NOTIFICATIONS_FROM=mymail@mail.com
+# TLS на порту 587. Для SSL-порта 465 задайте вместо неё EMAIL_USE_SSL=True
+EMAIL_USE_TLS=True
 
-# Создание администратора
-ADMIN_EMAIL=admin@mail.com
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=password
-
-# База метрик (TimescaleDB)
-TIMESCALE_DB=metrics
-TIMESCALE_USER=timescale
-TIMESCALE_PASSWORD=timescale_password
-# Роль, под которой Telegraf пишет принятые метрики в TimescaleDB
-TELEGRAF_TIMESCALE_USER=telegraf
-TELEGRAF_TIMESCALE_PASSWORD=telegraf_password
-
-# Grafana (пользовательские дашборды): read-only роль к метрикам и админ Grafana
-GRAFANA_TIMESCALE_USER=grafana
-GRAFANA_TIMESCALE_PASSWORD=grafana_timescale_password
-GRAFANA_ADMIN_USER=grafana_admin
-GRAFANA_ADMIN_PASSWORD=grafana_password
-
-# Создание администратора Tunnel Dashboard и настройка порта
-TUNNEL_DASHBOARD_USER=tunnel_admin
-TUNNEL_DASHBOARD_PASSWORD=tunnel_password
-TUNNEL_DASHBOARD_PORT=7501
-
-# Настройка порта для работы тоннелей. Измените если порт уже занят
-TUNNEL_PORT=7107
-
-# Создание администратора Postgres
+# База данных приложения
 POSTGRES_DB=db_name
 POSTGRES_USER=postgres_user
 POSTGRES_PASSWORD=postgres_password
+
+# Дашборды метрик (Grafana). Под этой учётной записью вход на metrics.<ваш домен>
+GRAFANA_ADMIN_USER=grafana_admin
+GRAFANA_ADMIN_PASSWORD=grafana_password
+
+# Порты сервиса туннелей и учётная запись его дашборда
+TUNNEL_PORT=7107
+TUNNEL_DASHBOARD_PORT=7501
+TUNNEL_DASHBOARD_USER=tunnel_admin
+TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 
 #--------------------------------------------------------------------------
 # Optional ----------------------------------------------------------------
 #--------------------------------------------------------------------------
 
-# Создание администратора Minio
-#MINIO_ROOT_USER=minio_admin
-#MINIO_ROOT_PASSWORD=minio_password
+# Сколько дней хранятся метрики контроллеров. Увеличьте, если на диске есть место
+#METRICS_RETENTION_DAYS=30
 
-# Установить имя докер сети если требуется. По умолчанию "wb-net"
-#DOCKER_NET_NAME=my-docker-network
+# Геолокация сессий. При True база DB-IP City Lite (~62 МБ) скачивается на
+# `make run` — см. «Геолокация сессий»
+#GEOIP_ENABLED=True
 
-# Установить путь к директории с tls сертификатами если требуется. По умолчанию "./tls"
-#TLS_CERTS_PATH=path/to/my/certs/
-
-# Установить внешний порт для Traefik
-#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
+# Ночной бэкап PostgreSQL во встроенный MinIO (S3)
+#POSTGRES_BACKUP_SCHEDULE=30 23 * * *
+#POSTGRES_BACKUP_KEEP_DAYS=3
 
 # Переопределение темы и тела письма-приглашения в организацию.
 # Если оставить закомментированными, используется встроенная локализация (RU/EN
@@ -294,13 +279,20 @@ POSTGRES_PASSWORD=postgres_password
 #INVITE_EMAIL_SUBJECT="Вас пригласили в организацию в Wiren Board Cloud"
 #INVITE_EMAIL_BODY="Здравствуйте!\nВы получили приглашение в нашу организацию.\nДля регистрации перейдите по ссылке:"
 
+# Установить путь к директории с tls сертификатами если требуется. По умолчанию "./tls"
+#TLS_CERTS_PATH=path/to/my/certs/
+
+# Установить имя докер сети если требуется. По умолчанию "wb_net"
+#DOCKER_NET_NAME=my-docker-network
+
+# Установить внешний порт для Traefik
+#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
+
 ```
 
-> ⚠️ **Переменная `EMAIL_URL` генерируется автоматически.**
-> Она собирается из переменных `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_SERVER`, `EMAIL_PORT` и др.
-> Изменили одну из этих переменных — **обязательно** выполните `make generate-email-url` или `make run` при запуске.
-> Это пересоберёт `EMAIL_URL` и применит новые настройки.
-> Запуск `docker compose up` без предварительного `make run` или `make generate-email-url` оставит старое значение.
+> ⚠️ Переменные `EMAIL_*` передаются в контейнеры как есть — `EMAIL_URL` больше не собирается и цели `make generate-email-url` нет.
+> Для submission-порта 587 оставьте `EMAIL_USE_TLS=True`; для SSL-порта 465 уберите её и задайте `EMAIL_USE_SSL=True`.
+> После правки `.env` перезапустите стек: `make restart`.
 
 > 💡 Отправку email можно полностью отключить — см. [Работа без email](#работа-без-email).
 
@@ -327,7 +319,8 @@ make run
 
 В on-premise облаке регистрация сторонних пользователей отключена.
 Доступ к системе изначально имеет только один пользователь с правами администратора,
-чьи логин и пароль берутся из переменных окружения `ADMIN_USERNAME` и `ADMIN_PASSWORD` при запуске проекта.
+чьи логин и пароль берутся из переменных окружения `ADMIN_EMAIL` и `ADMIN_PASSWORD` при запуске проекта.
+В 2.0 логин — это email, поэтому администратор входит по значению `ADMIN_EMAIL`.
 
 > ⚠️ Вы можете сменить пароль в любое время и создать другого администратора,
 > но имейте в виду, что, если вы удалите пользователя,
@@ -343,7 +336,7 @@ make run
 ### Административная панель
 
 Административная панель (Django admin) доступна по адресу `https://app.your-domain.com/admin/`.
-Для входа используйте логин и пароль администратора из переменных окружения `ADMIN_USERNAME` и `ADMIN_PASSWORD`.
+Для входа используйте email и пароль администратора из переменных окружения `ADMIN_EMAIL` и `ADMIN_PASSWORD`.
 
 Через неё администратор создаёт первую организацию, приглашает пользователей, управляет ими и другими объектами системы.
 
@@ -397,13 +390,12 @@ wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https:/
 
 > ⚠️ Отправка метрик с контроллера в On-Premise облако поддерживается только на версиях агента `wb-cloud-agent` до `1.6.14` включительно. На более новых версиях агента метрики контроллера в On-Premise облако отправляться не будут.
 
-### Веб-сервисы контроллеров (опционально)
+### Веб-сервисы контроллеров
 
-Облако может публиковать веб-интерфейсы сервисов, работающих на контроллере
+Облако публикует веб-интерфейсы сервисов, работающих на контроллере
 (например, Node-RED), через облачный туннель. Каждый сервис получает адрес вида
 `<серийник>-<порт>.apps.your-domain.com`, доступ к нему — только через облачную
-авторизацию. На один контроллер можно опубликовать до 20 сервисов
-(переменная `MAX_SERVICES_PER_CONTROLLER`).
+авторизацию. На один контроллер можно опубликовать до 20 сервисов.
 
 Что требуется от оператора облака:
 
@@ -413,39 +405,31 @@ wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https:/
   DNS-01 challenge (HTTP-01 wildcard не поддерживает) — это тот же механизм,
   которым получается остальной сертификат облака.
 
-Если `apps`-записи и сертификат не настроены, облако полностью работает,
-но ссылки на сервисы контроллеров не будут открываться (кнопки в интерфейсе
-при этом видны — функциональность приезжает вместе с образами).
+`*.apps.your-domain.com` входит в обязательный набор доменов сертификата:
+без него `make check-certs` (а значит и `make run`) остановится с ошибкой.
 
-Тюнинг в `.env` (опционально):
-
-```dotenv
-# Число прогретых туннельных каналов на контроллер
-#TUNNEL_POOL_COUNT=5
-
-# Максимум публикуемых сервисов на контроллер
-#MAX_SERVICES_PER_CONTROLLER=20
-
-# Лимит портов FRP на клиента; держите >= MAX_SERVICES_PER_CONTROLLER + 2
-#FRP_MAX_PORTS_PER_CLIENT=22
-```
-
-### Геолокация сессий (GeoIP, опционально)
+### Геолокация сессий (GeoIP)
 
 В списке активных сессий пользователя облако может показывать страну и город
-по IP-адресу. Для этого нужна локальная база GeoIP:
+по IP-адресу. Для этого раскомментируйте в `.env`:
 
-1. Скачайте бесплатную базу DB-IP «IP to City Lite» в формате MMDB:
-   [db-ip.com/db/download/ip-to-city-lite](https://db-ip.com/db/download/ip-to-city-lite) (лицензия CC BY 4.0).
-2. Положите файл как `./geoip/dbip-city-lite.mmdb`.
-3. Раскомментируйте в `.env`: `GEOIP_CITY_DB_PATH=/data/geoip/dbip-city-lite.mmdb`.
-4. Перезапустите стек: `make restart`.
+```dotenv
+GEOIP_ENABLED=True
+```
 
-Геолокация работает полностью офлайн: файл можно скачать на другой машине и
-перенести на сервер, наружу облако запросов не делает. DB-IP обновляет базу
-ежемесячно — обновление по желанию (просто замените файл).
+При `make run` (точнее, на шаге `make generate-env`) база DB-IP «IP to City Lite»
+(~62 МБ, лицензия CC BY 4.0) скачивается автоматически в `./geoip`.
 
-Без файла всё работает, локация в списке сессий остаётся пустой. Приватные
+Если у сервера нет доступа в интернет, скрипт напечатает инструкцию: скачайте
+базу «IP to City Lite» в формате MMDB с
+[db-ip.com/db/download/ip-to-city-lite](https://db-ip.com/db/download/ip-to-city-lite)
+на любой машине с интернетом, положите распакованный файл как
+`./geoip/dbip-city-lite.mmdb` и выполните `make restart`.
+
+Сама геолокация работает полностью офлайн: наружу облако запросов не делает.
+DB-IP обновляет базу ежемесячно — обновление по желанию (просто замените файл).
+
+Без базы всё работает, локация в списке сессий остаётся пустой. Приватные
 адреса (LAN/VPN) не геолоцируются — это ожидаемое поведение.
 
 ---
@@ -482,7 +466,7 @@ EMAIL_ENABLED=False
 При `EMAIL_ENABLED=False`:
 
 - письма перестают отправляться — молча, без каких-либо ошибок;
-- переменные `EMAIL_*` заполнять не нужно: `make run` и `make check-env` не требуют их, а генерация `EMAIL_URL` пропускается;
+- переменные `EMAIL_*` заполнять не нужно: `make run` и `make check-env` не требуют их;
 - DNS-записи для почты (раздел [3. DNS-записи для почты](#3-dns-записи-для-почты)) настраивать не нужно;
 - **приглашение пользователя в организацию** (в два шага, так как письмо не отправляется):
   1. во фронтенде владелец или администратор организации приглашает пользователя по email (в разделе участников организации);
@@ -511,8 +495,10 @@ EMAIL_ENABLED=False
 | `make generate-jwt`       | Сгенерировать или обновить ключи для JWT                                       |
 | `generate-tunnel-token`   | Сгенерировать токен для SSH и HTTP туннелей                                    |
 | `generate-django-secret`  | Сгенерировать секретный ключ Django                                            |
-| `generate-email-url`      | Сгенерировать/обновить Email URL                                               |
-| `make run`                | Запустить полный цикл развертывания: generate-env, сборка и запуск контейнеров |
+| `make run`                | Запустить полный цикл развертывания: generate-env, проверка сертификатов, запуск контейнеров |
+| `make run-no-cert-check`  | То же без проверки TLS-сертификатов (не рекомендуется)                          |
+| `make stop`               | Остановить контейнеры                                                          |
+| `make restart`            | Перезапустить контейнеры (с проверкой сертификатов)                            |
 | `make update`             | Остановить контейнеры, обновить образы, пересобрать и запустить проект заново  |
 | `make upgrade`            | Обновление 1.x → 2.0: бэкап, проверка пользователей, миграция, запуск          |
 | `make fix-users MODE=…`   | Запуск migration_doctor (`scan` / `auto` / `resolve` / `dump` / `apply`)       |
@@ -549,6 +535,11 @@ upstream-миграция (`users/0013`) не переносит данные с
 Обновляться нужно, **только если** вы сейчас работаете на версии 1.x (см. файл
 `VERSION` или экран «О системе»). Перед `make upgrade` убедитесь:
 
+- **Сертификат перевыпущен с `*.apps.<домен>`.** В 2.0 веб-сервисы контроллеров —
+  штатный функционал, поэтому `*.apps.your-domain.com` входит в обязательный набор
+  доменов. Если сертификат 1.x его не покрывает, `make upgrade` остановится на
+  `make check-certs` ещё до бэкапа: перевыпустите сертификат (см.
+  [4. Сертификаты TLS](#4-сертификаты-tls)) и добавьте DNS-запись `*.apps`.
 - **Резервное место есть.** Бэкап (`pg_dump` + `influxd backup`) пишется в `./backups`
   — убедитесь, что на диске хватает места под копию базы. Команда сделает бэкап сама и
   **до** любых изменений; ручной бэкап не требуется, но и не помешает.
@@ -577,17 +568,23 @@ make upgrade
 
 Порядок работы `make upgrade`:
 
-1. **Обязательный бэкап** (выполняется ДО любых изменений в БД):
+1. **Подготовка `.env`**: если `EMAIL_ENABLED` не задана, дописывается `True`
+   (поведение 1.x); старые почтовые переменные (`EMAIL_SERVER`, `EMAIL_LOGIN`,
+   `EMAIL_PASSWORD`, `EMAIL_PROTOCOL`) автоматически конвертируются в имена 2.0
+   (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`/`EMAIL_USE_SSL`).
+   Затем — `make generate-env` и `make check-certs`.
+2. **Обязательный бэкап** (выполняется ДО любых изменений в БД):
    `pg_dump` основной PostgreSQL и `influxd backup` метрик InfluxDB (если сервис
    ещё запущен) в каталог `./backups`. База InfluxDB **не конвертируется** в
    TimescaleDB — она сохраняется рядом, чтобы при необходимости обратиться к
    историческим метрикам позже. Новые метрики копятся в TimescaleDB.
-2. **Проверка таблицы пользователей** (`migration_doctor`, только чтение):
+3. **Проверка таблицы пользователей** (`migration_doctor`, только чтение):
    находит строки, нарушающие инварианты 2.0 — пустой email, `username != email`,
    дубликаты email (без учёта регистра) — и выводит таблицу с подсчётом.
-3. **Гейт**: если конфликты остались — обновление **останавливается** (ненулевой
-   код возврата), миграция НЕ запускается, печатается команда для исправления.
-4. После устранения конфликтов — `migrate` и запуск стека 2.0.
+   Если конфликты остались — обновление **останавливается** (ненулевой код
+   возврата), миграция НЕ запускается, печатается команда для исправления.
+4. **`migrate` на образе 2.0** (`docker compose pull` + `manage.py migrate`).
+5. **Запуск стека 2.0** (`docker compose up -d --build`).
 
 ### Устранение конфликтов пользователей
 
@@ -656,7 +653,7 @@ sudo certbot certonly --manual --preferred-challenges dns \
   -d "*.apps.$DOMAIN_NAME"
 ```
 
-> Две последние строки `-d` (`apps`) опциональны — нужны только для [веб-сервисов контроллеров](#веб-сервисы-контроллеров-опционально).
+> Все шесть строк `-d` обязательны: без `*.apps.$DOMAIN_NAME` не пройдёт `make check-certs`.
 
 И последовательно создайте записи на вашем DNS-сервере на основе того что выдаст Certbot:
 
@@ -709,7 +706,7 @@ dig TXT _acme-challenge.ssh.your-domain-name.com +short
 
 Если запись создана, нажмите **Enter** (Continue).
 
-### 🔹 Четвёртая запись (`apps`) — если запрашивали `apps`-домены
+### 🔹 Четвёртая запись (`apps`) по аналогии с предыдущими
 
 ```
 Type: TXT
@@ -898,7 +895,7 @@ tcp:
 > ошибку `yaml: found unknown escape character`, file-провайдер отбросит весь файл,
 > и Traefik начнёт отдавать свой default-сертификат вместо passthrough.
 
-> Регулярка матчит те же хосты, что покрывает wildcard-сертификат облака (см. раздел «Сертификаты TLS»): сам `your-domain.com`, любой поддомен первого уровня (`app.`, `agent.`, `ssh.`, `http.` и т.д.), per-controller `<id>.http.`/`<id>.ssh.` и `<серийник>-<порт>.apps.` (опционально — для веб-сервисов контроллеров). Подставьте свой домен из `ABSOLUTE_SERVER` вместо `your-domain.com`.
+> Регулярка матчит те же хосты, что покрывает wildcard-сертификат облака (см. раздел «Сертификаты TLS»): сам `your-domain.com`, любой поддомен первого уровня (`app.`, `agent.`, `ssh.`, `http.` и т.д.), per-controller `<id>.http.`/`<id>.ssh.` и `<серийник>-<порт>.apps.`. Подставьте свой домен из `ABSOLUTE_SERVER` вместо `your-domain.com`.
 
 > Если через внешний прокси нужно экспонировать только контроллерный трафик, оставив веб-интерфейс облака недоступным извне, сузьте регулярку до `agent.your-domain.com` и per-controller хостов `<id>.http.`/`<id>.ssh.`.
 

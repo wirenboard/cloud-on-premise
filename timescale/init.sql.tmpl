@@ -7,8 +7,8 @@
 --
 -- Numeric tuning values are taken from upstream group_vars/all/vars.yml:
 --   chunk_interval_days=2, compression_after_days=7,
---   default_retention_days=14, max_host_retention_days=14
---   (global safety-net retention = 14 + 2 = 16 days),
+--   retention: __RETENTION_DAYS__ days (METRICS_RETENTION_DAYS), with a
+--   safety-net drop_after of __RETENTION_SAFETY_DAYS__ days,
 --   host_retention_job_hour_utc=3, job_interval_days=1,
 --   views_reader: 15s/30s/5s/32MB, all_reader: 30s/60s/10s/32MB.
 -- The exporter/backup/replicator roles are created for SQL parity but are
@@ -80,7 +80,7 @@ END$$;
 CREATE TABLE IF NOT EXISTS auth.host_org_map (
   host            text        PRIMARY KEY,
   organization_id uuid        NOT NULL,
-  retention_days  int         NOT NULL DEFAULT 14 CHECK (retention_days BETWEEN 1 AND 14),
+  retention_days  int         NOT NULL DEFAULT __RETENTION_DAYS__ CHECK (retention_days BETWEEN 1 AND 3650),
   updated_at      timestamptz NOT NULL DEFAULT now()
 );
 DO $$
@@ -91,7 +91,7 @@ BEGIN
       AND table_name   = 'host_org_map'
       AND column_name  = 'retention_days'
   ) THEN
-    ALTER TABLE auth.host_org_map ADD COLUMN retention_days int NOT NULL DEFAULT 14 CHECK (retention_days BETWEEN 1 AND 14);
+    ALTER TABLE auth.host_org_map ADD COLUMN retention_days int NOT NULL DEFAULT __RETENTION_DAYS__ CHECK (retention_days BETWEEN 1 AND 3650);
   END IF;
 END$$;
 
@@ -251,9 +251,9 @@ BEGIN
 
   PERFORM add_compression_policy(measurement, INTERVAL '7 days', if_not_exists => TRUE);
 
-  PERFORM add_retention_policy(measurement, INTERVAL '16 days', if_not_exists => TRUE);
+  PERFORM add_retention_policy(measurement, INTERVAL '__RETENTION_SAFETY_DAYS__ days', if_not_exists => TRUE);
 
-  PERFORM alter_job(job_id, config => coalesce(config, '{}'::jsonb) || jsonb_build_object('drop_after', '16 days'))
+  PERFORM alter_job(job_id, config => coalesce(config, '{}'::jsonb) || jsonb_build_object('drop_after', '__RETENTION_SAFETY_DAYS__ days'))
   FROM timescaledb_information.jobs
   WHERE proc_name = 'policy_retention'
     AND hypertable_name = meas;

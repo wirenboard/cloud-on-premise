@@ -4,45 +4,42 @@ All notable changes to this project are documented in this file.
 
 ## [2.0.0] - 2026-08-11
 
-> **Breaking release.** See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for
-> details and the upgrade procedure.
+> Breaking release. See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for the
+> upgrade procedure.
 
-- **Email login** — email is now the login (mandatory and unique). Accounts with no
-  email are repaired during the upgrade, without data loss.
-- **Metrics moved to TimescaleDB** (from InfluxDB). Controller metrics are
-  ingested by a Telegraf service (HTTPS + mTLS, request rate limiting via
-  Traefik) and written into TimescaleDB. The upstream HA layer (Patroni, etcd,
-  HAProxy, pgBackRest) is not used for the single-node deployment — a single
-  TimescaleDB instance runs instead. Past metrics history does not carry over
-  into the new charts (it is preserved in the InfluxDB backup).
-- **Per-organization Grafana dashboards** — new `clients-grafana` service
-  (Grafana 12.2.2).
-- **Daily PostgreSQL backups to S3** (MinIO).
-- **Guided `make upgrade`** — mandatory backup → user-account check/repair →
-  migration (see RELEASE_NOTES).
-- **Controller web services over tunnels** (optional) — controller service web
-  UIs (e.g. Node-RED) published at `<serial>-<port>.apps.<domain>` subdomains.
-  Requires a wildcard DNS record and a certificate for `*.apps.<domain>` (see
-  README).
-- **Session geolocation** (optional) — country/city in the active sessions list
-  via a local DB-IP database (`GEOIP_CITY_DB_PATH`, see README). Works offline.
-- Tunnels: a pool of warmed channels per controller (`TUNNEL_POOL_COUNT`,
-  default 5) — pages behind a tunnel open noticeably faster.
-- **`EMAIL_ENABLED` is now mandatory**: the stack refuses to start without an
-  explicit `EMAIL_ENABLED=True` or `False` in `.env` (1.x silently enabled email
-  when unset).
-- Celery workers split by queue: `worker` (default), `worker-metrics`,
-  `worker-grafana`, `worker-email`.
-- `tunnel-webhooks-backend` service — a separate backend instance handling FRP
-  tunnel webhooks.
-- New environment variables: `TIMESCALE_*`, `TELEGRAF_TIMESCALE_*`,
-  `GRAFANA_TIMESCALE_*`, `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`,
-  `INTERNAL_LICENSE_SERVICE_TOKEN`, `PROM_*`, `CELERY_*_QUEUE`,
-  `POSTGRES_BACKUP_*`.
-- Removed the InfluxDB service and the related `INFLUXDB_USERNAME`,
-  `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN` variables.
-- pgcat pooler removed — the backend connects to PostgreSQL directly (single-node).
-- Redis `6` → `7.4.8`.
+### Added
+
+- Controller web services open straight from the cloud: Node-RED, Home Assistant, Zigbee2MQTT, ESPHome and others are reachable by link through a secure tunnel, with no VPN and no port forwarding. Custom services on any port can be added too (up to 20 per controller).
+- Two-factor authentication: recovery codes, an organization-wide 2FA requirement, and code confirmation for dangerous actions.
+- Session management: active devices with browser, IP, country and city; terminate a single session or every session on other devices.
+- Controller transfer between organizations — confirmed by the receiving side, with the option to cancel the request.
+- Controller metrics and per-organization Grafana dashboards: dashboards are created automatically with the first controller, opened from the cloud without a separate password, and metric reporting can be turned off per controller.
+- Metric alerts: an organization configures its own rules in Grafana, and the emails go through the SMTP server from `.env`.
+- Deleting an entire organization, confirmed with a two-factor code.
+- Email confirmation on sign-up and changing your email in the account settings.
+- Organization invitations are now accepted by already registered users as well.
+- Web console on a phone: a special-key panel, sticky Ctrl and Alt, full-screen mode, and a terminal that adapts to the on-screen keyboard.
+- Web console file manager: file sizes and types, deletion, uploads up to 350 MB, and reliable downloads of large files.
+- Password reset links are generated from the admin panel — for installations with no email configured.
+- Nightly database backups and a guided one-command update, `make upgrade`.
+- Configurable metrics retention (`METRICS_RETENTION_DAYS`, 30 days by default).
+
+### Changed
+
+- Signing in now uses the email address: it is mandatory, unique, and replaces the login.
+- Sign-up became a two-step flow — a request, then a link from the email; the sign-up page addresses changed.
+- After signing in, the user returns to the page they were asked to authenticate from.
+- Opening a tunnel to a controller is noticeably faster.
+- Firmware versions are sorted sensibly: stable releases first, test builds after.
+- The default Node-RED port is now 21880.
+- Changing the password or signing out also ends the sessions in the metrics dashboards.
+- The metrics store moved from InfluxDB to TimescaleDB; previously collected history does not carry over into the new charts.
+- SMTP settings are configured with separate variables (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`) instead of a combined URL, and `EMAIL_ENABLED` must be set explicitly.
+
+### Removed
+
+- Signing in with a login, and the "username" field on sign-up.
+- The InfluxDB service — replaced by TimescaleDB and Grafana.
 
 ## [1.5.0] - 2026-07-28
 

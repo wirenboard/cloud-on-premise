@@ -3,9 +3,14 @@ x-traefik-common: &traefik-common
   traefik.docker.network: ${DOCKER_NET_NAME:-wb_net}
 
 x-backend-common-env: &backend-common-env
-  EMAIL_URL: ${EMAIL_URL:-}
+  EMAIL_ENABLED: "${EMAIL_ENABLED:?set EMAIL_ENABLED to True or False in .env}"
+  EMAIL_HOST: ${EMAIL_HOST:-}
+  EMAIL_PORT: ${EMAIL_PORT:-587}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+  EMAIL_USE_SSL: ${EMAIL_USE_SSL:-False}
   EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-}
-  EMAIL_ENABLED: "${EMAIL_ENABLED:?Set EMAIL_ENABLED=True or EMAIL_ENABLED=False in .env (2.0 requires an explicit choice)}"
   EMAIL_TIMEOUT: "10"
   INVITE_EMAIL_SUBJECT: ${INVITE_EMAIL_SUBJECT:-}
   INVITE_EMAIL_BODY: ${INVITE_EMAIL_BODY:-}
@@ -13,45 +18,30 @@ x-backend-common-env: &backend-common-env
   CELERY_BROKER_URL: "redis://redis:6379/0"
   CELERY_RESULT_BACKEND: "redis://redis:6379/0"
   CACHE_URL: "redis://redis:6379/1"
-  # Celery queue names (worker split by queue)
-  CELERY_TASK_DEFAULT_QUEUE: ${CELERY_DEFAULT_QUEUE:-wbc_default}
-  CELERY_TASK_METRICS_QUEUE: ${CELERY_METRICS_QUEUE:-wbc_metrics}
-  CELERY_TASK_GRAFANA_QUEUE: ${CELERY_GRAFANA_QUEUE:-wbc_grafana}
-  CELERY_TASK_EMAIL_QUEUE: ${CELERY_EMAIL_QUEUE:-wbc_email}
   SECRET_KEY: ${SECRET_KEY}
   JWT_PRIVATE_KEY: ${PRIVATE_KEY}
   JWT_PUBLIC_KEY: ${PUBLIC_KEY}
-  # Single-node on-premise: the backend connects straight to PostgreSQL.
-  # (No pgcat pooler — pooling/sharding/read-splitting are upstream HA concerns
-  # that don't apply here.)
   DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db}"
-  # TimescaleDB metrics store. Single-node on-premise: primary == replica.
+  # Single-node: primary == replica.
   TIMESCALE_PRIMARY_DB_URL: "postgresql://${TIMESCALE_USER:-timescale}:${TIMESCALE_PASSWORD:-timescale_password}@timescale:5432/${TIMESCALE_DB:-metrics}?application_name=django_backend&connect_timeout=5&sslmode=disable&target_session_attrs=read-write"
   TIMESCALE_REPLICA_DB_URL: "postgresql://${TIMESCALE_USER:-timescale}:${TIMESCALE_PASSWORD:-timescale_password}@timescale:5432/${TIMESCALE_DB:-metrics}?application_name=django_backend&connect_timeout=5&sslmode=disable"
-  TIMESCALE_MQTT_METRICS_MEASUREMENT_NAME: ${TIMESCALE_MQTT_METRICS_MEASUREMENT_NAME:-mqtt_metrics}
-  TIMESCALE_MQTT_METRICS_READABLE_VIEW_NAME: "${TIMESCALE_MQTT_METRICS_MEASUREMENT_NAME:-mqtt_metrics}_readable"
-  TIMESCALE_DEFAULT_RETENTION_DAYS: ${TIMESCALE_DEFAULT_RETENTION_DAYS:-14}
-  TIMESCALE_VIEWS_READER_STATEMENT_TIMEOUT: ${TIMESCALE_VIEWS_READER_STATEMENT_TIMEOUT:-15s}
-  TIMESCALE_VIEWS_READER_IDLE_IN_TRANSACTION_SESSION_TIMEOUT: ${TIMESCALE_VIEWS_READER_IDLE_IN_TRANSACTION_SESSION_TIMEOUT:-30s}
-  TIMESCALE_VIEWS_READER_LOCK_TIMEOUT: ${TIMESCALE_VIEWS_READER_LOCK_TIMEOUT:-5s}
-  TIMESCALE_VIEWS_READER_WORK_MEM_MB: ${TIMESCALE_VIEWS_READER_WORK_MEM_MB:-32}
-  INTERNAL_LICENSE_SERVICE_TOKEN: ${INTERNAL_LICENSE_SERVICE_TOKEN:-}
-  # Metrics ingest endpoint advertised to controllers (Telegraf behind Traefik).
+  TIMESCALE_MQTT_METRICS_MEASUREMENT_NAME: "mqtt_metrics"
+  TIMESCALE_MQTT_METRICS_READABLE_VIEW_NAME: "mqtt_metrics_readable"
+  TIMESCALE_DEFAULT_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
+  TIMESCALE_MAX_HOST_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
+  TIMESCALE_VIEWS_READER_STATEMENT_TIMEOUT: "15s"
+  TIMESCALE_VIEWS_READER_IDLE_IN_TRANSACTION_SESSION_TIMEOUT: "30s"
+  TIMESCALE_VIEWS_READER_LOCK_TIMEOUT: "5s"
+  TIMESCALE_VIEWS_READER_WORK_MEM_MB: "32"
   METRICS_AGENT_URL: "https://metrics-ingest.${ABSOLUTE_SERVER}/metrics"
-  METRICS_COLLECTOR_RATELIMIT_AVERAGE: ${METRICS_COLLECTOR_RATELIMIT_AVERAGE:-6}
-  METRICS_COLLECTOR_RATELIMIT_PERIOD_S: ${METRICS_COLLECTOR_RATELIMIT_PERIOD_S:-60}
-  METRICS_COLLECTOR_MAX_REQUEST_BYTES: ${METRICS_COLLECTOR_MAX_REQUEST_BYTES:-204800}
-  # Clients Grafana (per-org dashboards).
+  # Keep in sync with the Traefik rate-limit labels on the telegraf service.
+  METRICS_COLLECTOR_RATELIMIT_AVERAGE: "6"
+  METRICS_COLLECTOR_RATELIMIT_PERIOD_S: "60"
+  METRICS_COLLECTOR_MAX_REQUEST_BYTES: "204800"
   GRAFANA_USER_URL: "https://metrics.${ABSOLUTE_SERVER}"
   GRAFANA_URL: "https://metrics.${ABSOLUTE_SERVER}"
   GRAFANA_ADMIN_MANAGEMENT_URL: "http://${GRAFANA_ADMIN_USER:-grafana_admin}:${GRAFANA_ADMIN_PASSWORD:-grafana_password}@clients-grafana:3000"
   GRAFANA_UPSTREAM_URL: "http://clients-grafana:3000"
-  # External Prometheus / VictoriaMetrics long-term store. Optional on-premise;
-  # leave the *_ADDRESS vars empty to disable. (HQ uses a separate VM cluster.)
-  PROM_LABEL_PROXY_URL: "http://${PROM_LABEL_PROXY_ADDRESS:-}"
-  PROM_SELECT_URL: "http://${PROM_SELECT_ADDRESS:-}"
-  PROM_INSERT_URL: "http://${PROM_INSERT_ADDRESS:-}"
-  PROM_TOKEN: ${PROM_TOKEN:-}
   MAX_NEW_CONTROLLER_CONNECTIONS_PER_DAY: "160"
   MAX_ACTIVATED_CONTROLLERS: "-1"
   TUNNEL_AGENT_PORT: ${TUNNEL_PORT:-7107}
@@ -63,16 +53,12 @@ x-backend-common-env: &backend-common-env
   TUNNEL_DASHBOARD_URL: "http://${TUNNEL_DASHBOARD_USER}:${TUNNEL_DASHBOARD_PASSWORD}@tunnel:7501"
   TUNNEL_REDIRECT_SSH_MAIN_URL: "https://ssh.${ABSOLUTE_SERVER}"
   TUNNEL_REDIRECT_HTTP_MAIN_URL: "https://http.${ABSOLUTE_SERVER}"
-  # Controller web services over tunnels (needs *.apps DNS + certificate, see README).
-  TUNNEL_REDIRECT_APPS_MAIN_URL: "https://apps.${ABSOLUTE_SERVER}"
-  MAX_SERVICES_PER_CONTROLLER: ${MAX_SERVICES_PER_CONTROLLER:-20}
-  # Warmed frpc channels per controller (the same TUNNEL_POOL_COUNT feeds frps).
-  TUNNEL_AGENT_POOL_COUNT: ${TUNNEL_POOL_COUNT:-5}
   TUNNEL_UPSTREAM: "tunnel"
+  GEOIP_CITY_DB_PATH: "/data/geoip/dbip-city-lite.mmdb"
+  # 2.0: email is the login, so the admin username must equal ADMIN_EMAIL.
   ADMIN_EMAIL: ${ADMIN_EMAIL}
-  ADMIN_USERNAME: ${ADMIN_USERNAME}
+  ADMIN_USERNAME: ${ADMIN_EMAIL}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-  # Diagnostic / media storage. On-premise bundles MinIO (S3-compatible).
   AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
   AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
   AWS_S3_ENDPOINT_URL: "http://minio:9000"
@@ -119,6 +105,7 @@ services:
       # (not Grafana's internal config DB — that is SQLite).
       GRAFANA_TIMESCALE_USER: ${GRAFANA_TIMESCALE_USER:-grafana}
       GRAFANA_TIMESCALE_PASSWORD: ${GRAFANA_TIMESCALE_PASSWORD:-grafana_timescale_password}
+      METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
       TZ: UTC
     volumes:
       - timescaleData:/home/postgres/pgdata
@@ -167,9 +154,9 @@ services:
       traefik.http.middlewares.telegraf_check_ca.passtlsclientcert.info.subject.commonName: "true"
       traefik.http.middlewares.telegraf_check_ca.passtlsclientcert.pem: "false"
       traefik.http.middlewares.telegraf_throttle.ratelimit.sourcecriterion.requestheadername: "X-Forwarded-Tls-Client-Cert-Info"
-      traefik.http.middlewares.telegraf_throttle.ratelimit.average: ${METRICS_COLLECTOR_RATELIMIT_AVERAGE:-6}
-      traefik.http.middlewares.telegraf_throttle.ratelimit.period: "${METRICS_COLLECTOR_RATELIMIT_PERIOD_S:-60}s"
-      traefik.http.middlewares.telegraf_size_limit.buffering.maxrequestbodybytes: ${METRICS_COLLECTOR_MAX_REQUEST_BYTES:-204800}
+      traefik.http.middlewares.telegraf_throttle.ratelimit.average: "6"
+      traefik.http.middlewares.telegraf_throttle.ratelimit.period: "60s"
+      traefik.http.middlewares.telegraf_size_limit.buffering.maxrequestbodybytes: "204800"
       traefik.http.routers.telegraf.middlewares: "telegraf_strip_cert,telegraf_check_ca,telegraf_throttle,telegraf_size_limit"
     depends_on:
       timescale:
@@ -196,8 +183,6 @@ services:
       FRP_WEBHOOK_ADDRESS: "tunnel-webhooks-backend:8000"
       FRP_AUTH_TOKEN: ${TUNNEL_AUTH_TOKEN}
       # ssh + http + service tunnels: keep >= MAX_SERVICES_PER_CONTROLLER + 2.
-      FRP_MAX_PORTS_PER_CLIENT: ${FRP_MAX_PORTS_PER_CLIENT:-22}
-      FRP_MAX_POOL_COUNT: ${TUNNEL_POOL_COUNT:-5}
       FRP_TUNNELING_PORT: 7107
       FRP_DASHBOARD_PORT: 7501
       FRP_DASHBOARD_USER: ${TUNNEL_DASHBOARD_USER}
@@ -302,9 +287,6 @@ services:
     restart: always
     environment:
       <<: *backend-common-env
-      # Optional session geolocation: put dbip-city-lite.mmdb into ./geoip and set
-      # GEOIP_CITY_DB_PATH=/data/geoip/dbip-city-lite.mmdb (see README).
-      GEOIP_CITY_DB_PATH: ${GEOIP_CITY_DB_PATH:-}
     volumes:
       - ./geoip:/data/geoip:ro
     labels:
@@ -379,7 +361,7 @@ services:
     restart: always
     environment:
       <<: *backend-common-env
-      QUEUE: ${CELERY_DEFAULT_QUEUE:-wbc_default}
+      QUEUE: default_queue
       CONCURRENCY: 4
       SOFT_TIME_LIMIT: 120
     depends_on:
@@ -393,7 +375,7 @@ services:
     restart: always
     environment:
       <<: *backend-common-env
-      QUEUE: ${CELERY_METRICS_QUEUE:-wbc_metrics}
+      QUEUE: metrics_queue
       CONCURRENCY: 10
       SOFT_TIME_LIMIT: 300
       CELERYD_PREFETCH_MULTIPLIER: 2
@@ -409,7 +391,7 @@ services:
     environment:
       <<: *backend-common-env
       GRAFANA_DEFAULT_DASHBOARD_UPDATE_PARALLELISM: 12
-      QUEUE: ${CELERY_GRAFANA_QUEUE:-wbc_grafana}
+      QUEUE: grafana_queue
       CONCURRENCY: 10
       SOFT_TIME_LIMIT: 300
       CELERYD_PREFETCH_MULTIPLIER: 2
@@ -424,7 +406,7 @@ services:
     restart: always
     environment:
       <<: *backend-common-env
-      QUEUE: ${CELERY_EMAIL_QUEUE:-wbc_email}
+      QUEUE: email_queue
       CONCURRENCY: 3
       SOFT_TIME_LIMIT: 120
     depends_on:
@@ -451,6 +433,14 @@ services:
       ABSOLUTE_SERVER: ${ABSOLUTE_SERVER}
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-grafana_admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana_password}
+      SERVICE_NAME: ${SERVICE_NAME:-Wiren Board Cloud}
+      # Alert emails go through the same SMTP as the cloud itself.
+      EMAIL_ENABLED: ${EMAIL_ENABLED}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-}
     volumes:
       - clientsGrafanaData:/var/lib/grafana
       - ./grafana/clients-grafana.ini:/clients-grafana.ini:ro
