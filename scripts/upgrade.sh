@@ -12,7 +12,8 @@ TS="$(date +%Y%m%d-%H%M%S)"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
 say() { printf "%b%s%b\n" "$2" "$1" "$NC"; }
-env_value() { grep -E "^[[:space:]]*$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"'; }
+# `|| true`: a missing variable is an empty value, not a fatal error under set -e.
+env_value() { grep -E "^[[:space:]]*$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' || true; }
 compose() { VERSION="$VERSION" docker compose "$@"; }
 
 backup() {

@@ -7,7 +7,8 @@ ENV_FILE=".env"
 TARGET="geoip/dbip-city-lite.mmdb"
 YELLOW='\033[0;33m'; GREEN='\033[0;32m'; NC='\033[0m'
 
-enabled="$(grep -E '^[[:space:]]*GEOIP_ENABLED=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]')"
+# `|| true`: no match must read as "disabled", not abort the script under set -e.
+enabled="$(grep -E '^[[:space:]]*GEOIP_ENABLED=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]' || true)"
 case "$enabled" in
     true|on|yes|1) ;;
     *) exit 0 ;;
