@@ -132,6 +132,10 @@ jobs:
             docker-compose.yml
             traefik/**
             jwt/**
+            timescale/**
+            telegraf/**
+            grafana/**
+            migration/**
 
       - name: Done
         run: echo "✅ Release completed for version ${{ needs.read-version.outputs.version }}"

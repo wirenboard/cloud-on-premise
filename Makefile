@@ -23,9 +23,9 @@ PYTHON_BIN    := python3
 
 #----- [ REQUIRED ENVIRONMENT VARIABLES ] -------------------------------------
 
-# EMAIL_ENABLED=False (also false/Off/No/0, case-insensitive) in .env disables
-# email: EMAIL_* variables become optional and EMAIL_URL generation is skipped.
-# When EMAIL_ENABLED is unset or set to anything else, email is enabled (default).
+# EMAIL_ENABLED is mandatory in 2.0 (REQUIRED_VARS + compose fail-fast).
+# False/Off/No/0 (case-insensitive) disables email: EMAIL_* variables become
+# optional and EMAIL_URL generation is skipped; True/On/Yes/1 enables it.
 EMAIL_ENABLED_VALUE := $(shell grep -E '^[[:space:]]*EMAIL_ENABLED=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]')
 EMAIL_DISABLED := $(if $(filter $(EMAIL_ENABLED_VALUE),false off no 0),1,0)
 
@@ -171,6 +171,9 @@ check-certs:
 	    printf "$(RED)ERROR: Certificate does not cover required domain: %s$(NC)\n" "$$dom"; rm -f .san_tmp_domains; exit 1; \
 	  fi; \
 	done; \
+	if ! grep -Fxq "*.apps.$(BASE_DOMAIN)" .san_tmp_domains; then \
+	  printf "$(YELLOW)NOTE: certificate does not cover *.apps.$(BASE_DOMAIN) — controller web services (apps tunnels) will not work. This is optional, see README.$(NC)\n"; \
+	fi; \
 	rm -f .san_tmp_domains
 	@printf "$(GREEN)All required domains are present in the certificate.$(NC)\n"
 	@printf "$(GREEN)Certificate check: PASSED.$(NC)\n"
@@ -185,6 +188,11 @@ check-env:
 ifeq ($(EMAIL_DISABLED),1)
 	@printf "$(YELLOW)Email is disabled (EMAIL_ENABLED=$(EMAIL_ENABLED_VALUE)): EMAIL_* variables are not required.$(NC)\n"
 endif
+	@v="$(EMAIL_ENABLED_VALUE)"; \
+	if [ -n "$$v" ]; then case "$$v" in \
+	  true|on|ok|y|yes|1|false|off|no|0) ;; \
+	  *) printf "$(RED)ERROR: EMAIL_ENABLED='%s' is not a recognized boolean — the backend would silently disable email. Use True or False.$(NC)\n" "$$v"; exit 1;; \
+	esac; fi
 	@if [ ! -f $(ENV_FILE) ]; then \
 		printf "$(RED)ERROR: File %s not found. Please create it based on %s.$(NC)\n" "$(ENV_FILE)" "$(ENV_EXAMPLE)"; exit 1; \
 	fi
@@ -224,6 +232,11 @@ generate-tunnel-token:
 .PHONY: generate-metrics-secrets
 generate-metrics-secrets:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating metrics DB secrets (TimescaleDB / Telegraf / Grafana) ------"
+	$(call gen_token,TIMESCALE_USER,echo timescale)
+	$(call gen_token,TIMESCALE_DB,echo metrics)
+	$(call gen_token,TELEGRAF_TIMESCALE_USER,echo telegraf)
+	$(call gen_token,GRAFANA_TIMESCALE_USER,echo grafana)
+	$(call gen_token,GRAFANA_ADMIN_USER,echo grafana_admin)
 	$(call gen_token,TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
 	$(call gen_token,TELEGRAF_TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
 	$(call gen_token,GRAFANA_TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
@@ -352,7 +365,8 @@ MIGRATION_DIR  := migration
 TS             := $(shell date +%Y%m%d-%H%M%S)
 # The doctor runs inside the STILL-RUNNING (1.x) backend container via the Django
 # shell, touching only username/email. `exec` if the backend is up, else `run`.
-DOCTOR_CMD     = uv run --no-dev ./manage.py shell -c "exec(open('/migration/migration_doctor.py').read())"
+# The mode goes through sys.argv inside -c: Django's `shell` rejects trailing args.
+DOCTOR_CMD     = uv run --no-dev ./manage.py shell -c "import sys; sys.argv = ['migration_doctor', '$(MODE)']; exec(open('/migration/migration_doctor.py').read())"
 
 .PHONY: backup
 backup:
@@ -370,18 +384,24 @@ backup:
 	  printf "$(RED)ERROR: PostgreSQL backup is empty — aborting.$(NC)\n"; rm -f "$$out"; exit 1; \
 	fi; \
 	printf "$(GREEN)PostgreSQL backup written: %s$(NC)\n" "$$out"
-	@printf "\n------ InfluxDB backup (only if a 1.x influxdb service is still running) ------\n"
-	@if VERSION=$(VERSION) docker compose ps --services 2>/dev/null | grep -qx influxdb; then \
+	@printf "\n------ InfluxDB backup (only if a 1.x influx service is still running) ------\n"
+	@svc=$$(VERSION=$(VERSION) docker compose ps --services 2>/dev/null | grep -xE 'influx(db)?' | head -1); \
+	if [ -n "$$svc" ]; then \
 	  out="$(BACKUP_DIR)/influx-$(TS)"; \
-	  printf "Backing up InfluxDB -> %s (kept for the operator; NOT converted to TimescaleDB)\n" "$$out"; \
-	  VERSION=$(VERSION) docker compose exec -T influxdb influxd backup -portable /tmp/influx-backup >/dev/null 2>&1 || \
-	    VERSION=$(VERSION) docker compose exec -T influxdb influxd backup /tmp/influx-backup >/dev/null 2>&1 || true; \
-	  cid=$$(VERSION=$(VERSION) docker compose ps -q influxdb); \
+	  tok=$$(grep -E '^[[:space:]]*INFLUXDB_TOKEN=' $(ENV_FILE) | cut -d= -f2- | tr -d '[:space:]"'); \
+	  printf "Backing up InfluxDB (%s) -> %s (kept for the operator; NOT converted to TimescaleDB)\n" "$$svc" "$$out"; \
+	  VERSION=$(VERSION) docker compose exec -T "$$svc" influx backup /tmp/influx-backup -t "$$tok" || true; \
+	  cid=$$(VERSION=$(VERSION) docker compose ps -q "$$svc"); \
 	  mkdir -p "$$out"; \
 	  docker cp "$$cid:/tmp/influx-backup/." "$$out/" 2>/dev/null || true; \
-	  printf "$(GREEN)InfluxDB backup written: %s$(NC)\n" "$$out"; \
+	  if [ -n "$$(ls -A "$$out" 2>/dev/null)" ]; then \
+	    printf "$(GREEN)InfluxDB backup written: %s$(NC)\n" "$$out"; \
+	  else \
+	    printf "$(YELLOW)WARNING: InfluxDB backup is EMPTY — metrics history was NOT saved.$(NC)\n"; \
+	    printf "$(YELLOW)Back up the 'influxData' docker volume manually if you need the history.$(NC)\n"; \
+	  fi; \
 	else \
-	  printf "$(YELLOW)No running influxdb service found — skipping InfluxDB backup.$(NC)\n"; \
+	  printf "$(YELLOW)No running influx service found — skipping InfluxDB backup.$(NC)\n"; \
 	  printf "(If you upgraded the metrics store earlier, the InfluxDB data was already handled.)\n"; \
 	fi
 
@@ -398,18 +418,22 @@ fix-users:
 	@$(call require_version)
 	@if VERSION=$(VERSION) docker compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then \
 	  cid=$$(VERSION=$(VERSION) docker compose ps -q backend); \
-	  docker cp "$(MIGRATION_DIR)/migration_doctor.py" "$$cid:/tmp/migration_doctor.py"; \
-	  VERSION=$(VERSION) docker compose exec -T backend \
-	    uv run --no-dev ./manage.py shell -c "exec(open('/tmp/migration_doctor.py').read())" -- $(MODE); \
+	  docker cp "$(MIGRATION_DIR)" "$$cid:/"; \
+	  VERSION=$(VERSION) docker compose exec backend $(DOCTOR_CMD); \
+	  docker cp "$$cid:/migration/." "$(MIGRATION_DIR)/"; \
 	else \
 	  VERSION=$(VERSION) docker compose run --rm \
-	    -v "$$PWD/$(MIGRATION_DIR):/migration" backend $(DOCTOR_CMD) -- $(MODE); \
+	    -v "$$PWD/$(MIGRATION_DIR):/migration" backend $(DOCTOR_CMD); \
 	fi
 
 .PHONY: upgrade
 upgrade:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ 1.x -> 2.0 UPGRADE ]====================="
 	@$(call require_version)
+	@if ! grep -Eq '^[[:space:]]*EMAIL_ENABLED=' $(ENV_FILE); then \
+	  printf "$(YELLOW)EMAIL_ENABLED is not set — keeping the 1.x behaviour (True). Set it explicitly in %s.$(NC)\n" "$(ENV_FILE)"; \
+	  { echo ""; echo "EMAIL_ENABLED=True"; } >> $(ENV_FILE); \
+	fi
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@printf "\n$(YELLOW)Step 1/4: mandatory backup (before ANY DB change).$(NC)\n"

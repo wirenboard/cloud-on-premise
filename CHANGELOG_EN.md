@@ -36,7 +36,8 @@ All notable changes to this project are documented in this file.
 - `tunnel-webhooks-backend` service — a separate backend instance handling FRP
   tunnel webhooks.
 - New environment variables: `TIMESCALE_*`, `TELEGRAF_TIMESCALE_*`,
-  `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`, `CELERY_*_QUEUE`,
+  `GRAFANA_TIMESCALE_*`, `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`,
+  `INTERNAL_LICENSE_SERVICE_TOKEN`, `PROM_*`, `CELERY_*_QUEUE`,
   `POSTGRES_BACKUP_*`.
 - Removed the InfluxDB service and the related `INFLUXDB_USERNAME`,
   `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN` variables.
@@ -83,6 +84,7 @@ All notable changes to this project are documented in this file.
 - Backend crash on startup when `EMAIL_URL` is empty.
 - nginx configuration example (SNI-based routing): the regex did not match the cloud's root domain.
 - External reverse-proxy documentation: clarified that `your-domain.com` is the full cloud hostname including the subdomain (the `ABSOLUTE_SERVER` value); the Traefik example (case C) now warns about backslash escaping in YAML quotes (the `unknown escape character` error makes Traefik serve its default certificate instead of passing TLS through).
+
 ## [1.2.0] - 2026-05-29
 
 ### Added

@@ -36,7 +36,8 @@
 - Сервис `tunnel-webhooks-backend` — отдельный инстанс бэкенда для обработки
   вебхуков FRP-туннелей.
 - Новые переменные окружения: `TIMESCALE_*`, `TELEGRAF_TIMESCALE_*`,
-  `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`, очереди `CELERY_*_QUEUE`,
+  `GRAFANA_TIMESCALE_*`, `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`,
+  `INTERNAL_LICENSE_SERVICE_TOKEN`, `PROM_*`, очереди `CELERY_*_QUEUE`,
   параметры бэкапа `POSTGRES_BACKUP_*`.
 - Удалён сервис InfluxDB и связанные переменные `INFLUXDB_USERNAME`,
   `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`.
@@ -83,6 +84,7 @@
 - Падение бэкенда на старте при пустом `EMAIL_URL`.
 - Пример конфигурации nginx (маршрутизация по SNI): регулярное выражение не матчило корневой домен облака.
 - Документация внешнего reverse-proxy: уточнено, что `your-domain.com` — это полный hostname облака, включая поддомен (значение `ABSOLUTE_SERVER`); для Traefik-примера (кейс C) добавлено предупреждение об экранировании бэкслешей в YAML-кавычках (ошибка `unknown escape character` приводит к отдаче default-сертификата вместо passthrough).
+
 ## [1.2.0] - 2026-05-29
 
 ### Добавлено
