@@ -2,53 +2,76 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.0.0] - 2026-06-06
+## [2.0.0] - 2026-08-11
 
 > **Breaking release.** See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for
 > details and the upgrade procedure.
 
 - **Email login** — email is now the login (mandatory and unique). Accounts with no
   email are repaired during the upgrade, without data loss.
-- **Per-organization Grafana dashboards** (new `clients-grafana` service).
-- **Metrics moved to TimescaleDB** (from InfluxDB), ingested via Telegraf over
-  HTTPS+mTLS. Past history does not carry over into the new charts.
+- **Metrics moved to TimescaleDB** (from InfluxDB). Controller metrics are
+  ingested by a Telegraf service (HTTPS + mTLS, request rate limiting via
+  Traefik) and written into TimescaleDB. The upstream HA layer (Patroni, etcd,
+  HAProxy, pgBackRest) is not used for the single-node deployment — a single
+  TimescaleDB instance runs instead. Past metrics history does not carry over
+  into the new charts (it is preserved in the InfluxDB backup).
+- **Per-organization Grafana dashboards** — new `clients-grafana` service
+  (Grafana 12.2.2).
 - **Daily PostgreSQL backups to S3** (MinIO).
 - **Guided `make upgrade`** — mandatory backup → user-account check/repair →
   migration (see RELEASE_NOTES).
+- Celery workers split by queue: `worker` (default), `worker-metrics`,
+  `worker-grafana`, `worker-email`.
+- `tunnel-webhooks-backend` service — a separate backend instance handling FRP
+  tunnel webhooks.
+- New environment variables: `TIMESCALE_*`, `TELEGRAF_TIMESCALE_*`,
+  `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`, `CELERY_*_QUEUE`,
+  `POSTGRES_BACKUP_*`.
+- Removed the InfluxDB service and the related `INFLUXDB_USERNAME`,
+  `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN` variables.
 - pgcat pooler removed — the backend connects to PostgreSQL directly (single-node).
 - Redis `6` → `7.4.8`.
 
-## [1.3.0] - 2026-06-04
-
-### Changed
-
-- Metrics storage migrated from InfluxDB to TimescaleDB. Controller metrics are
-  now ingested by a Telegraf service (HTTPS + mTLS, request rate limiting via
-  Traefik) and written into TimescaleDB. The upstream HA layer (Patroni, etcd,
-  HAProxy, pgBackRest) is not used for the single-node deployment — a single
-  TimescaleDB instance runs instead.
-- Celery workers split by queue: `worker` (default), `worker-metrics`,
-  `worker-grafana`, `worker-email`.
-- Image bumps: Redis `6-alpine` → `7.4.8-alpine`.
+## [1.5.0] - 2026-07-28
 
 ### Added
 
-- `clients-grafana` service (Grafana 12.2.2) — per-organisation dashboards;
-  keeps its state in a dedicated database on the bundled PostgreSQL.
-- `tunnel-webhooks-backend` service — a separate backend instance handling FRP
-  tunnel webhooks.
-- `postgres-backup` service — nightly PostgreSQL backup into the bundled MinIO
-  (S3).
-- New environment variables: `TIMESCALE_*`, `TELEGRAF_TIMESCALE_*`,
-  `GRAFANA_DB_*`, `GRAFANA_ADMIN_*`, `METRICS_COLLECTOR_RATELIMIT_*`,
-  `INTERNAL_LICENSE_SERVICE_TOKEN`, `CELERY_*_QUEUE`, `POSTGRES_BACKUP_*`, and
-  optional external Prometheus integration (`PROM_*`).
+- The company site footer link can now be overridden via the `FOOTER_SITE_URL`, `FOOTER_SITE_LABEL_RU`, `FOOTER_SITE_LABEL_EN` environment variables (see the Branding section in `.env.example`). When not set, the Wiren Board defaults are used.
 
-### Removed
+### Changed
 
-- The InfluxDB service and the related `INFLUXDB_USERNAME`, `INFLUXDB_PASSWORD`,
-  `INFLUXDB_TOKEN` variables.
+- The browser tab title now follows `SERVICE_NAME`: rebranding requires setting just one variable. The `HTML_TITLE` variable is retired — if still present in `.env`, it is simply ignored.
 
+### Security
+
+- Tunnel authorizer: closed two `tunnel_key` authorization bypasses. The nginx `auth_jwt` module is now built from the `wirenboard/ngx-http-auth-jwt-module` fork (2.0.2-wb3): the JWT signing algorithm is pinned and spoofed client claim headers are stripped.
+
+## [1.4.0] - 2026-07-25
+
+### Added
+
+- Product name and web UI links can now be overridden via the `SERVICE_NAME`, `HTML_TITLE`, `SERVICE_STATUS_URL`, `SERVICE_DOCS_URL` environment variables (see the Branding section in `.env.example`). When not set, the Wiren Board defaults are used.
+- The web console (webssh) now also uses branding assets from the `branding/` directory: the logo and icons are overridden the same way as in the main frontend.
+- The web console (webssh) overrides the name in the tab title and login window via `SERVICE_NAME`, and points the logo link and the tunnel-error redirect to the installation domain (`ABSOLUTE_SERVER`) instead of `wirenboard.cloud`.
+- Primary button color override via the `PRIMARY_COLOR` (hex) variable in the web UI and the web console. When not set, the default color is used.
+
+## [1.3.0] - 2026-06-09
+
+### Added
+
+- Email sending can now be fully disabled via the `EMAIL_ENABLED=False` variable: the `EMAIL_*` variables are no longer required, invitations and password resets are handled through the admin panel.
+- Admin panel action for generating a one-time password reset link (works without email).
+- Documentation: external reverse proxy in front of the cloud (nginx and Traefik, L4 TCP passthrough); network diagram, ports and firewall rules (`doc/SECURITY_NETWORK.md`, RU/EN); admin panel section; deployment in a private LAN without public access (public certificate + internal DNS).
+
+### Changed
+
+- `EMAIL_ENABLED=True` is now explicitly present in `.env.example` (main section). Nothing changes for existing installations: when the variable is unset, email sending stays enabled as before.
+
+### Fixed
+
+- Backend crash on startup when `EMAIL_URL` is empty.
+- nginx configuration example (SNI-based routing): the regex did not match the cloud's root domain.
+- External reverse-proxy documentation: clarified that `your-domain.com` is the full cloud hostname including the subdomain (the `ABSOLUTE_SERVER` value); the Traefik example (case C) now warns about backslash escaping in YAML quotes (the `unknown escape character` error makes Traefik serve its default certificate instead of passing TLS through).
 ## [1.2.0] - 2026-05-29
 
 ### Added
@@ -77,13 +100,13 @@ All notable changes to this project are documented in this file.
 
 - First stable release.
 
-## [0.6.1] - 2025-08-14
+## [0.1.1] - 2025-08-14
 
 ### Changed
 
 - Minor fixes and stability improvements.
 
-## [0.6.0] - 2025-08-01
+## [0.1.0] - 2025-08-01
 
 ### Added
 

@@ -23,14 +23,23 @@ PYTHON_BIN    := python3
 
 #----- [ REQUIRED ENVIRONMENT VARIABLES ] -------------------------------------
 
-REQUIRED_VARS := \
-  ABSOLUTE_SERVER \
+# EMAIL_ENABLED=False (also false/Off/No/0, case-insensitive) in .env disables
+# email: EMAIL_* variables become optional and EMAIL_URL generation is skipped.
+# When EMAIL_ENABLED is unset or set to anything else, email is enabled (default).
+EMAIL_ENABLED_VALUE := $(shell grep -E '^[[:space:]]*EMAIL_ENABLED=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]')
+EMAIL_DISABLED := $(if $(filter $(EMAIL_ENABLED_VALUE),false off no 0),1,0)
+
+EMAIL_REQUIRED_VARS := \
   EMAIL_PROTOCOL \
   EMAIL_LOGIN \
   EMAIL_PASSWORD \
   EMAIL_SERVER \
   EMAIL_PORT \
   EMAIL_NOTIFICATIONS_FROM \
+  EMAIL_URL
+
+REQUIRED_VARS := \
+  ABSOLUTE_SERVER \
   ADMIN_EMAIL \
   ADMIN_USERNAME \
   ADMIN_PASSWORD \
@@ -51,9 +60,12 @@ REQUIRED_VARS := \
   TUNNEL_AUTH_TOKEN \
   SECRET_KEY \
   ABSOLUTE_SERVER_REGEX \
-  EMAIL_URL \
   PRIVATE_KEY \
   PUBLIC_KEY
+
+ifeq ($(EMAIL_DISABLED),0)
+REQUIRED_VARS += $(EMAIL_REQUIRED_VARS)
+endif
 
 #----- [ DOMAIN & CERTIFICATES ] ----------------------------------------------
 
@@ -169,6 +181,9 @@ check-certs:
 check-env:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ CHECKING ENVIRONMENT VARIABLES ]====================="
 	@printf "Checking environment variables...\n"
+ifeq ($(EMAIL_DISABLED),1)
+	@printf "$(YELLOW)Email is disabled (EMAIL_ENABLED=$(EMAIL_ENABLED_VALUE)): EMAIL_* variables are not required.$(NC)\n"
+endif
 	@if [ ! -f $(ENV_FILE) ]; then \
 		printf "$(RED)ERROR: File %s not found. Please create it based on %s.$(NC)\n" "$(ENV_FILE)" "$(ENV_EXAMPLE)"; exit 1; \
 	fi
@@ -237,6 +252,9 @@ generate-absolute-server-regex:
 .PHONY: generate-email-url
 generate-email-url:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating EMAIL_URL ------"
+ifeq ($(EMAIL_DISABLED),1)
+	@printf "$(YELLOW)Email is disabled (EMAIL_ENABLED=$(EMAIL_ENABLED_VALUE)). Skipping EMAIL_URL generation.$(NC)\n"
+else
 	@EMAIL_PROTOCOL=$$(grep -E '^[[:space:]]*EMAIL_PROTOCOL=' $(ENV_FILE) | cut -d= -f2-); \
 	EMAIL_LOGIN=$$(grep -E '^[[:space:]]*EMAIL_LOGIN=' $(ENV_FILE) | cut -d= -f2-); \
 	EMAIL_PASSWORD=$$(grep -E '^[[:space:]]*EMAIL_PASSWORD=' $(ENV_FILE) | cut -d= -f2-); \
@@ -255,6 +273,7 @@ generate-email-url:
 		{ echo ""; echo "EMAIL_URL=$$EMAIL_URL"; } >> $(ENV_FILE); \
 		printf "\n$(GREEN)EMAIL_URL generated and added to %s.$(NC)\n" "$(ENV_FILE)"; \
 	fi
+endif
 
 .PHONY: generate-jwt
 generate-jwt:
@@ -315,7 +334,7 @@ restart:
 	@$(call require_version)
 	@${MAKE} generate-env
 	@${MAKE} check-certs
-	@VERSION=$(VERSION) docker compose down && docker compose up -d --build
+	@export VERSION=$(VERSION); docker compose down && docker compose up -d --build
 
 #------------------------------------------------------------------------------
 # [ 1.x -> 2.0 UPGRADE ] ------------------------------------------------------

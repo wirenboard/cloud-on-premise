@@ -43,37 +43,51 @@ jobs:
       packages: write
     strategy:
       matrix:
-        image: [
-          wbc-backend,
-          wbc-worker,
-          wbc-agent-backend,
-          wbc-scheduler,
-          wbc-frontend,
-          wbc-tunnel,
-          wbc-tunnel-auth,
-          wbc-webssh
-        ]
+        include:
+          - { image: wbc-backend,       repo: cloud-backend }
+          - { image: wbc-worker,        repo: cloud-backend }
+          - { image: wbc-agent-backend, repo: cloud-backend }
+          - { image: wbc-scheduler,     repo: cloud-backend }
+          - { image: wbc-frontend,      repo: cloud-frontend }
+          - { image: wbc-tunnel,        repo: cloud-tunnel }
+          - { image: wbc-tunnel-auth,   repo: cloud-tunnel }
+          - { image: wbc-webssh,        repo: cloud-webssh }
     steps:
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Retag and push image ${{ matrix.image }}
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           VERSION=${{ needs.read-version.outputs.version }}
           IMAGE=${{ matrix.image }}
 
           SOURCE_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:${VERSION}-testing"
           TARGET_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:${VERSION}"
+          LATEST_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:latest"
 
-          echo "Retagging $SOURCE_IMAGE → $TARGET_IMAGE"
+          echo "Retagging $SOURCE_IMAGE → $TARGET_IMAGE, $LATEST_IMAGE"
 
           docker pull "$SOURCE_IMAGE"
           docker tag "$SOURCE_IMAGE" "$TARGET_IMAGE"
+          docker tag "$SOURCE_IMAGE" "$LATEST_IMAGE"
           docker push "$TARGET_IMAGE"
+          docker push "$LATEST_IMAGE"
+
+          SHA=$(gh api "repos/${{ github.repository_owner }}/${{ matrix.repo }}/branches/onprem-release/${VERSION}" --jq .commit.sha 2>/dev/null || true)
+          if [[ -n "$SHA" ]]; then
+            SHA_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:${SHA}"
+            echo "Tagging $SHA_IMAGE"
+            docker tag "$SOURCE_IMAGE" "$SHA_IMAGE"
+            docker push "$SHA_IMAGE"
+          else
+            echo "::warning::${{ matrix.repo }} has no onprem-release/${VERSION} branch — skipping sha tag for ${IMAGE}"
+          fi
 
   create-release:
     needs: [read-version, retag-and-push]
@@ -83,16 +97,33 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Extract changelog section for release notes
+        shell: bash
+        run: |
+          VERSION=${{ needs.read-version.outputs.version }}
+          {
+            awk -v ver="$VERSION" '$0 ~ "^## \\["ver"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md
+            echo ""
+            echo "---"
+            echo ""
+            awk -v ver="$VERSION" '$0 ~ "^## \\["ver"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG_EN.md
+          } > /tmp/release_notes.md
+          if [[ ! -s /tmp/release_notes.md ]]; then
+            echo "::warning::CHANGELOG.md has no section for ${VERSION} — release body will be empty"
+          fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.read-version.outputs.version }}
           name: Release v${{ needs.read-version.outputs.version }}
+          body_path: /tmp/release_notes.md
           files: |
             VERSION
             CHANGELOG.md
+            CHANGELOG_EN.md
             LICENSE
             README.md
             README_EN.md
@@ -100,7 +131,6 @@ jobs:
             .env.example
             docker-compose.yml
             traefik/**
-            tls/**
             jwt/**
 
       - name: Done

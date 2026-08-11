@@ -3,9 +3,9 @@ x-traefik-common: &traefik-common
   traefik.docker.network: ${DOCKER_NET_NAME:-wb_net}
 
 x-backend-common-env: &backend-common-env
-  EMAIL_URL: ${EMAIL_URL}
-  EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM}
-  EMAIL_ENABLED: "On"
+  EMAIL_URL: ${EMAIL_URL:-}
+  EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-}
+  EMAIL_ENABLED: "${EMAIL_ENABLED:?Set EMAIL_ENABLED=True or EMAIL_ENABLED=False in .env (2.0 requires an explicit choice)}"
   EMAIL_TIMEOUT: "10"
   INVITE_EMAIL_SUBJECT: ${INVITE_EMAIL_SUBJECT:-}
   INVITE_EMAIL_BODY: ${INVITE_EMAIL_BODY:-}
@@ -190,8 +190,8 @@ services:
     environment:
       FRP_WEBHOOK_ADDRESS: "tunnel-webhooks-backend:8000"
       FRP_AUTH_TOKEN: ${TUNNEL_AUTH_TOKEN}
-      FRP_TUNNELING_PORT: ${TUNNEL_PORT:-7107}
-      FRP_DASHBOARD_PORT: ${TUNNEL_DASHBOARD_PORT:-7501}
+      FRP_TUNNELING_PORT: 7107
+      FRP_DASHBOARD_PORT: 7501
       FRP_DASHBOARD_USER: ${TUNNEL_DASHBOARD_USER}
       FRP_DASHBOARD_PASSWORD: ${TUNNEL_DASHBOARD_PASSWORD}
     ports:
@@ -243,6 +243,11 @@ services:
     restart: always
     environment:
       REDIS_URL: "redis://redis:6379/1"
+      SERVICE_NAME: "${SERVICE_NAME:-Wiren Board}"
+      ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
+      PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
+    volumes:
+      - ./branding:/branding:ro
     depends_on:
       tunnel:
         condition: service_started
@@ -252,9 +257,14 @@ services:
     restart: always
     environment:
       BACKEND_APP_URL: "http://backend:8000/"
-      FOOTER_LINKS: '[{"url": "https://wirenboard.com/", "caption": "mainSiteLink"}]'
-      FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"Сайт компании Wiren Board"}'
-      FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"Wiren Board website"}'
+      # "-" (не ":-") у ссылок/подписей: пустое значение НЕ подменяется дефолтом — пустая строка скрывает ссылку в UI
+      FOOTER_LINKS: '[{"url": "${FOOTER_SITE_URL-https://wirenboard.com/}", "caption": "mainSiteLink"}]'
+      FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"${FOOTER_SITE_LABEL_RU-${FOOTER_SITE_LABEL_EN:-Сайт компании Wiren Board}}"}'
+      FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"${FOOTER_SITE_LABEL_EN-${FOOTER_SITE_LABEL_RU:-Wiren Board website}}"}'
+      SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
+      SERVICE_STATUS_URL: "${SERVICE_STATUS_URL:-}"
+      SERVICE_DOCS_URL: "${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud}"
+      PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
     volumes:
       - ./branding:/branding:ro
     healthcheck:
