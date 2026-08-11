@@ -62,13 +62,14 @@ your-domain.com
 *.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
+*.apps.your-domain.com   # опционально — для веб-сервисов контроллеров
 ```
 
 Они покрывают все следующие поддомены необходимые для работы сервиса:
 
 ```text
 metrics.your-domain.com
-influx.your-domain.com
+metrics-ingest.your-domain.com
 tunnel.your-domain.com
 app.your-domain.com
 agent.your-domain.com
@@ -76,6 +77,8 @@ ssh.your-domain.com
 http.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
+apps.your-domain.com     # опционально — для веб-сервисов контроллеров
+*.apps.your-domain.com   # опционально — для веб-сервисов контроллеров
 ```
 
 ### 2. Порты
@@ -110,7 +113,7 @@ http.your-domain.com
 
 Если у вас есть сертификат для этого домена, то проверьте его SAN (перечень поддоменов):
 
-Сертификат должен быть выпущен для того же значения, которое указано в `ABSOLUTE_SERVER`, включая поддомен. Например, если облако работает на `cloud.example.com`, сертификат нужен для `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com` и `*.ssh.cloud.example.com`.
+Сертификат должен быть выпущен для того же значения, которое указано в `ABSOLUTE_SERVER`, включая поддомен. Например, если облако работает на `cloud.example.com`, сертификат нужен для `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com` и `*.ssh.cloud.example.com`. Если планируете использовать [веб-сервисы контроллеров](#веб-сервисы-контроллеров-опционально) — также для `apps.cloud.example.com` и `*.apps.cloud.example.com`.
 
 ```bash
 openssl x509 -in "path/to/your/certs/fullchain.pem" -noout -text | grep -A1 "Subject Alternative Name"
@@ -123,6 +126,8 @@ your-domain.com
 *.your-domain.com
 *.http.your-domain.com
 *.ssh.your-domain.com
+apps.your-domain.com     # опционально — для веб-сервисов контроллеров
+*.apps.your-domain.com   # опционально — для веб-сервисов контроллеров
 ```
 
 В противном случае вам придется получить новый.
@@ -148,7 +153,7 @@ your-domain.com
 3. Во внутреннем DNS создайте A-записи, указывающие полный hostname облака и все поддомены (см. [1. DNS-записи](#1-dns-записи)) на локальный IP сервера.
 4. Укажите `ABSOLUTE_SERVER=cloud.example.com`.
 
-> 💡 Для `*.ssh.your-domain.com` и `*.http.your-domain.com` во внутреннем DNS нужны wildcard-записи. DNS бытовых роутеров их не поддерживает — используйте dnsmasq, Pi-hole, AdGuard Home или полноценный DNS-сервер.
+> 💡 Для `*.ssh.your-domain.com`, `*.http.your-domain.com` и `*.apps.your-domain.com` (опционально — для веб-сервисов контроллеров) во внутреннем DNS нужны wildcard-записи. DNS бытовых роутеров их не поддерживает — используйте dnsmasq, Pi-hole, AdGuard Home или полноценный DNS-сервер.
 
 Контроллеры должны резолвить тот же hostname через тот же внутренний DNS, что и остальные устройства сети.
 
@@ -237,9 +242,19 @@ ADMIN_EMAIL=admin@mail.com
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=password
 
-# Создание администратора InfluxDB
-INFLUXDB_USERNAME=influx_admin
-INFLUXDB_PASSWORD=influx_password
+# База метрик (TimescaleDB)
+TIMESCALE_DB=metrics
+TIMESCALE_USER=timescale
+TIMESCALE_PASSWORD=timescale_password
+# Роль, под которой Telegraf пишет принятые метрики в TimescaleDB
+TELEGRAF_TIMESCALE_USER=telegraf
+TELEGRAF_TIMESCALE_PASSWORD=telegraf_password
+
+# Grafana (пользовательские дашборды): read-only роль к метрикам и админ Grafana
+GRAFANA_TIMESCALE_USER=grafana
+GRAFANA_TIMESCALE_PASSWORD=grafana_timescale_password
+GRAFANA_ADMIN_USER=grafana_admin
+GRAFANA_ADMIN_PASSWORD=grafana_password
 
 # Создание администратора Tunnel Dashboard и настройка порта
 TUNNEL_DASHBOARD_USER=tunnel_admin
@@ -382,6 +397,57 @@ wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https:/
 
 > ⚠️ Отправка метрик с контроллера в On-Premise облако поддерживается только на версиях агента `wb-cloud-agent` до `1.6.14` включительно. На более новых версиях агента метрики контроллера в On-Premise облако отправляться не будут.
 
+### Веб-сервисы контроллеров (опционально)
+
+Облако может публиковать веб-интерфейсы сервисов, работающих на контроллере
+(например, Node-RED), через облачный туннель. Каждый сервис получает адрес вида
+`<серийник>-<порт>.apps.your-domain.com`, доступ к нему — только через облачную
+авторизацию. На один контроллер можно опубликовать до 20 сервисов
+(переменная `MAX_SERVICES_PER_CONTROLLER`).
+
+Что требуется от оператора облака:
+
+- wildcard DNS-запись `*.apps.your-domain.com` (см. [1. DNS-записи](#1-dns-записи));
+- сертификат с SAN `apps.your-domain.com` и `*.apps.your-domain.com`
+  (см. [4. Сертификаты TLS](#4-сертификаты-tls)). Wildcard выдаётся только через
+  DNS-01 challenge (HTTP-01 wildcard не поддерживает) — это тот же механизм,
+  которым получается остальной сертификат облака.
+
+Если `apps`-записи и сертификат не настроены, облако полностью работает,
+но ссылки на сервисы контроллеров не будут открываться (кнопки в интерфейсе
+при этом видны — функциональность приезжает вместе с образами).
+
+Тюнинг в `.env` (опционально):
+
+```dotenv
+# Число прогретых туннельных каналов на контроллер
+#TUNNEL_POOL_COUNT=5
+
+# Максимум публикуемых сервисов на контроллер
+#MAX_SERVICES_PER_CONTROLLER=20
+
+# Лимит портов FRP на клиента; держите >= MAX_SERVICES_PER_CONTROLLER + 2
+#FRP_MAX_PORTS_PER_CLIENT=22
+```
+
+### Геолокация сессий (GeoIP, опционально)
+
+В списке активных сессий пользователя облако может показывать страну и город
+по IP-адресу. Для этого нужна локальная база GeoIP:
+
+1. Скачайте бесплатную базу DB-IP «IP to City Lite» в формате MMDB:
+   [db-ip.com/db/download/ip-to-city-lite](https://db-ip.com/db/download/ip-to-city-lite) (лицензия CC BY 4.0).
+2. Положите файл как `./geoip/dbip-city-lite.mmdb`.
+3. Раскомментируйте в `.env`: `GEOIP_CITY_DB_PATH=/data/geoip/dbip-city-lite.mmdb`.
+4. Перезапустите стек: `make restart`.
+
+Геолокация работает полностью офлайн: файл можно скачать на другой машине и
+перенести на сервер, наружу облако запросов не делает. DB-IP обновляет базу
+ежемесячно — обновление по желанию (просто замените файл).
+
+Без файла всё работает, локация в списке сессий остаётся пустой. Приватные
+адреса (LAN/VPN) не геолоцируются — это ожидаемое поведение.
+
 ---
 
 ## 🎛️ Переменные окружения
@@ -395,9 +461,6 @@ wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https:/
 
 # Токен для открытия тоннелей
 TUNNEL_AUTH_TOKEN=GLgTbKtCiwF8J4tI439NJba0pbXfW0a39E7jZOOr0qO67xonhhfaNIWiH7FzPP
-
-# Токен для доступа к Influx
-INFLUXDB_TOKEN=PvxahJmIuieFy1ieODoQ3JpKEVSCDSkRUQZjjePSlajJV6w1Sl2iAQcpY8f2z4s
 
 # Секретный ключ для Django
 SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
@@ -588,8 +651,12 @@ sudo certbot certonly --manual --preferred-challenges dns \
   -d $DOMAIN_NAME \
   -d "*.$DOMAIN_NAME" \
   -d "*.ssh.$DOMAIN_NAME" \
-  -d "*.http.$DOMAIN_NAME"
+  -d "*.http.$DOMAIN_NAME" \
+  -d "apps.$DOMAIN_NAME" \
+  -d "*.apps.$DOMAIN_NAME"
 ```
+
+> Две последние строки `-d` (`apps`) опциональны — нужны только для [веб-сервисов контроллеров](#веб-сервисы-контроллеров-опционально).
 
 И последовательно создайте записи на вашем DNS-сервере на основе того что выдаст Certbot:
 
@@ -641,6 +708,24 @@ dig TXT _acme-challenge.ssh.your-domain-name.com +short
 ```
 
 Если запись создана, нажмите **Enter** (Continue).
+
+### 🔹 Четвёртая запись (`apps`) — если запрашивали `apps`-домены
+
+```
+Type: TXT
+Name: _acme-challenge.apps.your-domain-name.com.
+Value: some_token_4
+```
+
+> Для `apps.$DOMAIN_NAME` и `*.apps.$DOMAIN_NAME` Certbot попросит **две** TXT-записи с одинаковым именем — добавьте обе.
+
+Проверьте:
+
+```bash
+dig TXT _acme-challenge.apps.your-domain-name.com +short
+```
+
+Если записи созданы, нажмите **Enter** (Continue).
 
 ### ✅ Результат
 
@@ -771,7 +856,7 @@ tcp:
   routers:
     wbc-https:
       entryPoints: ["websecure"]
-      rule: "HostSNIRegexp(`^(your-domain\\.com|[^.]+\\.your-domain\\.com|[^.]+\\.(http|ssh)\\.your-domain\\.com)$`)"
+      rule: "HostSNIRegexp(`^(your-domain\\.com|[^.]+\\.your-domain\\.com|[^.]+\\.(http|ssh|apps)\\.your-domain\\.com)$`)"
       tls:
         passthrough: true          # ⚠️ не терминировать TLS — нужно для mTLS контроллеров
       service: wbc-https
@@ -813,7 +898,7 @@ tcp:
 > ошибку `yaml: found unknown escape character`, file-провайдер отбросит весь файл,
 > и Traefik начнёт отдавать свой default-сертификат вместо passthrough.
 
-> Регулярка матчит те же хосты, что покрывает wildcard-сертификат облака (см. раздел «Сертификаты TLS»): сам `your-domain.com`, любой поддомен первого уровня (`app.`, `agent.`, `ssh.`, `http.` и т.д.) и per-controller `<id>.http.`/`<id>.ssh.`. Подставьте свой домен из `ABSOLUTE_SERVER` вместо `your-domain.com`.
+> Регулярка матчит те же хосты, что покрывает wildcard-сертификат облака (см. раздел «Сертификаты TLS»): сам `your-domain.com`, любой поддомен первого уровня (`app.`, `agent.`, `ssh.`, `http.` и т.д.), per-controller `<id>.http.`/`<id>.ssh.` и `<серийник>-<порт>.apps.` (опционально — для веб-сервисов контроллеров). Подставьте свой домен из `ABSOLUTE_SERVER` вместо `your-domain.com`.
 
 > Если через внешний прокси нужно экспонировать только контроллерный трафик, оставив веб-интерфейс облака недоступным извне, сузьте регулярку до `agent.your-domain.com` и per-controller хостов `<id>.http.`/`<id>.ssh.`.
 

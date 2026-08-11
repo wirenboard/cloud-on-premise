@@ -61,13 +61,14 @@ your-domain.com
 *.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
+*.apps.your-domain.com   # optional — for controller web services
 ```
 
 These cover the required subdomains:
 
 ```text
 metrics.your-domain.com
-influx.your-domain.com
+metrics-ingest.your-domain.com
 tunnel.your-domain.com
 app.your-domain.com
 agent.your-domain.com
@@ -75,6 +76,8 @@ ssh.your-domain.com
 http.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
+apps.your-domain.com     # optional — for controller web services
+*.apps.your-domain.com   # optional — for controller web services
 ```
 
 ### 2. Ports
@@ -110,7 +113,7 @@ Certificates must be issued by a trusted CA:
 
 If you already have a certificate for this hostname, check the SANs (Subject Alternative Names):
 
-The certificate must be issued for the same value as `ABSOLUTE_SERVER`, including the subdomain. For example, if the cloud runs on `cloud.example.com`, the certificate must cover `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, and `*.ssh.cloud.example.com`.
+The certificate must be issued for the same value as `ABSOLUTE_SERVER`, including the subdomain. For example, if the cloud runs on `cloud.example.com`, the certificate must cover `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, and `*.ssh.cloud.example.com`. If you plan to use [controller web services](#controller-web-services-optional), also `apps.cloud.example.com` and `*.apps.cloud.example.com`.
 
 ```bash
 openssl x509 -in "path/to/your/certs/fullchain.pem" -noout -text | grep -A1 "Subject Alternative Name"
@@ -123,6 +126,8 @@ your-domain.com
 *.your-domain.com
 *.http.your-domain.com
 *.ssh.your-domain.com
+apps.your-domain.com     # optional — for controller web services
+*.apps.your-domain.com   # optional — for controller web services
 ```
 
 Otherwise, you must obtain a new certificate.
@@ -146,7 +151,7 @@ Working setup:
 3. In your internal DNS, create A records pointing the cloud's full hostname and all subdomains (see [1. DNS Records](#1-dns-records)) to the server's local IP.
 4. Set `ABSOLUTE_SERVER=cloud.example.com`.
 
-> 💡 The `*.ssh.your-domain.com` and `*.http.your-domain.com` entries require wildcard DNS records. Consumer router DNS does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
+> 💡 The `*.ssh.your-domain.com`, `*.http.your-domain.com`, and `*.apps.your-domain.com` (optional — for controller web services) entries require wildcard DNS records. Consumer router DNS does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
 
 Controllers must resolve the same hostname via the same internal DNS as the rest of the network.
 
@@ -235,9 +240,19 @@ ADMIN_EMAIL=admin@mail.com
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=password
 
-# InfluxDB admin
-INFLUXDB_USERNAME=influx_admin
-INFLUXDB_PASSWORD=influx_password
+# Metrics database (TimescaleDB)
+TIMESCALE_DB=metrics
+TIMESCALE_USER=timescale
+TIMESCALE_PASSWORD=timescale_password
+# Role Telegraf uses to write ingested metrics into TimescaleDB
+TELEGRAF_TIMESCALE_USER=telegraf
+TELEGRAF_TIMESCALE_PASSWORD=telegraf_password
+
+# Grafana (user dashboards): read-only role for the metrics DB and the Grafana admin
+GRAFANA_TIMESCALE_USER=grafana
+GRAFANA_TIMESCALE_PASSWORD=grafana_timescale_password
+GRAFANA_ADMIN_USER=grafana_admin
+GRAFANA_ADMIN_PASSWORD=grafana_password
 
 # Tunnel Dashboard admin and port configuration
 TUNNEL_DASHBOARD_USER=tunnel_admin
@@ -372,6 +387,57 @@ Your controller is now successfully linked to the cloud.
 
 > ⚠️ Sending controller metrics to the On-Premise cloud is supported only on `wb-cloud-agent` versions up to and including `1.6.14`. On newer agent versions, controller metrics will not be sent to the On-Premise cloud.
 
+### Controller Web Services (optional)
+
+The cloud can publish the web interfaces of services running on a controller
+(e.g. Node-RED) through the cloud tunnel. Each service gets an address of the
+form `<serial>-<port>.apps.your-domain.com`, reachable only after cloud
+authorization. Up to 20 services can be published per controller
+(the `MAX_SERVICES_PER_CONTROLLER` variable).
+
+What the cloud operator must provide:
+
+- a wildcard DNS record `*.apps.your-domain.com` (see [1. DNS Records](#1-dns-records));
+- a certificate with the `apps.your-domain.com` and `*.apps.your-domain.com`
+  SANs (see [4. TLS Certificates](#4-tls-certificates)). Wildcards are issued
+  only via the DNS-01 challenge (HTTP-01 cannot issue wildcards) — the same
+  mechanism used for the rest of the cloud certificate.
+
+If the `apps` DNS records and certificate are not configured, the cloud works
+fully, but links to controller services will not open (the buttons are still
+visible in the UI — the feature ships with the images).
+
+Optional tuning in `.env`:
+
+```dotenv
+# Warmed tunnel channels per controller
+#TUNNEL_POOL_COUNT=5
+
+# Maximum published services per controller
+#MAX_SERVICES_PER_CONTROLLER=20
+
+# FRP port limit per client; keep >= MAX_SERVICES_PER_CONTROLLER + 2
+#FRP_MAX_PORTS_PER_CLIENT=22
+```
+
+### Session Geolocation (GeoIP, optional)
+
+The cloud can show the country and city by IP address in the user's active
+sessions list. This requires a local GeoIP database:
+
+1. Download the free DB-IP "IP to City Lite" database in MMDB format:
+   [db-ip.com/db/download/ip-to-city-lite](https://db-ip.com/db/download/ip-to-city-lite) (CC BY 4.0 license).
+2. Place the file as `./geoip/dbip-city-lite.mmdb`.
+3. Uncomment in `.env`: `GEOIP_CITY_DB_PATH=/data/geoip/dbip-city-lite.mmdb`.
+4. Restart the stack: `make restart`.
+
+Geolocation works fully offline: the file can be downloaded on another machine
+and transferred to the server; the cloud makes no outbound requests. DB-IP
+updates the database monthly — update at will (just replace the file).
+
+Without the file everything works, the location in the sessions list simply
+stays empty. Private addresses (LAN/VPN) are not geolocated — this is by design.
+
 ---
 
 ## 🎛 Environment Variables
@@ -383,9 +449,6 @@ Example:
 ```dotenv
 # Token for opening tunnels
 TUNNEL_AUTH_TOKEN=GLgTbKtCiwF8J4tI439NJba0pbXfW0a39E7jZOOr0qO67xonhhfaNIWiH7FzPP
-
-# Token for Influx access
-INFLUXDB_TOKEN=PvxahJmIuieFy1ieODoQ3JpKEVSCDSkRUQZjjePSlajJV6w1Sl2iAQcpY8f2z4s
 
 # Secret key for Django
 SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
@@ -569,8 +632,12 @@ sudo certbot certonly --manual --preferred-challenges dns \
   -d $DOMAIN_NAME \
   -d "*.$DOMAIN_NAME" \
   -d "*.ssh.$DOMAIN_NAME" \
-  -d "*.http.$DOMAIN_NAME"
+  -d "*.http.$DOMAIN_NAME" \
+  -d "apps.$DOMAIN_NAME" \
+  -d "*.apps.$DOMAIN_NAME"
 ```
+
+> The last two `-d` lines (`apps`) are optional — needed only for [controller web services](#controller-web-services-optional).
 
 Add DNS TXT records as prompted by Certbot. Use `dig` to verify.
 
@@ -694,7 +761,7 @@ tcp:
   routers:
     wbc-https:
       entryPoints: ["websecure"]
-      rule: "HostSNIRegexp(`^(your-domain\\.com|[^.]+\\.your-domain\\.com|[^.]+\\.(http|ssh)\\.your-domain\\.com)$`)"
+      rule: "HostSNIRegexp(`^(your-domain\\.com|[^.]+\\.your-domain\\.com|[^.]+\\.(http|ssh|apps)\\.your-domain\\.com)$`)"
       tls:
         passthrough: true          # ⚠️ do not terminate TLS — required for controller mTLS
       service: wbc-https
@@ -736,7 +803,7 @@ where `<cloud-host>` is the address of the on-premise cloud server, and `your-do
 > `yaml: found unknown escape character`, the file provider drops the whole file,
 > and Traefik starts serving its default certificate instead of passing TLS through.
 
-> The rule matches the same hosts your cloud's wildcard certificate covers (see the "TLS Certificates" section): `your-domain.com` itself, any first-level subdomain (`app.`, `agent.`, `ssh.`, `http.`, etc.), and per-controller `<id>.http.`/`<id>.ssh.`. Substitute your own `ABSOLUTE_SERVER` domain for `your-domain.com`.
+> The rule matches the same hosts your cloud's wildcard certificate covers (see the "TLS Certificates" section): `your-domain.com` itself, any first-level subdomain (`app.`, `agent.`, `ssh.`, `http.`, etc.), per-controller `<id>.http.`/`<id>.ssh.`, and `<serial>-<port>.apps.` (optional — for controller web services). Substitute your own `ABSOLUTE_SERVER` domain for `your-domain.com`.
 
 > If you only need to expose controller traffic through the external proxy, keeping the cloud web interface unreachable from outside, narrow the regexp down to `agent.your-domain.com` and the per-controller `<id>.http.`/`<id>.ssh.` hosts.
 
