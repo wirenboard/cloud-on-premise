@@ -40,6 +40,7 @@ EMAIL_REQUIRED_VARS := \
 
 REQUIRED_VARS := \
   ABSOLUTE_SERVER \
+  EMAIL_ENABLED \
   ADMIN_EMAIL \
   ADMIN_USERNAME \
   ADMIN_PASSWORD \
@@ -396,8 +397,10 @@ fix-users:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ migration_doctor: $(MODE) ]====================="
 	@$(call require_version)
 	@if VERSION=$(VERSION) docker compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then \
-	  VERSION=$(VERSION) docker compose exec \
-	    -v "$$PWD/$(MIGRATION_DIR):/migration" backend $(DOCTOR_CMD) -- $(MODE); \
+	  cid=$$(VERSION=$(VERSION) docker compose ps -q backend); \
+	  docker cp "$(MIGRATION_DIR)/migration_doctor.py" "$$cid:/tmp/migration_doctor.py"; \
+	  VERSION=$(VERSION) docker compose exec -T backend \
+	    uv run --no-dev ./manage.py shell -c "exec(open('/tmp/migration_doctor.py').read())" -- $(MODE); \
 	else \
 	  VERSION=$(VERSION) docker compose run --rm \
 	    -v "$$PWD/$(MIGRATION_DIR):/migration" backend $(DOCTOR_CMD) -- $(MODE); \

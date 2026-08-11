@@ -33,5 +33,5 @@ branding/*.png
 CLAUDE.md
 .mcp.json
 
-# Internal working docs (kept local, not shipped in release branch)
-doc/
+# GeoIP database (operator-provided, see README)
+geoip/*.mmdb

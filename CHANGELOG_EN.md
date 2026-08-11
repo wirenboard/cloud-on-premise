@@ -20,6 +20,17 @@ All notable changes to this project are documented in this file.
 - **Daily PostgreSQL backups to S3** (MinIO).
 - **Guided `make upgrade`** — mandatory backup → user-account check/repair →
   migration (see RELEASE_NOTES).
+- **Controller web services over tunnels** (optional) — controller service web
+  UIs (e.g. Node-RED) published at `<serial>-<port>.apps.<domain>` subdomains.
+  Requires a wildcard DNS record and a certificate for `*.apps.<domain>` (see
+  README).
+- **Session geolocation** (optional) — country/city in the active sessions list
+  via a local DB-IP database (`GEOIP_CITY_DB_PATH`, see README). Works offline.
+- Tunnels: a pool of warmed channels per controller (`TUNNEL_POOL_COUNT`,
+  default 5) — pages behind a tunnel open noticeably faster.
+- **`EMAIL_ENABLED` is now mandatory**: the stack refuses to start without an
+  explicit `EMAIL_ENABLED=True` or `False` in `.env` (1.x silently enabled email
+  when unset).
 - Celery workers split by queue: `worker` (default), `worker-metrics`,
   `worker-grafana`, `worker-email`.
 - `tunnel-webhooks-backend` service — a separate backend instance handling FRP
