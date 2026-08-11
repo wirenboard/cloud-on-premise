@@ -189,6 +189,7 @@ endif
 	if [ $$result -eq 0 ]; then \
 		printf "$(GREEN)All required variables are present.$(NC)\n"; \
 	else \
+		printf "$(YELLOW)Variables introduced by a newer release are listed in %s — copy the missing ones over and set your own values.$(NC)\n" "$(ENV_EXAMPLE)"; \
 		exit 1; \
 	fi
 

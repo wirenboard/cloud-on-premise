@@ -84,6 +84,18 @@ upgrade() {
         } >> "$ENV_FILE"
     fi
 
+    # Report every variable the new release added at once, not one per run.
+    missing=""
+    for var in $(grep -oE '^[A-Z_]+=' .env.example | tr -d '='); do
+        grep -Eq "^[[:space:]]*$var=" "$ENV_FILE" || missing="$missing $var"
+    done
+    if [ -n "$missing" ]; then
+        say "This release needs variables that are not in your $ENV_FILE:" "$RED"
+        for var in $missing; do echo "  $var"; done
+        say "Copy them from .env.example, set your own values, then re-run 'make upgrade'." "$YELLOW"
+        exit 1
+    fi
+
     make generate-env
     make check-certs
 
