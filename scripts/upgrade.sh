@@ -79,8 +79,8 @@ fix_users() {
 }
 
 # Everything that can be done while the cloud keeps serving: prepare the
-# configuration, verify the environment, and warm the image cache. Safe to run
-# as many times as needed — it never touches the database and stops nothing.
+# configuration, verify the environment, and warm the image cache. Nothing here
+# touches the database or stops a service, so a failed run costs nothing.
 check_upgrade() {
     local ready=1
 
@@ -139,10 +139,32 @@ check_upgrade() {
 
     echo
     if [ "$ready" -eq 1 ]; then
-        say "Ready to upgrade. Run 'make upgrade' during a maintenance window." "$GREEN"
+        say "Everything is ready." "$GREEN"
         return 0
     fi
-    say "Not ready yet. Fix what is marked above and run 'make check-upgrade' again." "$YELLOW"
+    say "Not ready yet. Fix what is marked above and run 'make upgrade' again —" "$YELLOW"
+    say "nothing has been changed and the cloud keeps running." "$YELLOW"
+    return 1
+}
+
+# The checks above cost nothing, so they run on every attempt; only this asks.
+confirm() {
+    case "${CONFIRM:-}" in yes|YES|y|1) return 0 ;; esac
+    echo
+    say "The checks passed. What happens next:" "$YELLOW"
+    echo "  1. the database is backed up into $BACKUP_DIR"
+    echo "  2. the cloud stops — users and controllers lose access"
+    echo "  3. the migration runs and 2.0 starts"
+    echo "  Expect a few minutes of downtime; controllers reconnect on their own."
+    echo
+    if [ ! -t 0 ]; then
+        say "Not a terminal: re-run as 'make upgrade CONFIRM=yes' to proceed unattended." "$RED"
+        return 1
+    fi
+    printf "Stop the cloud and upgrade now? [y/N] "
+    read -r answer
+    case "$answer" in y|Y|yes|YES) return 0 ;; esac
+    say "Cancelled. Nothing was changed." "$YELLOW"
     return 1
 }
 
@@ -150,6 +172,7 @@ check_upgrade() {
 # Everything slow has already happened in check-upgrade.
 upgrade() {
     check_upgrade || exit 1
+    confirm || exit 0
 
     echo
     say "Step 1/4: backup (before ANY database change)." "$YELLOW"
@@ -186,7 +209,6 @@ upgrade() {
 
 case "${1:-}" in
     backup)    backup ;;
-    check)     check_upgrade ;;
     fix-users) fix_users "${2:-scan}" ;;
     upgrade)   upgrade ;;
     *) echo "usage: $0 {backup|fix-users [MODE]|upgrade}" >&2; exit 2 ;;
