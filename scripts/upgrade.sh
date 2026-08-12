@@ -53,16 +53,21 @@ backup() {
 fix_users() {
     local mode="${1:-scan}"
     local cmd="uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '$mode']; exec(open('/migration/migration_doctor.py').read())\""
+    local rc=0
+    # -u/--user root: the image runs as nobody, which cannot write conflicts.yaml.
     if compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then
-        local cid rc=0
+        local cid
         cid="$(compose ps -q backend)"
         docker cp "$MIGRATION_DIR" "$cid:/"
         # A non-zero exit means "conflicts remain" — still copy conflicts.yaml back.
-        compose exec backend sh -c "$cmd" || rc=$?
+        compose exec -u root backend sh -c "$cmd" || rc=$?
         docker cp "$cid:/migration/." "$MIGRATION_DIR/"
-        return $rc
+    else
+        compose run --rm --user root -v "$PWD/$MIGRATION_DIR:/migration" backend sh -c "$cmd" || rc=$?
     fi
-    compose run --rm -v "$PWD/$MIGRATION_DIR:/migration" backend sh -c "$cmd"
+    # The files come back owned by root; hand them to whoever owns the checkout.
+    chown -R --reference="$ENV_FILE" "$MIGRATION_DIR" 2>/dev/null || true
+    return $rc
 }
 
 upgrade() {
