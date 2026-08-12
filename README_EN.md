@@ -43,9 +43,9 @@ In On-Premise:
 
 #### Metrics
 
-Currently, only the free version for up to 100 controllers is available, and it can be used for personal and commercial purposes. In this version, sending anonymized metrics to our server is required; you can see exactly what is sent in the instance backend under “On-Premise” → “Metrics”.
+Currently, only the free version for up to 100 controllers is available, and it can be used for personal and commercial purposes. In this version, sending anonymized metrics to our server is required; you can see exactly what is sent in the instance backend in the admin panel, section “On_Premise” → “Metrics”.
 
-If your instance cannot connect to our metrics collection server [metrics.wirenboard.cloud](https://on-premise-metrics.wirenboard.cloud), the cloud will continue to work, but you will not be able to add controllers.
+If your instance cannot connect to our metrics collection server [on-premise-metrics.wirenboard.cloud](https://on-premise-metrics.wirenboard.cloud), the cloud will continue to work, but you will not be able to add controllers.
 
 Paid plans that allow you to disable metric sending and add more controllers are planned.
 
@@ -479,12 +479,14 @@ For JWT, place `private.pem` and `public.pem` in the `jwt` directory; otherwise,
 The cloud spreads background work across four queues, each with its own worker and its own
 concurrency setting.
 
-| Variable | Default | What the queue does | When to raise it |
+| Variable | Default | What the queue runs | When to raise it |
 |---|---|---|---|
-| `WORKER_CONCURRENCY` | 4 | General work: controller activation, tunnel bookkeeping, licensing | Many controllers connecting and disconnecting at once |
-| `METRICS_WORKER_CONCURRENCY` | 3 | Metrics: collector config rollout, TimescaleDB roles and retention | The controller count grows, metrics appear late |
-| `GRAFANA_WORKER_CONCURRENCY` | 3 | Grafana dashboards and users | Many organizations and users, dashboards are slow to appear |
-| `EMAIL_WORKER_CONCURRENCY` | 2 | Sending mail: invitations, password resets, alerts | Bulk invitations or many alert rules |
+| `WORKER_CONCURRENCY` | 4 | Main queue: tunnel and connection upkeep, the anonymized metrics sent to the vendor, organization upkeep | Many controllers connecting and disconnecting at once |
+| `METRICS_WORKER_CONCURRENCY` | 3 | Metrics storage: TimescaleDB roles and retention policies, licensed retention, the periodic check for lagging collector settings | The controller and organization count grows |
+| `GRAFANA_WORKER_CONCURRENCY` | 3 | Grafana and collector setup: dashboards, users, handing controllers their metrics collector config | Metrics from new controllers appear late, dashboards are slow to appear |
+| `EMAIL_WORKER_CONCURRENCY` | 2 | Cloud email: invitations, address confirmation, password resets | Bulk invitations |
+
+> Metric alert emails are sent by Grafana itself; this queue has nothing to do with them.
 
 **The defaults are sized for a hundred controllers** — the cap of the free version. A normal
 installation does not need them raised: memory and disk for the metrics run out first.
@@ -512,8 +514,8 @@ docker compose exec redis redis-cli llen metrics_queue
 The queues are `default_queue`, `metrics_queue`, `grafana_queue`, `email_queue`. Apply changes to
 `.env` with `make restart`.
 
-> The table is derived from the per-process memory cost and from our own cloud's settings; actual
-> throughput depends on your workload, so trust your own queue lengths first.
+> The figures come from the measured per-process memory cost; actual throughput depends on your
+> workload, so trust your own queue lengths first.
 
 ### Working Without Email
 
@@ -558,8 +560,10 @@ Run all commands from the repo root.
 | `make run-no-cert-check` | Same without the TLS certificate check (not recommended)     |
 | `make stop`              | Stop containers                                              |
 | `make restart`           | Restart containers (with the cert check)                     |
-| `make update`            | Stop containers, update images, rebuild and restart          |
-| `make upgrade`           | 1.x → 2.0 upgrade: backup, fix users, migrate, start         |
+| `make update`            | Stop containers, update images, rebuild and restart. It also prunes unused images and **every stopped container on the host** — mind that if the server is shared |
+| `make reload-certs`      | Apply a renewed certificate: validate it and restart Traefik only |
+| `make update-geoip`      | Refresh the session geolocation database |
+| `make upgrade`           | 1.x → 2.x upgrade: checks while the cloud runs, then backup, stop, migrate, start |
 | `make fix-users MODE=…`  | Run migration_doctor (`scan` / `auto` / `resolve` / `dump` / `apply`) |
 | `make backup`            | Back up PostgreSQL (+ InfluxDB if running) into `./backups`  |
 
@@ -599,7 +603,7 @@ web interface footer, which shows the version). Before `make upgrade`, make sure
   domain set. If your 1.x certificate does not cover it, `make upgrade` stops at
   `make check-certs` before the backup: reissue the certificate (see
   [4. TLS Certificates](#4-tls-certificates)) and add the `*.apps` DNS record.
-- **There is room for the backup.** The backup (`pg_dump` + `influxd backup`) is written
+- **There is room for the backup.** The backup (`pg_dump` + `influx backup`) is written
   to `./backups` — ensure there is disk space for a copy of the database. The command
   takes the backup itself, **before** any change; a manual backup is not required but does
   no harm.
@@ -626,25 +630,31 @@ A single command does the whole thing:
 make upgrade
 ```
 
-What `make upgrade` does:
+The command first runs its checks **while the cloud keeps serving** and changes nothing until they
+all pass — run it as many times as you need:
 
-1. **`.env` preparation**: if `EMAIL_ENABLED` is unset, `True` is appended (the 1.x
-   behaviour); the old email variables (`EMAIL_SERVER`, `EMAIL_LOGIN`,
-   `EMAIL_PASSWORD`, `EMAIL_PROTOCOL`) are converted to the 2.0 names
-   (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`/`EMAIL_USE_SSL`).
-   Then `make generate-env` and `make check-certs` run.
-2. **Mandatory backup** (before ANY DB change): `pg_dump` of the main PostgreSQL
-   and `influxd backup` of the InfluxDB metrics (if that service is still
-   running) into `./backups`. InfluxDB is **not** converted to TimescaleDB — it
-   is kept alongside so you can consult the historical metrics later. New metrics
-   accumulate in TimescaleDB.
-3. **User-table scan** (`migration_doctor`, read-only): finds rows that violate
-   the 2.0 invariants — blank email, `username != email`, duplicate email
-   (case-insensitive) — and prints a table with counts. If any conflict remains,
-   the upgrade **stops** (non-zero exit), migration does NOT run, and the fix
-   command is printed.
-4. **`migrate` on the 2.0 image** (`docker compose pull` + `manage.py migrate`).
-5. **Bringing up the 2.0 stack** (`docker compose up -d --build`).
+1. **Configuration.** `.env` is rebuilt from `.env.example`: same-named variables carry over as they
+   are, renamed ones under their new names, keys and tokens verbatim. The previous file stays
+   alongside as `.env.bak-<date>`. Anything the old file did not have is marked `# <<< FILL IN`.
+2. **Environment variables** — every required one is set (`make check-env`).
+3. **Certificate** — covers every domain, including `*.apps.<domain>` (`make check-certs`).
+4. **Disk space** — at least 6 GB for the new images.
+5. **Images** — downloaded in advance so the downtime does not wait for them.
+6. **User accounts** — compatible with the 2.0 schema (the check only reads the database).
+
+The command then shows what happens next and asks for confirmation. Only after you answer does the
+downtime start:
+
+1. **Backup** — `pg_dump` of the main database and, if InfluxDB is still running, `influx backup` of
+   the metrics into `./backups`. InfluxDB is **not** converted to TimescaleDB — it is kept alongside
+   so you can consult the historical metrics later.
+2. **The application stops.** The databases stay up for the migration. The accounts are checked once
+   more, with nothing writing to the database.
+3. **Migrations** on the new image.
+4. **Start.** Controllers are handed their metrics collector config right away, without waiting for
+   the half-hourly cycle.
+
+See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for the expected downtime and the rollback.
 
 ### Resolving user conflicts
 
