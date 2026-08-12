@@ -25,10 +25,8 @@ Documentation for setting up and deploying Wiren Board Cloud in an On-Premise en
 > hungrier — plan for the recommended configuration, and for disk space that matches how long metrics
 > are kept (`METRICS_RETENTION_DAYS`, 30 days by default).
 >
-> Background task parallelism is sized for the minimum machine. If the server has room to spare and
-> tasks are queueing up, raise it with `WORKER_CONCURRENCY`, `METRICS_WORKER_CONCURRENCY`,
-> `GRAFANA_WORKER_CONCURRENCY`, `EMAIL_WORKER_CONCURRENCY` (see `.env.example`) — each unit costs
-> about 90 MB of memory.
+> Background task parallelism defaults to a hundred controllers and is tunable — see
+> [Background task performance](#background-task-performance).
 
 
 > ⚠️ Your CPU or VM hypervisor must support the `x86-64-v2` instruction set. When using a VM, the `host-passthrough` option (or `CPU=host`) may be required.
@@ -450,8 +448,8 @@ For JWT, place `private.pem` and `public.pem` in the `jwt` directory; otherwise,
 
 ### Background task performance
 
-The cloud spreads background work across four queues, each with its own worker. The defaults are
-sized for the minimum server configuration and a few dozen controllers.
+The cloud spreads background work across four queues, each with its own worker and its own
+concurrency setting.
 
 | Variable | Default | What the queue does | When to raise it |
 |---|---|---|---|
@@ -460,17 +458,20 @@ sized for the minimum server configuration and a few dozen controllers.
 | `GRAFANA_WORKER_CONCURRENCY` | 3 | Grafana dashboards and users | Many organizations and users, dashboards are slow to appear |
 | `EMAIL_WORKER_CONCURRENCY` | 2 | Sending mail: invitations, password resets, alerts | Bulk invitations or many alert rules |
 
-**What it costs in memory.** Every unit of concurrency is a separate process, roughly **85 MB**.
-The defaults (4 + 3 + 3 + 2) take about 1.3 GB. The arithmetic is simple: `+1` on any variable is
-another ~85 MB.
+**The defaults are sized for a hundred controllers** — the cap of the free version. A normal
+installation does not need them raised: memory and disk for the metrics run out first.
 
-Rough sizing:
+Every unit of concurrency is a separate process, roughly **85 MB**. The arithmetic is simple: `+1`
+on any variable is another ~85 MB.
 
-| Controllers | Values | Worker memory |
+| Profile | Values | Worker memory |
 |---|---|---|
-| up to 20 | defaults: 4 / 3 / 3 / 2 | ~1.3 GB |
-| up to 50 | 4 / 4 / 4 / 2 | ~1.5 GB |
-| up to 100 | 6 / 6 / 6 / 3 | ~2.2 GB (plan for the recommended server configuration) |
+| Minimal: a few controllers, saving memory | 2 / 1 / 1 / 1 | ~0.5 GB |
+| **Default: up to 100 controllers** | **4 / 3 / 3 / 2** | **~1.3 GB** |
+| Large installation: many organizations, bulk mailings | 8 / 8 / 8 / 4 | ~2.5 GB |
+
+There is no upper limit beyond the server's memory. For scale: the Wiren Board cloud runs with a
+concurrency of 10 per worker and serves thousands of controllers.
 
 **How to tell you need more.** The symptom is not a slow interface but a late result: a dashboard
 that took a while to appear, metrics from a new controller that did not show up within a minute, an
