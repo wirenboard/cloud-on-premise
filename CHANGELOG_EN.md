@@ -10,22 +10,26 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - Controller web services open straight from the cloud: Node-RED, Home Assistant, Zigbee2MQTT and any service of your own on any port are reachable by link through a secure tunnel — no VPN, no port forwarding, no public IP.
-- Controller metrics: storage on TimescaleDB, per-organization Grafana dashboards, and alerts on your own rules (free space, temperature, load) delivered by email.
+- Controller metrics: per-organization Grafana dashboards and alerts on your own rules (free space, temperature, load) delivered by email.
 - Two-factor authentication with recovery codes and an organization-wide requirement; dangerous actions ask for a code.
 - Session management: devices with browser, address, country and city; end someone else's session with one click.
 - Controller transfer between organizations — confirmed by the receiving side, cancellable while pending.
-- A guided one-command update, `make upgrade`: a mandatory backup, a data check, and only then the migration.
-- Settings for your hardware and policy: metrics retention, background task parallelism, session geolocation (see `.env.example`).
 - Web console on a phone: a special-key panel, sticky Ctrl and Alt, full-screen mode. The file manager gained deletion and uploads up to 350 MB.
 
 ### Changed
 
 - **Signing in uses the email instead of a login.** The email became mandatory and unique, and is confirmed by mail on sign-up. Accounts with no email, or whose login differs from it, are repaired during the upgrade — no data is lost.
-- **The server requirements went up:** at least 8 GB of RAM (the stack gained TimescaleDB, Grafana, Telegraf and two more background workers). The certificate must now also cover `*.apps.<domain>`, or the cloud will not start.
+- Opening a tunnel to a controller is noticeably faster.
+
+### Infrastructure and deployment
+
+- **The server requirements went up:** at least 8 GB of RAM. The stack gained TimescaleDB, Grafana, Telegraf and two more background workers.
+- **The certificate must also cover `*.apps.<domain>`** — without it the cloud will not start. A DNS record is needed too: controller web services live on that subdomain.
+- **A one-command update, `make upgrade`:** a mandatory backup, a check that the accounts fit the new schema, and only then the migration. While the data is not in order, the migration does not run.
 - **The metrics store moved from InfluxDB to TimescaleDB.** Previously collected history does not carry over into the new charts: the upgrade keeps it in a backup alongside.
 - **The database now runs with its safety guarantees on.** It used to write with durability and autovacuum disabled — a power cut could cost the database, and tables bloated over time.
-- SMTP settings are configured with separate variables (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`), and `EMAIL_ENABLED` must be set explicitly. `make upgrade` converts the old ones for you.
-- Opening a tunnel to a controller is noticeably faster.
+- **SMTP settings are configured with separate variables** (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`), and `EMAIL_ENABLED` must be set explicitly. `make upgrade` converts the old ones for you.
+- Settings for your hardware and retention policy appeared: metrics retention, background task parallelism, session geolocation (see `.env.example`).
 
 ## [1.5.0] - 2026-07-28
 
