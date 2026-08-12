@@ -320,6 +320,13 @@ TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 > ⚠️ For the submission port 587 keep `EMAIL_USE_TLS=True`; for the SSL port 465 drop it and set `EMAIL_USE_SSL=True` instead.
 > After editing `.env`, restart the stack: `make restart`.
 
+> ⚠️ **The metrics retention period** is set at the first launch. On a running installation it can be **lowered** at any
+> time — the cloud starts deleting earlier. It cannot be **raised**: the safety-net deletion policy
+> is written into the metrics storage when it is created and keeps deleting by the original period
+> even if the variable goes up. Raising it on a live installation means recreating the metrics
+> storage, which loses the accumulated history.
+
+
 > 💡 Email sending can be disabled entirely — see [Working Without Email](#working-without-email).
 
 ### 2. Automatic Initialization and Launch
