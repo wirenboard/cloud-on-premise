@@ -105,9 +105,10 @@ check_upgrade() {
     say "4/6 Disk space" "$NC"
     local free_mb enough=1
     free_mb="$(df -Pm . | awk 'NR==2 {print $4}')"
-    if [ "$free_mb" -lt 8000 ]; then
+    # The 2.0 images take about 5 GB; the rest is headroom for the dump and logs.
+    if [ "$free_mb" -lt 6000 ]; then
         enough=0
-        say "    ${free_mb} MB free — the new images need about 5 GB on top of the current ones." "$RED"
+        say "    ${free_mb} MB free — the new images alone need about 5 GB." "$RED"
         say "    Free some space, e.g. 'docker image prune -a --filter until=720h'." "$YELLOW"
         ready=0
     else
