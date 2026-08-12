@@ -470,8 +470,7 @@ on any variable is another ~85 MB.
 | **Default: up to 100 controllers** | **4 / 3 / 3 / 2** | **~1.3 GB** |
 | Large installation: many organizations, bulk mailings | 8 / 8 / 8 / 4 | ~2.5 GB |
 
-There is no upper limit beyond the server's memory. For scale: the Wiren Board cloud runs with a
-concurrency of 10 per worker and serves thousands of controllers.
+There is no upper limit beyond the server's memory.
 
 **How to tell you need more.** The symptom is not a slow interface but a late result: a dashboard
 that took a while to appear, metrics from a new controller that did not show up within a minute, an
