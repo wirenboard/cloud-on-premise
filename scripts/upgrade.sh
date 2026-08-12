@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 1.x -> 2.0 upgrade: backup -> scan -> gate -> migrate. The 2.0 migration aborts
+# 1.x -> 2.x upgrade: backup -> scan -> gate -> migrate. The 2.x migration aborts
 # on a 1.x database until every account has a unique email equal to its username.
 # Delete together with the make targets once 1.x is out of support.
 set -euo pipefail
@@ -28,7 +28,7 @@ backup() {
     fi
     say "PostgreSQL backup written: $out" "$GREEN"
 
-    # The 1.x metrics container is an orphan under the 2.0 compose file, so it is
+    # The 1.x metrics container is an orphan under the 2.x compose file, so it is
     # located by image rather than by service name.
     local cid
     cid="$(docker ps --format '{{.ID}} {{.Image}}' | awk '$2 ~ /^influxdb(:|$)/ {print $1; exit}')"
@@ -97,7 +97,7 @@ check_upgrade() {
             say "    covers every required domain" "$GREEN"
         else
             say "    certificate does not cover all required domains — run 'make check-certs' for details" "$RED"
-            say "    2.0 additionally needs *.apps.<domain>; reissuing it takes a DNS challenge, so do it in advance" "$YELLOW"
+            say "    2.x additionally needs *.apps.<domain>; reissuing it takes a DNS challenge, so do it in advance" "$YELLOW"
             ready=0
         fi
     fi
@@ -105,7 +105,7 @@ check_upgrade() {
     say "4/6 Disk space" "$NC"
     local free_mb enough=1
     free_mb="$(df -Pm . | awk 'NR==2 {print $4}')"
-    # The 2.0 images take about 5 GB; the rest is headroom for the dump and logs.
+    # The 2.x images take about 5 GB; the rest is headroom for the dump and logs.
     if [ "$free_mb" -lt 6000 ]; then
         enough=0
         say "    ${free_mb} MB free — the new images alone need about 5 GB." "$RED"
@@ -127,9 +127,9 @@ check_upgrade() {
 
     say "6/6 User accounts" "$NC"
     if fix_users scan >/dev/null 2>&1; then
-        say "    every account fits the 2.0 schema" "$GREEN"
+        say "    every account fits the 2.x schema" "$GREEN"
     else
-        say "    accounts conflict with the 2.0 schema (email becomes the login)" "$RED"
+        say "    accounts conflict with the 2.x schema (email becomes the login)" "$RED"
         echo "    Look at them and repair while the cloud is still running:"
         echo "      make fix-users MODE=scan       see the list"
         echo "      make fix-users MODE=auto       apply the safe fixes"
@@ -187,7 +187,7 @@ upgrade() {
     # Re-check with nothing writing: a registration between the check and the
     # migration would fail it after the backup had already run.
     if ! fix_users scan >/dev/null 2>&1; then
-        say "Accounts changed since the check and no longer fit the 2.0 schema." "$RED"
+        say "Accounts changed since the check and no longer fit the 2.x schema." "$RED"
         echo "Repair them with 'make fix-users MODE=resolve', then run 'make upgrade' again."
         echo "Nothing has been migrated; the cloud is stopped — 'make run' brings the old version back."
         exit 1

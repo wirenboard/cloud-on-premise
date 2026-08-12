@@ -13,7 +13,7 @@ MARK="# <<< FILL IN"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
 say() { printf "%b%s%b\n" "$2" "$1" "$NC"; }
 
-# 1.x -> 2.0 renames. EMAIL_PROTOCOL is handled separately: it turns into a flag.
+# 1.x -> 2.x renames. EMAIL_PROTOCOL is handled separately: it turns into a flag.
 renamed_from() {
     case "$1" in
         EMAIL_HOST)          echo EMAIL_SERVER ;;

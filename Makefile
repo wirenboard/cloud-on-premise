@@ -22,7 +22,7 @@ ENV_EXAMPLE   := .env.example
 
 #----- [ REQUIRED ENVIRONMENT VARIABLES ] -------------------------------------
 
-# EMAIL_ENABLED is mandatory in 2.0 (REQUIRED_VARS + compose fail-fast).
+# EMAIL_ENABLED is mandatory since 2.0 (REQUIRED_VARS + compose fail-fast).
 # False/Off/No/0 (case-insensitive) disables email and makes EMAIL_* optional.
 EMAIL_ENABLED_VALUE := $(shell grep -E '^[[:space:]]*EMAIL_ENABLED=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]')
 EMAIL_DISABLED := $(if $(filter $(EMAIL_ENABLED_VALUE),false off no 0),1,0)
@@ -88,7 +88,7 @@ help:
 	@printf "  stop                     Stop containers\n"
 	@printf "  restart                  Restart containers (with cert check)\n"
 	@printf "  update                   Update images, rebuild and start\n"
-	@printf "  upgrade                  1.x -> 2.0 upgrade: checks, then backup, stop, migrate, start\n"
+	@printf "  upgrade                  1.x -> 2.x upgrade: checks, then backup, stop, migrate, start\n"
 	@printf "  fix-users                Run migration_doctor (MODE=scan|auto|resolve|dump|apply)\n"
 	@printf "  backup                   Back up PostgreSQL (+ InfluxDB if present) into ./backups\n"
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
@@ -295,7 +295,7 @@ restart:
 	@export VERSION=$(VERSION); docker compose down && docker compose up -d --build
 
 #------------------------------------------------------------------------------
-# [ 1.x -> 2.0 UPGRADE ] ------------------------------------------------------
+# [ 1.x -> 2.x UPGRADE ] ------------------------------------------------------
 # Thin wrappers over scripts/upgrade.sh; both go away once 1.x is unsupported.
 
 MODE ?= scan
@@ -315,6 +315,6 @@ fix-users:
 
 .PHONY: upgrade
 upgrade:
-	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ 1.x -> 2.0 UPGRADE ]====================="
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ 1.x -> 2.x UPGRADE ]====================="
 	@$(call require_version)
 	@bash ./scripts/upgrade.sh upgrade
