@@ -566,8 +566,8 @@ repaired before migrating.
 
 ### Migration conditions — read before running
 
-Upgrade **only if** you are currently on a 1.x version (see the `VERSION` file or the
-"About" screen). Before `make upgrade`, make sure:
+Upgrade **only if** you are currently on a 1.x version (see the `VERSION` file, or the
+web interface footer, which shows the version). Before `make upgrade`, make sure:
 
 - **The certificate has been reissued with `*.apps.<domain>`.** Since release 2.0.0 controller web
   services are a standard feature, so `*.apps.your-domain.com` belongs to the mandatory
