@@ -302,6 +302,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/"]
       interval: 10s
       timeout: 3s
+      # Django needs a while to answer on a cold start, and everything starts at once.
+      start_period: 90s
       retries: 3
     depends_on:
       redis:
@@ -323,6 +325,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/"]
       interval: 10s
       timeout: 3s
+      # Django needs a while to answer on a cold start, and everything starts at once.
+      start_period: 90s
       retries: 3
     depends_on:
       redis:
