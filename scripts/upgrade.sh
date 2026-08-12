@@ -196,7 +196,7 @@ upgrade() {
     say "Step 3/4: applying database migrations." "$YELLOW"
     compose run --rm backend uv run --no-dev ./manage.py migrate
 
-    say "Step 4/4: starting 2.0." "$YELLOW"
+    say "Step 4/4: starting $VERSION." "$YELLOW"
     compose up -d --build
 
     # Controllers only start reporting once the cloud hands them the collector
