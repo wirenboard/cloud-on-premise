@@ -2,44 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.0.0] - 2026-08-11
+## [2.0.0] - 2026-08-12
 
 > Breaking release. See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for the
 > upgrade procedure.
 
 ### Added
 
-- Controller web services open straight from the cloud: Node-RED, Home Assistant, Zigbee2MQTT, ESPHome and others are reachable by link through a secure tunnel, with no VPN and no port forwarding. Custom services on any port can be added too (up to 20 per controller).
-- Two-factor authentication: recovery codes, an organization-wide 2FA requirement, and code confirmation for dangerous actions.
-- Session management: active devices with browser, IP, country and city; terminate a single session or every session on other devices.
-- Controller transfer between organizations — confirmed by the receiving side, with the option to cancel the request.
-- Controller metrics and per-organization Grafana dashboards: dashboards are created automatically with the first controller, opened from the cloud without a separate password, and metric reporting can be turned off per controller.
-- Metric alerts: an organization configures its own rules in Grafana, and the emails go through the SMTP server from `.env`.
-- Deleting an entire organization, confirmed with a two-factor code.
-- Email confirmation on sign-up and changing your email in the account settings.
-- Organization invitations are now accepted by already registered users as well.
-- Web console on a phone: a special-key panel, sticky Ctrl and Alt, full-screen mode, and a terminal that adapts to the on-screen keyboard.
-- Web console file manager: file sizes and types, deletion, uploads up to 350 MB, and reliable downloads of large files.
-- Password reset links are generated from the admin panel — for installations with no email configured.
-- A guided one-command update, `make upgrade`.
-- Configurable metrics retention (`METRICS_RETENTION_DAYS`, 30 days by default).
+- Controller web services open straight from the cloud: Node-RED, Home Assistant, Zigbee2MQTT and any service of your own on any port are reachable by link through a secure tunnel — no VPN, no port forwarding, no public IP.
+- Controller metrics: storage on TimescaleDB, per-organization Grafana dashboards, and alerts on your own rules (free space, temperature, load) delivered by email.
+- Two-factor authentication with recovery codes and an organization-wide requirement; dangerous actions ask for a code.
+- Session management: devices with browser, address, country and city; end someone else's session with one click.
+- Controller transfer between organizations — confirmed by the receiving side, cancellable while pending.
+- A guided one-command update, `make upgrade`: a mandatory backup, a data check, and only then the migration.
+- Settings for your hardware and policy: metrics retention, background task parallelism, session geolocation (see `.env.example`).
+- Web console on a phone: a special-key panel, sticky Ctrl and Alt, full-screen mode. The file manager gained deletion and uploads up to 350 MB.
 
 ### Changed
 
-- Signing in now uses the email address: it is mandatory, unique, and replaces the login.
-- Sign-up became a two-step flow — a request, then a link from the email; the sign-up page addresses changed.
-- After signing in, the user returns to the page they were asked to authenticate from.
+- **Signing in uses the email instead of a login.** The email became mandatory and unique, and is confirmed by mail on sign-up. Accounts with no email, or whose login differs from it, are repaired during the upgrade — no data is lost.
+- **The server requirements went up:** at least 8 GB of RAM (the stack gained TimescaleDB, Grafana, Telegraf and two more background workers). The certificate must now also cover `*.apps.<domain>`, or the cloud will not start.
+- **The metrics store moved from InfluxDB to TimescaleDB.** Previously collected history does not carry over into the new charts: the upgrade keeps it in a backup alongside.
+- **The database now runs with its safety guarantees on.** It used to write with durability and autovacuum disabled — a power cut could cost the database, and tables bloated over time.
+- SMTP settings are configured with separate variables (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`), and `EMAIL_ENABLED` must be set explicitly. `make upgrade` converts the old ones for you.
 - Opening a tunnel to a controller is noticeably faster.
-- Firmware versions are sorted sensibly: stable releases first, test builds after.
-- The default Node-RED port is now 21880.
-- Changing the password or signing out also ends the sessions in the metrics dashboards.
-- The metrics store moved from InfluxDB to TimescaleDB; previously collected history does not carry over into the new charts.
-- SMTP settings are configured with separate variables (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`) instead of a combined URL, and `EMAIL_ENABLED` must be set explicitly.
-
-### Removed
-
-- Signing in with a login, and the "username" field on sign-up.
-- The InfluxDB service — replaced by TimescaleDB and Grafana.
 
 ## [1.5.0] - 2026-07-28
 
