@@ -28,16 +28,17 @@ backup() {
     fi
     say "PostgreSQL backup written: $out" "$GREEN"
 
-    local svc
-    svc="$(compose ps --services 2>/dev/null | grep -xE 'influx(db)?' | head -1 || true)"
-    if [ -z "$svc" ]; then
-        say "No running influx service — skipping the metrics history backup." "$YELLOW"
+    # The 1.x metrics container is an orphan under the 2.0 compose file, so it is
+    # located by image rather than by service name.
+    local cid
+    cid="$(docker ps --format '{{.ID}} {{.Image}}' | awk '$2 ~ /^influxdb(:|$)/ {print $1; exit}')"
+    if [ -z "$cid" ]; then
+        say "No running InfluxDB — skipping the metrics history backup." "$YELLOW"
         return
     fi
     say "------ InfluxDB backup (kept as-is, not converted to TimescaleDB) ------" "$NC"
-    local dir="$BACKUP_DIR/influx-$TS" cid
-    compose exec -T "$svc" influx backup /tmp/influx-backup -t "$(env_value INFLUXDB_TOKEN)" || true
-    cid="$(compose ps -q "$svc")"
+    local dir="$BACKUP_DIR/influx-$TS"
+    docker exec "$cid" influx backup /tmp/influx-backup -t "$(env_value INFLUXDB_TOKEN)" >/dev/null 2>&1 || true
     mkdir -p "$dir"
     docker cp "$cid:/tmp/influx-backup/." "$dir/" 2>/dev/null || true
     if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
