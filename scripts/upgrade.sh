@@ -153,8 +153,8 @@ confirm() {
     echo
     say "The checks passed. What happens next:" "$YELLOW"
     echo "  1. the database is backed up into $BACKUP_DIR"
-    echo "  2. the cloud stops — users and controllers lose access"
-    echo "  3. the migration runs and 2.0 starts"
+    echo "  2. the cloud stops — users and controllers lose access for a while"
+    echo "  3. the migration runs and release $VERSION starts"
     echo "  Expect a few minutes of downtime; controllers reconnect on their own."
     echo
     if [ ! -t 0 ]; then

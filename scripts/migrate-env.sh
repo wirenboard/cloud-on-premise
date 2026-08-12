@@ -8,7 +8,7 @@ set -euo pipefail
 
 ENV_FILE=".env"
 TEMPLATE=".env.example"
-MARK="# <<< ЗАПОЛНИТЕ"
+MARK="# <<< FILL IN"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
 say() { printf "%b%s%b\n" "$2" "$1" "$NC"; }
