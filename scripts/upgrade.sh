@@ -85,8 +85,13 @@ upgrade() {
     fi
 
     # Report every variable the new release added at once, not one per run.
+    local email_off=""
+    case "$(env_value EMAIL_ENABLED | tr '[:upper:]' '[:lower:]')" in
+        false|off|no|0) email_off=1 ;;
+    esac
     missing=""
     for var in $(grep -oE '^[A-Z_]+=' .env.example | tr -d '='); do
+        [ -n "$email_off" ] && case "$var" in EMAIL_*) continue ;; esac
         grep -Eq "^[[:space:]]*$var=" "$ENV_FILE" || missing="$missing $var"
     done
     if [ -n "$missing" ]; then
