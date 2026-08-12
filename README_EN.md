@@ -448,6 +448,45 @@ SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
 
 For JWT, place `private.pem` and `public.pem` in the `jwt` directory; otherwise, they will be generated automatically.
 
+### Background task performance
+
+The cloud spreads background work across four queues, each with its own worker. The defaults are
+sized for the minimum server configuration and a few dozen controllers.
+
+| Variable | Default | What the queue does | When to raise it |
+|---|---|---|---|
+| `WORKER_CONCURRENCY` | 4 | General work: controller activation, tunnel bookkeeping, licensing | Many controllers connecting and disconnecting at once |
+| `METRICS_WORKER_CONCURRENCY` | 3 | Metrics: collector config rollout, TimescaleDB roles and retention | The controller count grows, metrics appear late |
+| `GRAFANA_WORKER_CONCURRENCY` | 3 | Grafana dashboards and users | Many organizations and users, dashboards are slow to appear |
+| `EMAIL_WORKER_CONCURRENCY` | 2 | Sending mail: invitations, password resets, alerts | Bulk invitations or many alert rules |
+
+**What it costs in memory.** Every unit of concurrency is a separate process, roughly **85 MB**.
+The defaults (4 + 3 + 3 + 2) take about 1.3 GB. The arithmetic is simple: `+1` on any variable is
+another ~85 MB.
+
+Rough sizing:
+
+| Controllers | Values | Worker memory |
+|---|---|---|
+| up to 20 | defaults: 4 / 3 / 3 / 2 | ~1.3 GB |
+| up to 50 | 4 / 4 / 4 / 2 | ~1.5 GB |
+| up to 100 | 6 / 6 / 6 / 3 | ~2.2 GB (plan for the recommended server configuration) |
+
+**How to tell you need more.** The symptom is not a slow interface but a late result: a dashboard
+that took a while to appear, metrics from a new controller that did not show up within a minute, an
+email that went out late. The objective measure is the queue length — if it stays above zero, work
+is piling up:
+
+```bash
+docker compose exec redis redis-cli llen metrics_queue
+```
+
+The queues are `default_queue`, `metrics_queue`, `grafana_queue`, `email_queue`. Apply changes to
+`.env` with `make restart`.
+
+> The table is derived from the per-process memory cost and from our own cloud's settings; actual
+> throughput depends on your workload, so trust your own queue lengths first.
+
 ### Working Without Email
 
 If you do not have an SMTP server, the cloud can run without sending email. Set the following in `.env`:
