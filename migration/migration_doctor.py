@@ -173,9 +173,10 @@ def print_table(conflicts):
     header = f"{'id':>{w_id}}  {'username':<{w_user}}  {'email':<{w_email}}  conflict"
     print(header)
     print("-" * len(header))
-    for c in sorted(conflicts, key=lambda x: (sorted(x.kinds), x.pk)):
+    for c in sorted(conflicts, key=lambda x: (sorted(x.kinds), str(x.pk))):
+        # str(): the primary key is a UUID, which has no format-spec support.
         print(
-            f"{c.pk:>{w_id}}  {c.username or '':<{w_user}}  "
+            f"{str(c.pk):>{w_id}}  {c.username or '':<{w_user}}  "
             f"{(c.email or ''):<{w_email}}  {c.kinds_str}"
         )
 
@@ -311,7 +312,8 @@ def dump_yaml(path):
     conflicts = detect()
     records = [
         {
-            "id": c.pk,
+            # str(): safe_dump has no representer for UUID.
+            "id": str(c.pk),
             "username": c.username,
             "current_email": c.email,
             "conflict": c.kinds_str,
