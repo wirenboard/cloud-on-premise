@@ -585,9 +585,9 @@ make help
 
 The **2.0** release is incompatible with 1.x, but **user data is not discarded**
 — it is migrated in place. The key change: **email becomes the login** — it is
-mandatory, unique, and must equal the `username`. The upstream migration that
-enforces this (`users/0013`) does not backfill data, so the database must be
-repaired before migrating.
+mandatory, unique, and must equal the account name. The new schema requires this
+but does not repair the data itself, so the database has to be put in order before
+migrating — which is what `make upgrade` does.
 
 ### Migration conditions — read before running
 
