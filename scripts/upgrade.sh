@@ -158,8 +158,9 @@ confirm() {
     echo "  Expect a few minutes of downtime; controllers reconnect on their own."
     echo
     if [ ! -t 0 ]; then
+        # Exit non-zero: a script that cannot be asked has not upgraded anything.
         say "Not a terminal: re-run as 'make upgrade CONFIRM=yes' to proceed unattended." "$RED"
-        return 1
+        exit 1
     fi
     printf "Stop the cloud and upgrade now? [y/N] "
     read -r answer
