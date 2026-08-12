@@ -265,10 +265,6 @@ TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 # downloaded on `make run` — see "Session Geolocation"
 #GEOIP_ENABLED=True
 
-# Nightly PostgreSQL backup into the bundled MinIO (S3)
-#POSTGRES_BACKUP_SCHEDULE=30 23 * * *
-#POSTGRES_BACKUP_KEEP_DAYS=3
-
 # Override the organization invitation email subject and body.
 # Leave commented to keep the built-in RU/EN translation (selected by the
 # inviter's language).

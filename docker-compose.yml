@@ -486,35 +486,11 @@ services:
       mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio_login} ${MINIO_ROOT_PASSWORD:-minio_pass};
       /usr/bin/mc mb --quiet --ignore-existing local/media/;
       /usr/bin/mc anonymous set public local/media/;
-      /usr/bin/mc mb --quiet --ignore-existing local/${POSTGRES_BACKUP_BUCKET:-postgres-backup}/;
       "
     depends_on:
       minio:
         condition: service_healthy
 
-  # Nightly logical backup of the application PostgreSQL into MinIO (S3).
-  postgres-backup:
-    image: eeshugerman/postgres-backup-s3:17
-    restart: always
-    environment:
-      SCHEDULE: ${POSTGRES_BACKUP_SCHEDULE:-30 23 * * *}
-      BACKUP_KEEP_DAYS: ${POSTGRES_BACKUP_KEEP_DAYS:-3}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DATABASE: ${POSTGRES_DB:-db}
-      S3_ENDPOINT: "http://minio:9000"
-      S3_REGION: "eu-west-1"
-      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
-      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
-      S3_BUCKET: ${POSTGRES_BACKUP_BUCKET:-postgres-backup}
-      S3_PREFIX: ${POSTGRES_BACKUP_PREFIX:-on-premise}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
 
 networks:
   default:

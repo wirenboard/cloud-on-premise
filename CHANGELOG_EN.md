@@ -21,7 +21,7 @@ All notable changes to this project are documented in this file.
 - Web console on a phone: a special-key panel, sticky Ctrl and Alt, full-screen mode, and a terminal that adapts to the on-screen keyboard.
 - Web console file manager: file sizes and types, deletion, uploads up to 350 MB, and reliable downloads of large files.
 - Password reset links are generated from the admin panel — for installations with no email configured.
-- Nightly database backups and a guided one-command update, `make upgrade`.
+- A guided one-command update, `make upgrade`.
 - Configurable metrics retention (`METRICS_RETENTION_DAYS`, 30 days by default).
 
 ### Changed

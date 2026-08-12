@@ -267,10 +267,6 @@ TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 # `make run` — см. «Геолокация сессий»
 #GEOIP_ENABLED=True
 
-# Ночной бэкап PostgreSQL во встроенный MinIO (S3)
-#POSTGRES_BACKUP_SCHEDULE=30 23 * * *
-#POSTGRES_BACKUP_KEEP_DAYS=3
-
 # Переопределение темы и тела письма-приглашения в организацию.
 # Если оставить закомментированными, используется встроенная локализация (RU/EN
 # выбирается по языку приглашающего пользователя).
