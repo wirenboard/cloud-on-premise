@@ -91,6 +91,7 @@ help:
 	@printf "  upgrade                  1.x -> 2.x upgrade: checks, then backup, stop, migrate, start\n"
 	@printf "  fix-users                Run migration_doctor (MODE=scan|auto|resolve|dump|apply)\n"
 	@printf "  backup                   Back up PostgreSQL (+ InfluxDB if present) into ./backups\n"
+	@printf "  update-geoip             Refresh the session geolocation database\n"
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
 	@printf "  generate-django-secret   Generate Django secret key\n"
@@ -238,6 +239,13 @@ generate-absolute-server-regex:
 generate-jwt:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating JWT keypair ------"
 	@bash ./jwt/update_keys.sh && printf "\n$(GREEN)JWT keypair generated or already valid.$(NC)\n"
+
+# DB-IP publishes a new database monthly; the automatic download only fetches a
+# missing one, so refreshing is a deliberate step.
+.PHONY: update-geoip
+update-geoip:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING GEOLOCATION DATABASE ]====================="
+	@bash ./scripts/fetch-geoip.sh --force
 
 .PHONY: generate-env
 generate-env:

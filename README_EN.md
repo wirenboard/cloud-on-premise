@@ -414,6 +414,10 @@ On `make run` (specifically during `make generate-env`) the DB-IP "IP to City
 Lite" database (~62 MB, CC BY 4.0 license) is downloaded into `./geoip`
 automatically.
 
+DB-IP publishes a new database every month, while the automatic download only fetches a missing
+one. Refresh it with `make update-geoip` — the old database is replaced only after a complete
+download, so a failed refresh breaks nothing.
+
 If the server has no internet access, the script prints the fallback: download
 the "IP to City Lite" database in MMDB format from
 [db-ip.com/db/download/ip-to-city-lite](https://db-ip.com/db/download/ip-to-city-lite)
