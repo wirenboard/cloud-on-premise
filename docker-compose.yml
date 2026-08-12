@@ -70,10 +70,6 @@ services:
     image: postgres:17-alpine
     restart: always
     command: >
-      --autovacuum=off
-      --fsync=off
-      --synchronous_commit=off
-      --full_page_writes=off
       --work_mem=5MB
       --max-connections=300
       --max_wal_senders=0
@@ -362,7 +358,7 @@ services:
     environment:
       <<: *backend-common-env
       QUEUE: default_queue
-      CONCURRENCY: 4
+      CONCURRENCY: ${WORKER_CONCURRENCY:-4}
       SOFT_TIME_LIMIT: 120
     depends_on:
       redis:
@@ -376,7 +372,7 @@ services:
     environment:
       <<: *backend-common-env
       QUEUE: metrics_queue
-      CONCURRENCY: 10
+      CONCURRENCY: ${METRICS_WORKER_CONCURRENCY:-3}
       SOFT_TIME_LIMIT: 300
       CELERYD_PREFETCH_MULTIPLIER: 2
     depends_on:
@@ -392,7 +388,7 @@ services:
       <<: *backend-common-env
       GRAFANA_DEFAULT_DASHBOARD_UPDATE_PARALLELISM: 12
       QUEUE: grafana_queue
-      CONCURRENCY: 10
+      CONCURRENCY: ${GRAFANA_WORKER_CONCURRENCY:-3}
       SOFT_TIME_LIMIT: 300
       CELERYD_PREFETCH_MULTIPLIER: 2
     depends_on:
@@ -407,7 +403,7 @@ services:
     environment:
       <<: *backend-common-env
       QUEUE: email_queue
-      CONCURRENCY: 3
+      CONCURRENCY: ${EMAIL_WORKER_CONCURRENCY:-2}
       SOFT_TIME_LIMIT: 120
     depends_on:
       redis:
