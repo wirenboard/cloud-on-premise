@@ -103,9 +103,10 @@ check_upgrade() {
     fi
 
     say "4/6 Disk space" "$NC"
-    local free_mb
+    local free_mb enough=1
     free_mb="$(df -Pm . | awk 'NR==2 {print $4}')"
     if [ "$free_mb" -lt 8000 ]; then
+        enough=0
         say "    ${free_mb} MB free — the new images need about 5 GB on top of the current ones." "$RED"
         say "    Free some space, e.g. 'docker image prune -a --filter until=720h'." "$YELLOW"
         ready=0
@@ -114,7 +115,9 @@ check_upgrade() {
     fi
 
     say "5/6 Images" "$NC"
-    if compose pull --quiet 2>/dev/null; then
+    if [ "$enough" -eq 0 ]; then
+        say "    skipped: free the disk first, downloading now would fill it" "$YELLOW"
+    elif compose pull --quiet 2>/dev/null; then
         say "    downloaded, the update itself will not wait for them" "$GREEN"
     else
         say "    could not download the images for $VERSION — check the registry and the tag" "$RED"

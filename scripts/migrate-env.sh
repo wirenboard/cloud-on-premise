@@ -27,20 +27,33 @@ OBSOLETE="ADMIN_USERNAME EMAIL_URL EMAIL_PROTOCOL EMAIL_SERVER EMAIL_LOGIN EMAIL
           GRAFANA_DB_PASSWORD POSTGRES_BACKUP_BUCKET POSTGRES_BACKUP_PREFIX
           POSTGRES_BACKUP_SCHEDULE POSTGRES_BACKUP_KEEP_DAYS HTML_TITLE"
 
+# With email switched off the EMAIL_* variables are optional — the same rule
+# check-env follows — so they are carried over commented out, never demanded.
+email_off() {
+    case "$(grep -E '^[[:space:]]*EMAIL_ENABLED=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]' || true)" in
+        false|off|no|0) return 0 ;;
+    esac
+    return 1
+}
+
 [ -f "$ENV_FILE" ] || { say "No $ENV_FILE — nothing to migrate." "$YELLOW"; exit 0; }
 [ -f "$TEMPLATE" ] || { say "No $TEMPLATE — cannot migrate." "$RED"; exit 1; }
 
 SRC="$(mktemp)"; cp "$ENV_FILE" "$SRC"
 trap 'rm -f "$SRC"' EXIT
 
-has_old()   { grep -qE "^[[:space:]]*$1=" "$SRC"; }
-old_value() { grep -E "^[[:space:]]*$1=" "$SRC" | tail -1 | cut -d= -f2-; }
+# A line still carrying the mark is not a value: a second run must keep asking
+# for it instead of copying the placeholder over as if it were filled in.
+marked()    { grep -E "^[[:space:]]*$1=" "$SRC" | grep -qF "$MARK"; }
+has_old()   { grep -qE "^[[:space:]]*$1=" "$SRC" && ! marked "$1"; }
+old_value() { grep -E "^[[:space:]]*$1=" "$SRC" | tail -1 | cut -d= -f2- | sed "s/[[:space:]]*# <<<.*//"; }
 old_names() { grep -oE '^[[:space:]]*[A-Z_][A-Z0-9_]*=' "$SRC" | tr -d '= \t'; }
 is_obsolete() { printf '%s' "$OBSOLETE" | grep -qw -- "$1"; }
 
 # Nothing to do when the file already matches this release.
 missing=0
 for var in $(grep -oE '^[A-Z_][A-Z0-9_]*=' "$TEMPLATE" | tr -d '='); do
+    [ "$var" != "${var#EMAIL_}" ] && email_off && continue
     has_old "$var" || missing=1
 done
 leftovers=0
@@ -71,6 +84,8 @@ while IFS= read -r line; do
                 *)     printf 'EMAIL_USE_TLS=True\n' >> "$tmp" ;;
             esac
             renamed="$renamed|EMAIL_PROTOCOL -> EMAIL_USE_TLS/EMAIL_USE_SSL"
+        elif [ -z "$commented" ] && [ "$var" != "${var#EMAIL_}" ] && email_off; then
+            printf '#%s\n' "$line" >> "$tmp"
         elif [ -z "$commented" ]; then
             printf '%s  %s\n' "$line" "$MARK" >> "$tmp"
             todo="$todo $var"
