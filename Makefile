@@ -91,6 +91,7 @@ help:
 	@printf "  upgrade                  1.x -> 2.x upgrade: checks, then backup, stop, migrate, start\n"
 	@printf "  fix-users                Run migration_doctor (MODE=scan|auto|resolve|dump|apply)\n"
 	@printf "  backup                   Back up PostgreSQL (+ InfluxDB if present) into ./backups\n"
+	@printf "  reload-certs             Apply a renewed TLS certificate (restarts Traefik only)\n"
 	@printf "  update-geoip             Refresh the session geolocation database\n"
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
@@ -301,6 +302,15 @@ restart:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@export VERSION=$(VERSION); docker compose down && docker compose up -d --build
+
+# Traefik reads the certificate files once at startup, so a renewed certificate
+# needs it restarted — only it, the rest of the stack keeps serving.
+.PHONY: reload-certs
+reload-certs:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ RELOADING CERTIFICATES ]====================="
+	@$(call require_version)
+	@${MAKE} check-certs
+	@VERSION=$(VERSION) docker compose restart traefik
 
 #------------------------------------------------------------------------------
 # [ 1.x -> 2.x UPGRADE ] ------------------------------------------------------

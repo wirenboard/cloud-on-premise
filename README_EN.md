@@ -144,6 +144,31 @@ Otherwise, you must obtain a new certificate.
 
 Place `fullchain.pem` and `privkey.pem` in the `./tls` directory or set the `TLS_CERTS_PATH` environment variable.
 
+#### Certificate renewal
+
+Let's Encrypt certificates are valid for 90 days. Traefik reads the certificate files at startup and
+**does not re-read them on its own**, so the container has to be restarted after every renewal —
+otherwise the cloud keeps serving the expired certificate even though the new one is already on disk.
+
+Only Traefik has to re-read the certificate, the rest of the stack can keep serving — that is what
+`make reload-certs` does. If the certificate is issued through certbot, put it into its hook and
+renewal stays fully automatic:
+
+```bash
+sudo certbot renew --deploy-hook "cd /path/to/cloud-on-premise && make reload-certs"
+```
+
+Renewing by hand once:
+
+```bash
+sudo certbot renew
+make reload-certs
+```
+
+> The command checks the new certificate first (`make check-certs`) and only then restarts Traefik —
+> if the renewal went wrong, the cloud keeps running on the old certificate.
+
+
 To get a certificate using Certbot, see: [Manual Wildcard Certificate Setup Example](#-manual-wildcard-certificate-setup-example)
 
 ---
