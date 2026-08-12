@@ -208,13 +208,12 @@ def auto_fix():
 
       1. admin row whose email is blank but ADMIN_EMAIL env is a valid, free email
          → set username = email = ADMIN_EMAIL.
-      2. email and username differ only by case/whitespace → canonicalize both to
-         the normalized email (no information lost, no new collision possible).
-      3. email is non-blank, valid, equals username after normalization but stored
-         with different case → lowercase both.
+      2. blank email whose username is itself a valid, free email → adopt it.
+      3. username differs from an otherwise valid, free email → the email wins,
+         which is what 2.0 requires anyway (login moves to the email).
 
-    Blank emails with no usable ADMIN_EMAIL, real mismatches, and genuine
-    duplicates are intentionally left for a human.
+    Blank emails with nothing usable to derive an address from, and genuine
+    duplicates, are intentionally left for a human.
     """
     User = get_user_model()
     admin_email = normalize(os.environ.get("ADMIN_EMAIL", ""))
@@ -236,18 +235,17 @@ def auto_fix():
                 ):
                     set_identity(User, c.pk, admin_email)
                     changed += 1
+                elif is_valid_email(norm_user) and not collides(User, norm_user, c.pk):
+                    set_identity(User, c.pk, norm_user)
+                    changed += 1
                 continue
 
-            # Case 2/3: only case/whitespace differs between username and email,
-            # and the normalized email is valid and not part of a duplicate group.
-            if c.kinds <= {MISMATCH} and norm_user == norm_email:
+            # Case 3: the address is already there and free — the username follows it.
+            if c.kinds <= {MISMATCH}:
                 if is_valid_email(norm_email) and not collides(User, norm_email, c.pk):
                     set_identity(User, c.pk, norm_email)
                     changed += 1
                 continue
-
-            # Pure case-difference (email already valid, equals username modulo case)
-            # handled above; everything else needs a human.
     return changed
 
 
