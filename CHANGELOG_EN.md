@@ -28,7 +28,7 @@ All notable changes to this project are documented in this file.
 - **The metrics store moved from InfluxDB to TimescaleDB.** Previously collected history does not carry over into the new charts: the upgrade keeps it in a backup alongside.
 - **The database now runs with its safety guarantees on.** It used to write with durability and autovacuum disabled — a power cut could cost the database, and tables bloated over time.
 - **SMTP settings are configured with separate variables** (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`), and `EMAIL_ENABLED` must be set explicitly. `make upgrade` converts the old ones for you.
-- **The stack grew** — TimescaleDB, Grafana, Telegraf and two more background workers. The server requirements stay the same: background parallelism is sized for the minimum machine by default and can be raised when the hardware allows.
+- **The stack grew** — TimescaleDB, Grafana, Telegraf and two more background workers. The server requirements stay the same: background parallelism is sized for a hundred controllers by default and is tunable in both directions.
 - Settings for your hardware and retention policy appeared: metrics retention, background task parallelism, session geolocation (see `.env.example`).
 
 ## [1.5.0] - 2026-07-28

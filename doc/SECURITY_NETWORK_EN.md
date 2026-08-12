@@ -54,12 +54,12 @@ metrics.your-domain.com    metrics-ingest.your-domain.com   tunnel.your-domain.c
 ssh.your-domain.com        http.your-domain.com
 *.ssh.your-domain.com      *.http.your-domain.com
 
-apps.your-domain.com       *.apps.your-domain.com           # optional — service tunnels
+apps.your-domain.com       *.apps.your-domain.com           # controller web services
 ```
 
 Wildcards `*.ssh` / `*.http` provide per-controller access to tunneled
 controllers (each controller gets its own ssh/http subdomain through the cloud).
-The optional `*.apps` wildcard is for service tunnels (controller web services,
+The `*.apps` wildcard is for service tunnels (controller web services,
 e.g. Node-RED): addresses of the form
 `<serial>-<port>.apps.your-domain.com`, same port 443.
 
@@ -152,7 +152,7 @@ when `EMAIL_ENABLED=True` (enabled by default)._
 | Tunnel dashboard | Admin's browser | tunnel | 7501 | inbound (opt., see §7) |
 | DB / cache / storage / metrics | backend, worker, telegraf, grafana | postgres / redis / minio / timescale | — | internal network |
 | **Metrics to WB** | backend | `on-premise-metrics.wirenboard.cloud` | 443 | **outbound (egress)** — free (FREE) edition only |
-| Email | backend | SMTP (`EMAIL_SERVER`) | `EMAIL_PORT` (587 in the example) | outbound — only when `EMAIL_ENABLED=True` |
+| Email | backend | SMTP (`EMAIL_HOST`) | `EMAIL_PORT` (587 in the example) | outbound — only when `EMAIL_ENABLED=True` |
 
 ## 6. Agent API, tunnels and metrics
 
@@ -168,7 +168,7 @@ controller certificate the connection is rejected during the TLS handshake.
 connection to the cloud on port 7107 themselves (authorization via
 `TUNNEL_AUTH_TOKEN`). The cloud then provides access to each controller through
 the `*.ssh.` (SSH-in-browser, the `webssh` service), `*.http.` (controller
-web UI) and — optionally — `*.apps.` (service tunnels: controller web services,
+web UI) and `*.apps.` (service tunnels: controller web services,
 same port 443) subdomains. In other words, **7107 must be open for inbound
 traffic** from the networks where controllers are located. 7501 (dashboard) is
 optional (see §7).
@@ -192,7 +192,7 @@ by **Grafana**: `https://metrics.your-domain.com` (browser, port 443).
 
 | Port | Protocol | Source | Why |
 |------|----------|--------|-----|
-| **443** | TCP/HTTPS | operators + networks with WB controllers | Web access to the cloud; agent API `agent.*` (mTLS), metrics ingest `metrics-ingest.*` (mTLS) and controller activation links; optionally service tunnels `*.apps.` |
+| **443** | TCP/HTTPS | operators + networks with WB controllers | Web access to the cloud; agent API `agent.*` (mTLS), metrics ingest `metrics-ingest.*` (mTLS) and controller activation links; controller web services `*.apps.` |
 | **7107** | TCP | networks with WB controllers | Controller tunnels (FRP) |
 | 7501 | TCP | admin (opt.) | Tunnel dashboard (behind Basic Auth) |
 
@@ -210,8 +210,9 @@ network.
 | Destination | Host | Port | Can it be blocked? |
 |-------------|------|------|--------------------|
 | WB metrics | `on-premise-metrics.wirenboard.cloud` | 443 | Blocking = new controllers cannot be added (sending is mandatory in the free edition) |
-| Email | `EMAIL_SERVER` (SMTP) | `EMAIL_PORT` (587 in the example) | Yes — set `EMAIL_ENABLED=False` (invitations are then shared as links from the admin panel) |
+| Email | `EMAIL_HOST` (SMTP) | `EMAIL_PORT` (587 in the example) | Yes — set `EMAIL_ENABLED=False` (invitations are then shared as links from the admin panel) |
 | Docker images (install/upgrade) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, telegraf, grafana, minio, traefik) | 443 | Needed only during install/upgrade; can stay blocked the rest of the time |
+| Session geolocation database | `download.db-ip.com` | 443 | Yes — needed only with `GEOIP_ENABLED=True`, and only while the database downloads (`make run`, `make update-geoip`) |
 
 > **TLS certificates.** The installation does **not** fetch certificates from
 > the outside — there is no ACME/Let's Encrypt in the stack. The certificates

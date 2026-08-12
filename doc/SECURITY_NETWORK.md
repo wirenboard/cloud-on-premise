@@ -51,7 +51,7 @@ metrics.your-domain.com    metrics-ingest.your-domain.com   tunnel.your-domain.c
 ssh.your-domain.com        http.your-domain.com
 *.ssh.your-domain.com      *.http.your-domain.com
 
-apps.your-domain.com       *.apps.your-domain.com           # опционально — сервис-туннели
+apps.your-domain.com       *.apps.your-domain.com           # сервис-туннели контроллеров
 ```
 
 Wildcard `*.ssh` / `*.http` — это per-controller доступ к туннелированным контроллерам
@@ -145,7 +145,7 @@ _Легенда: **красный** — публичные порты (откр�
 | Tunnel dashboard | Браузер админа | tunnel | 7501 | вход (опц., см. §7) |
 | БД / кэш / хранилище / метрики | backend, worker, telegraf, grafana | postgres / redis / minio / timescale | — | внутри сети |
 | **Метрики к WB** | backend | `on-premise-metrics.wirenboard.cloud` | 443 | **исход (egress)** — только в бесплатной (FREE) версии |
-| Почта | backend | SMTP (`EMAIL_SERVER`) | `EMAIL_PORT` (в примере 587) | исход — только при `EMAIL_ENABLED=True` |
+| Почта | backend | SMTP (`EMAIL_HOST`) | `EMAIL_PORT` (в примере 587) | исход — только при `EMAIL_ENABLED=True` |
 
 ## 6. Агентский API, туннели и метрики
 
@@ -160,7 +160,7 @@ RequireAndVerifyClientCert` — см. `traefik/traefik-check-ca.toml` и labels 
 **Туннели (FRP, порт 7107).** Контроллеры на объектах сами устанавливают исходящее
 соединение к облаку на порт 7107 (авторизация по `TUNNEL_AUTH_TOKEN`). Облако затем
 даёт доступ к каждому контроллеру через сабдомены `*.ssh.` (SSH-в-браузере, сервис
-`webssh`), `*.http.` (веб-интерфейс контроллера) и — опционально — `*.apps.`
+`webssh`), `*.http.` (веб-интерфейс контроллера) и `*.apps.`
 (сервис-туннели: веб-сервисы контроллера, тот же порт 443). То есть **7107 нужно
 открыть на вход** со стороны сетей, где стоят контроллеры. 7501 (dashboard) —
 опционально (см. §7).
@@ -184,7 +184,7 @@ RequireAndVerifyClientCert` — см. `traefik/traefik-check-ca.toml` и labels 
 
 | Порт | Протокол | Источник | Зачем |
 |------|----------|----------|-------|
-| **443** | TCP/HTTPS | операторы + сети с контроллерами WB | Веб-доступ к облаку; агентский API `agent.*` (mTLS), приём метрик `metrics-ingest.*` (mTLS) и активационные ссылки для контроллеров; опционально сервис-туннели `*.apps.` |
+| **443** | TCP/HTTPS | операторы + сети с контроллерами WB | Веб-доступ к облаку; агентский API `agent.*` (mTLS), приём метрик `metrics-ingest.*` (mTLS) и активационные ссылки для контроллеров; веб-сервисы контроллеров `*.apps.` |
 | **7107** | TCP | сети с контроллерами WB | Туннели контроллеров (FRP) |
 | 7501 | TCP | админ (опц.) | Tunnel dashboard (за Basic Auth) |
 
@@ -201,8 +201,9 @@ minio / backend:8000 / webssh:8888 — они только внутри docker-�
 | Назначение | Хост | Порт | Можно закрыть? |
 |------------|------|------|----------------|
 | Метрики WB | `on-premise-metrics.wirenboard.cloud` | 443 | Закрытие = нельзя добавлять контроллеры (в бесплатной версии отправка обязательна) |
-| Почта | `EMAIL_SERVER` (SMTP) | `EMAIL_PORT` (в примере 587) | Да — задайте `EMAIL_ENABLED=False` (приглашения тогда передаются ссылкой из админ-панели) |
+| Почта | `EMAIL_HOST` (SMTP) | `EMAIL_PORT` (в примере 587) | Да — задайте `EMAIL_ENABLED=False` (приглашения тогда передаются ссылкой из админ-панели) |
 | Docker-образы (установка/обновление) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, telegraf, grafana, minio, traefik) | 443 | Нужен только на время установки/обновления; в остальное время можно закрыть |
+| База геолокации сессий | `download.db-ip.com` | 443 | Да — нужен только при `GEOIP_ENABLED=True` и только в момент загрузки базы (`make run`, `make update-geoip`) |
 
 > **TLS-сертификаты.** Инсталляция сама наружу за сертификатами **не ходит** —
 > ACME/Let's Encrypt в стеке нет. Сертификаты (`fullchain.pem` / `privkey.pem`)
@@ -219,7 +220,7 @@ endpoint `agent.your-domain.com` использует mTLS (см. §6) — пр�
 внешнем прокси клиентский сертификат контроллера до Traefik не доходит, и
 аутентификация контроллеров ломается.
 
-- Готовые рецепты — в `README.md` этого каталога, раздел «🛡 Использование с внешним
+- Готовые рецепты — в `README.md` в корне репозитория, раздел «🛡 Использование с внешним
   веб-сервером (Nginx/Apache/Caddy/Traefik)»: кейсы A/B (nginx `stream` +
   `ssl_preread`) и кейс C (внешний Traefik, TCP-роутер с `passthrough: true`).
 - При размещении внешнего прокси на том же хосте Traefik инсталляции уводится на
