@@ -78,70 +78,111 @@ fix_users() {
     return $rc
 }
 
+# Everything that can be done while the cloud keeps serving: prepare the
+# configuration, verify the environment, and warm the image cache. Safe to run
+# as many times as needed — it never touches the database and stops nothing.
+check_upgrade() {
+    local ready=1
+
+    say "1/6 Configuration" "$NC"
+    bash ./scripts/migrate-env.sh || ready=0
+
+    if [ "$ready" -eq 1 ]; then
+        say "2/6 Environment variables" "$NC"
+        make check-env >/dev/null || ready=0
+        [ "$ready" -eq 1 ] && say "    all required variables are set" "$GREEN"
+
+        say "3/6 TLS certificate" "$NC"
+        if make check-certs >/dev/null 2>&1; then
+            say "    covers every required domain" "$GREEN"
+        else
+            say "    certificate does not cover all required domains — run 'make check-certs' for details" "$RED"
+            say "    2.0 additionally needs *.apps.<domain>; reissuing it takes a DNS challenge, so do it in advance" "$YELLOW"
+            ready=0
+        fi
+    fi
+
+    say "4/6 Disk space" "$NC"
+    local free_mb
+    free_mb="$(df -Pm . | awk 'NR==2 {print $4}')"
+    if [ "$free_mb" -lt 8000 ]; then
+        say "    ${free_mb} MB free — the new images need about 5 GB on top of the current ones." "$RED"
+        say "    Free some space, e.g. 'docker image prune -a --filter until=720h'." "$YELLOW"
+        ready=0
+    else
+        say "    ${free_mb} MB free" "$GREEN"
+    fi
+
+    say "5/6 Images" "$NC"
+    if compose pull --quiet 2>/dev/null; then
+        say "    downloaded, the update itself will not wait for them" "$GREEN"
+    else
+        say "    could not download the images for $VERSION — check the registry and the tag" "$RED"
+        ready=0
+    fi
+
+    say "6/6 User accounts" "$NC"
+    if fix_users scan >/dev/null 2>&1; then
+        say "    every account fits the 2.0 schema" "$GREEN"
+    else
+        say "    accounts conflict with the 2.0 schema (email becomes the login)" "$RED"
+        echo "    Look at them and repair while the cloud is still running:"
+        echo "      make fix-users MODE=scan       see the list"
+        echo "      make fix-users MODE=auto       apply the safe fixes"
+        echo "      make fix-users MODE=resolve    decide the rest by hand"
+        ready=0
+    fi
+
+    echo
+    if [ "$ready" -eq 1 ]; then
+        say "Ready to upgrade. Run 'make upgrade' during a maintenance window." "$GREEN"
+        return 0
+    fi
+    say "Not ready yet. Fix what is marked above and run 'make check-upgrade' again." "$YELLOW"
+    return 1
+}
+
+# The maintenance window itself: back up, stop the application, migrate, start.
+# Everything slow has already happened in check-upgrade.
 upgrade() {
-    if ! grep -Eq '^[[:space:]]*EMAIL_ENABLED=' "$ENV_FILE"; then
-        say "EMAIL_ENABLED was not set — keeping the 1.x behaviour (True)." "$YELLOW"
-        printf '\nEMAIL_ENABLED=True\n' >> "$ENV_FILE"
-    fi
-    # 1.x stored the SMTP settings as a URL and its parts; 2.0 uses Django's own names.
-    if ! grep -Eq '^[[:space:]]*EMAIL_HOST=' "$ENV_FILE" && [ -n "$(env_value EMAIL_SERVER)" ]; then
-        say "Converting the 1.x EMAIL_* variables to the 2.0 names." "$YELLOW"
-        {
-            printf '\nEMAIL_HOST=%s\n' "$(env_value EMAIL_SERVER)"
-            printf 'EMAIL_HOST_USER=%s\n' "$(env_value EMAIL_LOGIN)"
-            printf 'EMAIL_HOST_PASSWORD=%s\n' "$(env_value EMAIL_PASSWORD)"
-            case "$(env_value EMAIL_PROTOCOL)" in
-                *ssl*) printf 'EMAIL_USE_SSL=True\n' ;;
-                *tls*) printf 'EMAIL_USE_TLS=True\n' ;;
-            esac
-        } >> "$ENV_FILE"
-    fi
+    check_upgrade || exit 1
 
-    # Report every variable the new release added at once, not one per run.
-    local email_off=""
-    case "$(env_value EMAIL_ENABLED | tr '[:upper:]' '[:lower:]')" in
-        false|off|no|0) email_off=1 ;;
-    esac
-    missing=""
-    for var in $(grep -oE '^[A-Z_]+=' .env.example | tr -d '='); do
-        [ -n "$email_off" ] && case "$var" in EMAIL_*) continue ;; esac
-        grep -Eq "^[[:space:]]*$var=" "$ENV_FILE" || missing="$missing $var"
-    done
-    if [ -n "$missing" ]; then
-        say "This release needs variables that are not in your $ENV_FILE:" "$RED"
-        for var in $missing; do echo "  $var"; done
-        say "Copy them from .env.example, set your own values, then re-run 'make upgrade'." "$YELLOW"
-        exit 1
-    fi
-
-    make generate-env
-    make check-certs
-
-    say "Step 1/4: mandatory backup (before ANY database change)." "$YELLOW"
+    echo
+    say "Step 1/4: backup (before ANY database change)." "$YELLOW"
     backup
 
-    say "Step 2/4: scanning the user table for 2.0 conflicts." "$YELLOW"
-    if ! fix_users scan; then
-        say "Conflicts found — the migration is BLOCKED." "$RED"
-        echo "Resolve them, then re-run 'make upgrade':"
-        echo "  make fix-users MODE=resolve                       interactive wizard"
-        echo "  make fix-users MODE=dump / MODE=apply             edit $MIGRATION_DIR/conflicts.yaml in between"
-        echo "  make fix-users MODE=auto                          apply the safe fixes only"
+    say "Step 2/4: stopping the application — the databases stay up for the migration." "$YELLOW"
+    local app_services
+    app_services="$(compose config --services | grep -vE '^(postgres|timescale|redis|minio|minio-client)$' | tr '\n' ' ')"
+    compose stop $app_services
+
+    # Re-check with nothing writing: a registration between the check and the
+    # migration would fail it after the backup had already run.
+    if ! fix_users scan >/dev/null 2>&1; then
+        say "Accounts changed since the check and no longer fit the 2.0 schema." "$RED"
+        echo "Repair them with 'make fix-users MODE=resolve', then run 'make upgrade' again."
+        echo "Nothing has been migrated; the cloud is stopped — 'make run' brings the old version back."
         exit 1
     fi
-    say "No user conflicts. Proceeding." "$GREEN"
 
-    say "Step 3/4: applying database migrations on the 2.0 image." "$YELLOW"
-    compose pull
+    say "Step 3/4: applying database migrations." "$YELLOW"
     compose run --rm backend uv run --no-dev ./manage.py migrate
 
-    say "Step 4/4: bringing up the 2.0 stack." "$YELLOW"
+    say "Step 4/4: starting 2.0." "$YELLOW"
     compose up -d --build
+
+    # Controllers only start reporting once the cloud hands them the collector
+    # config, and that rollout is half-hourly — ask for it now instead.
+    compose exec -T backend uv run --no-dev ./manage.py shell -c \
+        "from organizations.tasks import update_lagging_metrics_configs; update_lagging_metrics_configs.delay()" \
+        >/dev/null 2>&1 || true
+
     say "Upgrade to $VERSION complete." "$GREEN"
 }
 
 case "${1:-}" in
     backup)    backup ;;
+    check)     check_upgrade ;;
     fix-users) fix_users "${2:-scan}" ;;
     upgrade)   upgrade ;;
     *) echo "usage: $0 {backup|fix-users [MODE]|upgrade}" >&2; exit 2 ;;

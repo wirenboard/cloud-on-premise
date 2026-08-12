@@ -88,7 +88,8 @@ help:
 	@printf "  stop                     Stop containers\n"
 	@printf "  restart                  Restart containers (with cert check)\n"
 	@printf "  update                   Update images, rebuild and start\n"
-	@printf "  upgrade                  1.x -> 2.0 upgrade: backup, fix users, migrate, start\n"
+	@printf "  check-upgrade            Check readiness for 1.x -> 2.0 (safe, changes nothing)\n"
+	@printf "  upgrade                  1.x -> 2.0 upgrade: backup, stop, migrate, start\n"
 	@printf "  fix-users                Run migration_doctor (MODE=scan|auto|resolve|dump|apply)\n"
 	@printf "  backup                   Back up PostgreSQL (+ InfluxDB if present) into ./backups\n"
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
@@ -312,6 +313,14 @@ fix-users:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ migration_doctor: $(MODE) ]====================="
 	@$(call require_version)
 	@bash ./scripts/upgrade.sh fix-users $(MODE)
+
+# Preparation for the upgrade: safe to run any number of times, changes nothing
+# but .env (with a backup) and the local image cache.
+.PHONY: check-upgrade
+check-upgrade:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPGRADE READINESS ]====================="
+	@$(call require_version)
+	@bash ./scripts/upgrade.sh check
 
 .PHONY: upgrade
 upgrade:
