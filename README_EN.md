@@ -321,7 +321,7 @@ make run
 
 User self-registration is disabled in the On-Premise cloud.
 Only one admin user will be available initially, using credentials from `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
-In 2.0 the email is the login, so the administrator signs in with the `ADMIN_EMAIL` value.
+Since release 2.0.0 the email is the login, so the administrator signs in with the `ADMIN_EMAIL` value.
 
 > ⚠️ You may change the password or create another admin user. However, the user specified in `.env` will be recreated on each restart if deleted.
 
@@ -506,7 +506,7 @@ With `EMAIL_ENABLED=False`:
   > You cannot create an invitation directly from the admin panel — it only shows the link of already existing invitations. The invitation itself is created in the frontend (step 1).
 - **resetting a user's password:** in the [admin panel](#admin-panel) open the **Users** section, select the user with a checkbox, choose the **“Generate password reset link”** action from the **Action** dropdown list, and click “Go”. The link appears in a green message at the top of the page — copy it and pass it to the user. Users without a usable password (e.g. signed in via social login) are skipped.
 
-> ⚠️ In 2.0 the `EMAIL_ENABLED` variable is mandatory: the stack does not start without an explicit `True`/`False`.
+> ⚠️ Since release 2.0.0 the `EMAIL_ENABLED` variable is mandatory: the stack does not start without an explicit `True`/`False`.
 
 ---
 
@@ -565,7 +565,7 @@ repaired before migrating.
 Upgrade **only if** you are currently on a 1.x version (see the `VERSION` file or the
 "About" screen). Before `make upgrade`, make sure:
 
-- **The certificate has been reissued with `*.apps.<domain>`.** In 2.0 controller web
+- **The certificate has been reissued with `*.apps.<domain>`.** Since release 2.0.0 controller web
   services are a standard feature, so `*.apps.your-domain.com` belongs to the mandatory
   domain set. If your 1.x certificate does not cover it, `make upgrade` stops at
   `make check-certs` before the backup: reissue the certificate (see
