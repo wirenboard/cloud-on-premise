@@ -51,21 +51,28 @@ backup() {
 # The doctor runs inside the still-running 1.x backend container and touches only
 # username/email. The mode goes through sys.argv: Django's shell rejects extra args.
 fix_users() {
-    local mode="${1:-scan}"
-    local cmd="uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '$mode']; exec(open('/migration/migration_doctor.py').read())\""
-    local rc=0
-    # -u/--user root: the image runs as nobody, which cannot write conflicts.yaml.
+    local mode="${1:-scan}" rc=0
+    # /tmp is the only path writable by the image's unprivileged user, so the
+    # conflicts file is exchanged through it instead of a root-owned mount.
+    local remote="/tmp/migration_doctor.py" yaml="/tmp/conflicts.yaml"
+    local local_yaml="$MIGRATION_DIR/conflicts.yaml"
+    local cmd="uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '$mode', '$yaml']; exec(open('$remote').read())\""
+
     if compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then
         local cid
         cid="$(compose ps -q backend)"
-        docker cp "$MIGRATION_DIR" "$cid:/"
-        # A non-zero exit means "conflicts remain" — still copy conflicts.yaml back.
-        compose exec -u root backend sh -c "$cmd" || rc=$?
-        docker cp "$cid:/migration/." "$MIGRATION_DIR/"
-    else
-        compose run --rm --user root -v "$PWD/$MIGRATION_DIR:/migration" backend sh -c "$cmd" || rc=$?
+        docker cp "$MIGRATION_DIR/migration_doctor.py" "$cid:$remote"
+        [ -f "$local_yaml" ] && docker cp "$local_yaml" "$cid:$yaml"
+        # A non-zero exit means "conflicts remain" — still bring conflicts.yaml back.
+        compose exec backend sh -c "$cmd" || rc=$?
+        docker cp "$cid:$yaml" "$local_yaml" 2>/dev/null || true
+        return $rc
     fi
-    # The files come back owned by root; hand them to whoever owns the checkout.
+
+    # Fallback for a stopped stack: bind-mount and run privileged, then hand the
+    # file back to whoever owns the checkout.
+    compose run --rm --user root -v "$PWD/$MIGRATION_DIR:/migration" backend \
+        sh -c "uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '$mode', '/migration/conflicts.yaml']; exec(open('/migration/migration_doctor.py').read())\"" || rc=$?
     chown -R --reference="$ENV_FILE" "$MIGRATION_DIR" 2>/dev/null || true
     return $rc
 }

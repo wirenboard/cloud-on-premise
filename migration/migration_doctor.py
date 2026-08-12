@@ -328,6 +328,11 @@ def dump_yaml(path):
             "# to skip a row (it will still count as an unresolved conflict).\n"
         )
         yaml.safe_dump(records, fh, allow_unicode=True, sort_keys=False)
+    # The operator edits this next, and may not be the user that wrote it.
+    try:
+        os.chmod(path, 0o666)
+    except OSError:
+        pass
     print(f"Wrote {len(records)} conflict(s) to {path}")
 
 
