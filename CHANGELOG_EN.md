@@ -23,12 +23,12 @@ All notable changes to this project are documented in this file.
 
 ### Infrastructure and deployment
 
-- **The server requirements went up:** at least 8 GB of RAM. The stack gained TimescaleDB, Grafana, Telegraf and two more background workers.
 - **The certificate must also cover `*.apps.<domain>`** — without it the cloud will not start. A DNS record is needed too: controller web services live on that subdomain.
 - **A one-command update, `make upgrade`:** a mandatory backup, a check that the accounts fit the new schema, and only then the migration. While the data is not in order, the migration does not run.
 - **The metrics store moved from InfluxDB to TimescaleDB.** Previously collected history does not carry over into the new charts: the upgrade keeps it in a backup alongside.
 - **The database now runs with its safety guarantees on.** It used to write with durability and autovacuum disabled — a power cut could cost the database, and tables bloated over time.
 - **SMTP settings are configured with separate variables** (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`), and `EMAIL_ENABLED` must be set explicitly. `make upgrade` converts the old ones for you.
+- **The stack grew** — TimescaleDB, Grafana, Telegraf and two more background workers. The server requirements stay the same: background parallelism is sized for the minimum machine by default and can be raised when the hardware allows.
 - Settings for your hardware and retention policy appeared: metrics retention, background task parallelism, session geolocation (see `.env.example`).
 
 ## [1.5.0] - 2026-07-28

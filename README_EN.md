@@ -20,6 +20,16 @@ Documentation for setting up and deploying Wiren Board Cloud in an On-Premise en
 - RAM: 8GB
 - HDD: 40GB
 
+> The minimum configuration is enough for a few dozen controllers: the stack itself takes about 4 GB
+> and the rest goes to the database cache. Closer to a hundred controllers the metrics get noticeably
+> hungrier — plan for the recommended configuration, and for disk space that matches how long metrics
+> are kept (`METRICS_RETENTION_DAYS`, 30 days by default).
+>
+> Background task parallelism is sized for the minimum machine. If the server has room to spare and
+> tasks are queueing up, raise it with `WORKER_CONCURRENCY`, `METRICS_WORKER_CONCURRENCY`,
+> `GRAFANA_WORKER_CONCURRENCY`, `EMAIL_WORKER_CONCURRENCY` (see `.env.example`) — each unit costs
+> about 90 MB of memory.
+
 
 > ⚠️ Your CPU or VM hypervisor must support the `x86-64-v2` instruction set. When using a VM, the `host-passthrough` option (or `CPU=host`) may be required.
 
