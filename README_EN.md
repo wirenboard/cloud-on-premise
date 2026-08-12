@@ -292,8 +292,7 @@ TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 
 ```
 
-> ⚠️ The `EMAIL_*` variables are passed to the containers as they are — `EMAIL_URL` is no longer assembled and the `make generate-email-url` target is gone.
-> For the submission port 587 keep `EMAIL_USE_TLS=True`; for the SSL port 465 drop it and set `EMAIL_USE_SSL=True` instead.
+> ⚠️ For the submission port 587 keep `EMAIL_USE_TLS=True`; for the SSL port 465 drop it and set `EMAIL_USE_SSL=True` instead.
 > After editing `.env`, restart the stack: `make restart`.
 
 > 💡 Email sending can be disabled entirely — see [Working Without Email](#working-without-email).

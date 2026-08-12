@@ -294,8 +294,7 @@ TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 
 ```
 
-> ⚠️ Переменные `EMAIL_*` передаются в контейнеры как есть — `EMAIL_URL` больше не собирается и цели `make generate-email-url` нет.
-> Для submission-порта 587 оставьте `EMAIL_USE_TLS=True`; для SSL-порта 465 уберите её и задайте `EMAIL_USE_SSL=True`.
+> ⚠️ Для submission-порта 587 оставьте `EMAIL_USE_TLS=True`; для SSL-порта 465 уберите её и задайте `EMAIL_USE_SSL=True`.
 > После правки `.env` перезапустите стек: `make restart`.
 
 > 💡 Отправку email можно полностью отключить — см. [Работа без email](#работа-без-email).
