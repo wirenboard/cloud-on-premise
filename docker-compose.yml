@@ -434,13 +434,14 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-grafana_admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana_password}
       SERVICE_NAME: ${SERVICE_NAME:-Wiren Board Cloud}
-      # Alert emails go through the same SMTP as the cloud itself.
+      # Alert emails go through the same SMTP as the cloud itself. Grafana
+      # validates the sender even with SMTP off, so these keep a valid shape.
       EMAIL_ENABLED: ${EMAIL_ENABLED}
-      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_HOST: ${EMAIL_HOST:-localhost}
       EMAIL_PORT: ${EMAIL_PORT:-587}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
-      EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-}
+      EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-noreply@${ABSOLUTE_SERVER}}
     volumes:
       - clientsGrafanaData:/var/lib/grafana
       - ./grafana/clients-grafana.ini:/clients-grafana.ini:ro
