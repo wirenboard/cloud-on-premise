@@ -100,8 +100,21 @@ help:
 #------------------------------------------------------------------------------
 # [ TLS CERTIFICATE CHECK ] ---------------------------------------------------
 
+# Traefik bind-mounts the certificate files, so Docker creates a directory in place
+# of a missing one — after which the real certificate cannot be put there.
+.PHONY: check-cert-paths
+check-cert-paths:
+	@for f in "$(PRIVKEY)" "$(FULLCHAIN)"; do \
+		if [ -d "$$f" ]; then \
+			printf "$(RED)ERROR: %s is a directory, not a file.$(NC)\n" "$$f"; \
+			printf "$(YELLOW)Docker created it when the stack started without the certificate in place.$(NC)\n"; \
+			printf "$(YELLOW)Remove it and put the certificate there: rmdir '%s'$(NC)\n" "$$f"; \
+			exit 1; \
+		fi; \
+	done
+
 .PHONY: check-certs
-check-certs:
+check-certs: check-cert-paths
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ CHECKING TLS CERTIFICATES ]====================="
 	@printf "Checking TLS certificates...\n"
 	@if [ -z "$(RAW_SERVER)" ]; then \
@@ -275,6 +288,7 @@ run-no-cert-check:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE (NO CERT CHECK) ]====================="
 	@$(call require_version)
 	@${MAKE} generate-env
+	@${MAKE} check-cert-paths
 	@VERSION=$(VERSION) docker compose up -d --build
 
 .PHONY: update
