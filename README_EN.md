@@ -294,8 +294,8 @@ TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 # How long controller metrics are kept. Raise it if you have the disk space
 #METRICS_RETENTION_DAYS=30
 
-# Session geolocation. When True, the DB-IP City Lite database (~62 MB) is
-# downloaded on `make run` — see "Session Geolocation"
+# Session geolocation. When True, the DB-IP City Lite database is downloaded
+# on `make run` (~62 MB over the network, ~124 MB on disk) — see "Session Geolocation"
 #GEOIP_ENABLED=True
 
 # Override the organization invitation email subject and body.
@@ -443,8 +443,8 @@ GEOIP_ENABLED=True
 ```
 
 On `make run` (specifically during `make generate-env`) the DB-IP "IP to City
-Lite" database (~62 MB, CC BY 4.0 license) is downloaded into `./geoip`
-automatically.
+Lite" database (CC BY 4.0 license) is downloaded into `./geoip`
+automatically: ~62 MB over the network, ~124 MB unpacked.
 
 DB-IP publishes a new database every month, while the automatic download only fetches a missing
 one. Refresh it with `make update-geoip` — the old database is replaced only after a complete
