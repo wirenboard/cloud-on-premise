@@ -14,6 +14,16 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
 say() { printf "%b%s%b\n" "$2" "$1" "$NC"; }
 # `|| true`: a missing variable is an empty value, not a fatal error under set -e.
 env_value() { grep -E "^[[:space:]]*$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' || true; }
+# The configuration migration runs before the backup and drops the variables this
+# release no longer uses, so a value needed only by 1.x is read from the copy it left.
+legacy_env_value() {
+    local value; value="$(env_value "$1")"
+    if [ -z "$value" ]; then
+        local previous; previous="$(ls -t "$ENV_FILE".bak-* 2>/dev/null | head -1)"
+        [ -n "$previous" ] && value="$(grep -E "^[[:space:]]*$1=" "$previous" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' || true)"
+    fi
+    printf '%s' "$value"
+}
 compose() { VERSION="$VERSION" docker compose "$@"; }
 
 backup() {
@@ -38,7 +48,7 @@ backup() {
     fi
     say "------ InfluxDB backup (kept as-is, not converted to TimescaleDB) ------" "$NC"
     local dir="$BACKUP_DIR/influx-$TS"
-    docker exec "$cid" influx backup /tmp/influx-backup -t "$(env_value INFLUXDB_TOKEN)" >/dev/null 2>&1 || true
+    docker exec "$cid" influx backup /tmp/influx-backup -t "$(legacy_env_value INFLUXDB_TOKEN)" >/dev/null 2>&1 || true
     mkdir -p "$dir"
     docker cp "$cid:/tmp/influx-backup/." "$dir/" 2>/dev/null || true
     if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
