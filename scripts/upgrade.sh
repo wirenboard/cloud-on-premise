@@ -30,9 +30,8 @@ backup() {
     mkdir -p "$BACKUP_DIR"
     local out="$BACKUP_DIR/pg-$TS.sql.gz" part="$BACKUP_DIR/pg-$TS.sql.gz.part"
     say "------ PostgreSQL dump ------" "$NC"
-    # Written aside and moved into place only once it holds data: gzip of a failed
-    # dump is still a valid 20-byte archive, which would pass a size check and sit
-    # in backups/ looking like the backup taken before the upgrade.
+    # Moved into place only once it holds data: gzip of a failed dump is still a
+    # valid 20-byte archive, and would sit in backups/ looking like a real one.
     if compose exec -T postgres pg_dump -U "$(env_value POSTGRES_USER)" -d "$(env_value POSTGRES_DB)" | gzip > "$part" &&
        [ -n "$(gzip -dc "$part" 2>/dev/null | head -c 1)" ]; then
         mv "$part" "$out"
