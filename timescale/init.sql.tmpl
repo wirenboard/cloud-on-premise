@@ -25,7 +25,7 @@ BEGIN
     EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '__TELEGRAF_USER__', '__TELEGRAF_PASSWORD__');
   END IF;
 
-  -- Grafana (read-only через VIEW + роль)
+  -- Grafana (read-only via a VIEW + role)
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__GRAFANA_USER__') THEN
     EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '__GRAFANA_USER__', '__GRAFANA_PASSWORD__');
   END IF;
@@ -49,7 +49,7 @@ BEGIN
   END IF;
 END$$;
 
--- Управление орг-ролями
+-- Org role management
 CREATE OR REPLACE PROCEDURE auth.ensure_org_role(org_id uuid)
 LANGUAGE plpgsql AS $$
 DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
@@ -76,7 +76,7 @@ BEGIN
   END IF;
 END$$;
 
--- Привязка контроллера к организации host→org + политика хранения метрик.
+-- Controller-to-organization binding (host -> org) + per-host metrics retention.
 CREATE TABLE IF NOT EXISTS auth.host_org_map (
   host            text        PRIMARY KEY,
   organization_id uuid        NOT NULL,
@@ -95,7 +95,7 @@ BEGIN
   END IF;
 END$$;
 
--- Админ-предикат
+-- Admin predicate
 CREATE OR REPLACE FUNCTION auth.is_admin()
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY INVOKER
@@ -104,7 +104,7 @@ AS $$
   SELECT pg_has_role(session_user, 'pg_read_all_data', 'member') OR pg_has_role(session_user, 'all_reader', 'member');
 $$;
 
--- Список доступных org из членств в ролях org_<uuid_с_подчёркиваниями>
+-- Available orgs, derived from membership in org_<uuid_with_underscores> roles
 CREATE OR REPLACE FUNCTION auth.allowed_orgs_from_roles()
 RETURNS SETOF uuid
 LANGUAGE sql STABLE SECURITY INVOKER
@@ -116,7 +116,7 @@ AS $$
     AND pg_has_role(session_user, r.rolname, 'member');
 $$;
 
--- VIEW для быстрого получения списка контроллеров с RLS фильтрацией
+-- VIEW that lists controllers quickly, filtered by RLS
 CREATE OR REPLACE VIEW public.org_controllers AS
 SELECT h.host, h.organization_id
 FROM auth.host_org_map h
@@ -124,7 +124,7 @@ WHERE auth.is_admin()
    OR h.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
 ORDER BY h.host;
 
--- Быстрый каталог доступных MQTT topic по host.
+-- Fast catalogue of the MQTT topics seen per host.
 CREATE TABLE IF NOT EXISTS public.mqtt_metrics_topics (
   host            text        NOT NULL,
   topic           text        NOT NULL,
@@ -140,7 +140,7 @@ WHERE auth.is_admin()
    OR org.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
 ORDER BY t.host, t.topic;
 
--- Проверяет host↔org по карте и проставляет organization_id в строку.
+-- Checks host against the org map and stamps organization_id onto the row.
 CREATE OR REPLACE FUNCTION public.populate_mqtt_metrics_dimensions()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -180,7 +180,7 @@ BEGIN
 END
 $$;
 
--- Универсальная идемпотентная процедура подготовки измерений.
+-- Idempotent, measurement-agnostic preparation procedure.
 CREATE OR REPLACE PROCEDURE ensure_measurement(meas text)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -407,7 +407,7 @@ BEGIN
 END;
 $$;
 
--- Ночной job per-host retention (03:00 UTC, каждые 24 часа).
+-- Nightly per-host retention job (03:00 UTC, every 24 hours).
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -424,24 +424,24 @@ BEGIN
   END IF;
 END$$;
 
--- Системные роли для сервисных пользователей (exporter/backup unused on-premise).
+-- System roles for service users (exporter/backup unused on-premise).
 GRANT pg_read_all_settings TO "ts_backup";
 GRANT pg_monitor TO "ts_exporter";
 
--- Разрешить графана юзеру читать из всех таблиц и вьюх
+-- Let the grafana user read every table and view
 GRANT all_reader TO "__GRAFANA_USER__";
 
--- Разрешить читать VIEW со списком контроллеров
+-- Let it read the controller-list VIEW
 GRANT SELECT ON public.org_controllers TO views_reader, all_reader;
 GRANT SELECT ON public.mqtt_metrics_topics_readable TO views_reader, all_reader;
 GRANT SELECT ON public.mqtt_metrics_topics TO all_reader;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.mqtt_metrics_topics FROM views_reader, all_reader;
 
--- Не разрешать выполнять наши внутренние функции и процедуры читателям
+-- Readers must not execute our internal functions and procedures
 REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
 REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_reader;
 
--- Запрещаем доступ к pg_stat_statements для PUBLIC
+-- Deny PUBLIC access to pg_stat_statements
 REVOKE SELECT ON public.pg_stat_statements FROM PUBLIC;
 REVOKE SELECT ON public.pg_stat_statements_info FROM PUBLIC;
 DO $$
@@ -450,7 +450,7 @@ BEGIN
   EXECUTE format('GRANT SELECT ON public.pg_stat_statements_info TO %I', 'ts_exporter');
 END$$;
 
--- Лимиты для reader-ролей.
+-- Limits for the reader roles.
 ALTER ROLE views_reader SET statement_timeout = '15s';
 ALTER ROLE views_reader SET idle_in_transaction_session_timeout = '30s';
 ALTER ROLE views_reader SET lock_timeout = '5s';
@@ -497,7 +497,7 @@ BEGIN
   END LOOP;
 END$$;
 
--- Применить ensure_measurement для уже существующих гипертаблиц.
+-- Apply ensure_measurement to hypertables that already exist.
 CREATE OR REPLACE PROCEDURE _apply_ensure_measurement_all()
 LANGUAGE plpgsql AS $$
 DECLARE
