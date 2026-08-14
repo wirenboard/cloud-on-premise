@@ -184,6 +184,9 @@ $$;
 CREATE OR REPLACE PROCEDURE ensure_measurement(meas text)
 LANGUAGE plpgsql
 SECURITY DEFINER
+-- Pinned here, not only in the body: DECLARE runs before the first statement, so
+-- without this the caller's search_path would resolve those calls.
+SET search_path = pg_catalog, public, auth
 AS $$
 DECLARE
   measurement regclass;
