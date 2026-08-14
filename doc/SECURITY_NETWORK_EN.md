@@ -5,8 +5,8 @@
 > **Purpose.** Input for firewall configuration: which ports to open, who
 > initiates connections and in which direction, and what outbound (egress)
 > channels the installation has. Verified against `docker-compose.yml`,
-> `.env.example`, `traefik/` and `README(_EN).md` at the time of writing
-> (branch onprem-release/2.0.0).
+> `.env.example`, `traefik/` and `README(_EN).md` from the same repository
+> revision.
 
 ## 1. Overview
 
