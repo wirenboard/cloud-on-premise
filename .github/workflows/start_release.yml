@@ -35,11 +35,11 @@ on:
         description: "CHANGELOG section heading"
         type: choice
         required: true
-        default: Изменено
+        default: Changed
         options:
-          - Добавлено
-          - Изменено
-          - Исправлено
+          - Added
+          - Changed
+          - Fixed
       changelog_entry:
         description: "Single-line CHANGELOG entry in Russian (optional; TODO if empty)"
         type: string
@@ -218,22 +218,22 @@ jobs:
           # 1. Bump VERSION (no trailing newline — matches existing file).
           printf '%s' "$NEW_VERSION" > VERSION
 
-          # 2. Update both CHANGELOGs. Heading map RU -> EN.
+          # 2. Update both CHANGELOGs. Heading map EN -> RU.
           python3 <<'PY'
           import os, pathlib, datetime, re
 
           version  = os.environ["NEW_VERSION"]
-          ru_head  = os.environ["CHANGELOG_SECTION"]
+          en_head  = os.environ["CHANGELOG_SECTION"]
           ru_entry = os.environ.get("CHANGELOG_ENTRY", "").strip()
           en_entry = os.environ.get("CHANGELOG_ENTRY_EN", "").strip()
           today    = datetime.date.today().isoformat()
 
-          en_heading_map = {
-              "Добавлено":  "Added",
-              "Изменено":   "Changed",
-              "Исправлено": "Fixed",
+          ru_heading_map = {
+              "Added":   "Добавлено",
+              "Changed": "Изменено",
+              "Fixed":   "Исправлено",
           }
-          en_head = en_heading_map[ru_head]
+          ru_head = ru_heading_map[en_head]
 
           targets = [
               ("CHANGELOG.md",    ru_head, ru_entry or "TODO"),
