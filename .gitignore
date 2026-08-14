@@ -8,8 +8,9 @@ gen
 jwt/*.pem
 tls/*.pem
 
-# env
+# env — .bak-* copies hold the same secrets and are left behind by `make upgrade`
 .env
+.env.bak-*
 
 # migration_doctor working file + DB/Influx backups created by `make upgrade`
 migration/conflicts.yaml
