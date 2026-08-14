@@ -22,9 +22,9 @@ x-backend-common-env: &backend-common-env
   JWT_PRIVATE_KEY: ${PRIVATE_KEY}
   JWT_PUBLIC_KEY: ${PUBLIC_KEY}
   DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db}"
-  # Single-node: primary == replica.
+  # Single-node: reads go to the same instance, and the backend already defaults
+  # the replica URL to the primary one.
   TIMESCALE_PRIMARY_DB_URL: "postgresql://${TIMESCALE_USER:-timescale}:${TIMESCALE_PASSWORD:-timescale_password}@timescale:5432/${TIMESCALE_DB:-metrics}?application_name=django_backend&connect_timeout=5&sslmode=disable&target_session_attrs=read-write"
-  TIMESCALE_REPLICA_DB_URL: "postgresql://${TIMESCALE_USER:-timescale}:${TIMESCALE_PASSWORD:-timescale_password}@timescale:5432/${TIMESCALE_DB:-metrics}?application_name=django_backend&connect_timeout=5&sslmode=disable"
   TIMESCALE_MQTT_METRICS_MEASUREMENT_NAME: "mqtt_metrics"
   TIMESCALE_MQTT_METRICS_READABLE_VIEW_NAME: "mqtt_metrics_readable"
   TIMESCALE_DEFAULT_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
