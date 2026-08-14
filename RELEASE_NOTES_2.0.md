@@ -159,10 +159,13 @@ make upgrade
    gunzip -c backups/pg-<дата>.sql.gz | docker compose exec -T postgres psql -U <POSTGRES_USER> -d <POSTGRES_DB>
    ```
 
-3. **Вернитесь на прежнюю версию** и запустите её:
+3. **Вернитесь на прежнюю версию** и запустите её. `--remove-orphans` убирает
+   контейнеры сервисов, которых в 1.5.0 не было, — иначе они останутся лежать
+   остановленными:
 
    ```bash
    git checkout v1.5.0
+   docker compose down --remove-orphans
    make run
    ```
 
