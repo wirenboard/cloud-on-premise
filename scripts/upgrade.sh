@@ -52,7 +52,11 @@ backup() {
     fi
     say "------ InfluxDB backup (kept as-is, not converted to TimescaleDB) ------" "$NC"
     local dir="$BACKUP_DIR/influx-$TS"
-    docker exec "$cid" influx backup /tmp/influx-backup -t "$(legacy_env_value INFLUXDB_TOKEN)" >/dev/null 2>&1 || true
+    local token; token="$(legacy_env_value INFLUXDB_TOKEN)"
+    # Once the configuration has been migrated the newest .env.bak is itself 2.x and no
+    # longer carries the token, so take it from the container that is still running on it.
+    [ -z "$token" ] && token="$(docker exec "$cid" printenv DOCKER_INFLUXDB_INIT_ADMIN_TOKEN 2>/dev/null || true)"
+    docker exec "$cid" influx backup /tmp/influx-backup -t "$token" >/dev/null 2>&1 || true
     mkdir -p "$dir"
     docker cp "$cid:/tmp/influx-backup/." "$dir/" 2>/dev/null || true
     if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
