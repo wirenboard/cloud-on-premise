@@ -350,6 +350,10 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      # Shares the image, and the image migrates on start: on an empty database two
+      # of those at once collide and the loser crash-loops.
+      backend:
+        condition: service_healthy
 
   agent_backend:
     image: ghcr.io/wirenboard/on-premise/wbc-agent-backend:${VERSION}
