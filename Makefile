@@ -82,6 +82,7 @@ help:
 	@printf "  help                     Show this message\n"
 	@printf "  check-env                Check all required variables in .env\n"
 	@printf "  check-certs              Check TLS certificates and domain coverage\n"
+	@printf "  init-env                 Build .env from the environment, no editor (unattended installs)\n"
 	@printf "  generate-env             Generate all secrets and variables (non-destructive)\n"
 	@printf "  run                      Full project launch: generate-env, check-certs, start containers\n"
 	@printf "  run-no-cert-check        Launch without checking TLS certificates (not recommended)\n"
@@ -260,6 +261,12 @@ generate-jwt:
 update-geoip:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING GEOLOCATION DATABASE ]====================="
 	@bash ./scripts/fetch-geoip.sh --force
+
+# Fills in what only the operator knows (domain, administrator, SMTP) from the
+# environment instead of an editor; generate-env then adds the keys and tokens.
+.PHONY: init-env
+init-env:
+	@bash ./scripts/init-env.sh $(if $(FORCE),--force)
 
 .PHONY: generate-env
 generate-env:
