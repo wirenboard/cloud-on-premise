@@ -136,6 +136,9 @@ jobs:
             telegraf/**
             grafana/**
             migration/**
+            scripts/**
+            doc/**
+            terraform/**
 
       - name: Done
         run: echo "✅ Release completed for version ${{ needs.read-version.outputs.version }}"
