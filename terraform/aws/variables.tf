@@ -32,6 +32,24 @@ variable "wb_cloud_version" {
   default     = null
 }
 
+variable "wb_cloud_ref" {
+  description = "Branch or tag to install instead of a release, and where the installer itself is taken from. For trying a change before it ships — leave null in production."
+  type        = string
+  default     = null
+}
+
+variable "wb_cloud_repo" {
+  description = "Repository the release and the installer come from. Point it at a fork to test one."
+  type        = string
+  default     = "wirenboard/cloud-on-premise"
+}
+
+variable "letsencrypt_staging" {
+  description = "Issue the certificate from the Let's Encrypt staging CA: untrusted by browsers and controllers, but not rate-limited. For repeated test runs against the same domain."
+  type        = bool
+  default     = false
+}
+
 variable "instance_type" {
   description = "The images require x86-64-v2, so Graviton (arm64) types do not work. t3.large matches the recommended configuration."
   type        = string

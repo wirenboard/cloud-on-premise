@@ -7,6 +7,12 @@ set -euo pipefail
 WB_CLOUD_DIR="${WB_CLOUD_DIR:-/opt/wb-cloud}"
 WB_CLOUD_VERSION="${WB_CLOUD_VERSION:-latest}"
 WB_CLOUD_REPO="${WB_CLOUD_REPO:-wirenboard/cloud-on-premise}"
+# A branch or tag to install instead of a release. For testing a change before
+# it is released — WB_CLOUD_VERSION is ignored when this is set.
+WB_CLOUD_REF="${WB_CLOUD_REF:-}"
+# Issue the certificate from the Let's Encrypt staging CA. Untrusted by browsers
+# and by the controller agent, but not rate-limited — use it while iterating.
+LETSENCRYPT_STAGING="${LETSENCRYPT_STAGING:-}"
 # route53 — issue a wildcard certificate over the DNS-01 challenge;
 # manual — the certificate is put into $WB_CLOUD_DIR/tls by other means.
 WB_CLOUD_TLS_MODE="${WB_CLOUD_TLS_MODE:-manual}"
@@ -50,7 +56,7 @@ fi
 systemctl enable --now docker
 
 step "FETCHING THE RELEASE"
-if [ "$WB_CLOUD_VERSION" = "latest" ]; then
+if [ -z "$WB_CLOUD_REF" ] && [ "$WB_CLOUD_VERSION" = "latest" ]; then
     WB_CLOUD_VERSION="$(curl -fsSL "https://api.github.com/repos/${WB_CLOUD_REPO}/releases/latest" |
         grep -m1 '"tag_name"' | cut -d'"' -f4 | sed 's/^v//')"
     [ -n "$WB_CLOUD_VERSION" ] || { say "ERROR: could not resolve the latest release." "$RED"; exit 1; }
@@ -61,11 +67,26 @@ if [ -f "$WB_CLOUD_DIR/docker-compose.yml" ]; then
     say "Leaving it as it is — upgrade with 'make upgrade' inside that directory." "$YELLOW"
 else
     mkdir -p "$WB_CLOUD_DIR"
-    # The tag tarball, not the release assets: the Makefile calls scripts/ that
-    # the asset list does not carry.
-    curl -fsSL "https://github.com/${WB_CLOUD_REPO}/archive/refs/tags/v${WB_CLOUD_VERSION}.tar.gz" |
-        tar -xz -C "$WB_CLOUD_DIR" --strip-components=1
-    say "Release v${WB_CLOUD_VERSION} unpacked into $WB_CLOUD_DIR." "$GREEN"
+    # The source tarball, not the release assets: the Makefile calls scripts/
+    # that the asset list has not always carried.
+    if [ -n "$WB_CLOUD_REF" ]; then
+        source_urls="https://github.com/${WB_CLOUD_REPO}/archive/refs/heads/${WB_CLOUD_REF}.tar.gz
+https://github.com/${WB_CLOUD_REPO}/archive/refs/tags/${WB_CLOUD_REF}.tar.gz"
+        what="$WB_CLOUD_REF"
+    else
+        source_urls="https://github.com/${WB_CLOUD_REPO}/archive/refs/tags/v${WB_CLOUD_VERSION}.tar.gz"
+        what="v${WB_CLOUD_VERSION}"
+    fi
+
+    unpacked=""
+    for url in $source_urls; do
+        if curl -fsSL "$url" | tar -xz -C "$WB_CLOUD_DIR" --strip-components=1 2>/dev/null; then
+            unpacked=1
+            break
+        fi
+    done
+    [ -n "$unpacked" ] || { say "ERROR: could not fetch $what from $WB_CLOUD_REPO." "$RED"; exit 1; }
+    say "$what unpacked into $WB_CLOUD_DIR." "$GREEN"
 fi
 cd "$WB_CLOUD_DIR"
 
@@ -83,6 +104,7 @@ case "$WB_CLOUD_TLS_MODE" in
         # modulus — certbot's ECDSA default would fail that check.
         if [ ! -d "/etc/letsencrypt/live/${ABSOLUTE_SERVER}" ]; then
             certbot certonly --dns-route53 --key-type rsa \
+                ${LETSENCRYPT_STAGING:+--test-cert} \
                 --non-interactive --agree-tos -m "${CERTBOT_EMAIL:-$ADMIN_EMAIL}" \
                 --cert-name "$ABSOLUTE_SERVER" \
                 -d "$ABSOLUTE_SERVER" \

@@ -75,6 +75,26 @@ enable_ses    = true
 > A new SES account sits in the sandbox and only delivers to verified addresses.
 > Production access is a request to AWS support that cannot be automated.
 
+## Trying a change before it is released
+
+By default the module installs a published release and reads the installer from
+the matching tag. To test something that has not shipped yet, point it at a
+branch — of this repository or of a fork:
+
+```hcl
+wb_cloud_ref  = "my-branch"
+wb_cloud_repo = "wirenboard/cloud-on-premise"  # or your fork
+
+# Untrusted by browsers and controllers, but not rate-limited.
+letsencrypt_staging = true
+```
+
+Let's Encrypt allows five certificates a week for the same set of names, and a
+few failed runs against a real domain use that up — keep `letsencrypt_staging`
+on while iterating and turn it off for the run that has to be real. Switching
+back means deleting `/etc/letsencrypt/live/<domain>` on the instance and
+re-running the installer, or building a fresh instance.
+
 ## Upgrades
 
 **Not through `terraform apply`.** The module deliberately ignores changes to

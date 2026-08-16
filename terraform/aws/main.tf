@@ -227,9 +227,14 @@ locals {
   user_data = templatefile("${path.module}/cloud-init.sh.tftpl", {
     volume_id        = aws_ebs_volume.data.id
     wb_cloud_version = var.wb_cloud_version != null ? var.wb_cloud_version : "latest"
-    bootstrap_ref    = var.wb_cloud_version != null ? "v${var.wb_cloud_version}" : "main"
-    secret_id        = aws_secretsmanager_secret.this.id
-    region           = data.aws_region.current.name
-    env              = local.env
+    wb_cloud_ref     = var.wb_cloud_ref != null ? var.wb_cloud_ref : ""
+    wb_cloud_repo    = var.wb_cloud_repo
+    # Where bootstrap.sh itself is read from: the ref under test, the release
+    # tag, or main.
+    bootstrap_ref       = coalesce(var.wb_cloud_ref, var.wb_cloud_version != null ? "v${var.wb_cloud_version}" : "main")
+    letsencrypt_staging = var.letsencrypt_staging ? "1" : ""
+    secret_id           = aws_secretsmanager_secret.this.id
+    region              = data.aws_region.current.name
+    env                 = local.env
   })
 }

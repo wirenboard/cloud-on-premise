@@ -45,10 +45,13 @@ export ${key}='${replace(value, "'", "'\\''")}'
 %{ endfor ~}
 export WB_CLOUD_DIR="$WB_CLOUD_DIR"
 export WB_CLOUD_VERSION='${wb_cloud_version}'
+export WB_CLOUD_REF='${wb_cloud_ref}'
+export WB_CLOUD_REPO='${wb_cloud_repo}'
+export LETSENCRYPT_STAGING='${letsencrypt_staging}'
 export WB_CLOUD_TLS_MODE=route53
 export AWS_DEFAULT_REGION='${region}'
 
-curl -fsSL "https://raw.githubusercontent.com/wirenboard/cloud-on-premise/${bootstrap_ref}/scripts/bootstrap.sh" \
+curl -fsSL "https://raw.githubusercontent.com/${wb_cloud_repo}/${bootstrap_ref}/scripts/bootstrap.sh" \
     -o /tmp/bootstrap.sh
 bash /tmp/bootstrap.sh
 
