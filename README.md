@@ -55,6 +55,70 @@
 
 ---
 
+## ☁️ Автоматическая установка в AWS (Terraform)
+
+Если домен делегирован в хостед-зону Route53, всю описанную ниже установку
+выполняет Terraform-модуль из этого репозитория — вместе с DNS-записями,
+wildcard-сертификатом TLS и его продлением, то есть тем шагом, на котором чаще
+всего останавливается ручная установка.
+
+```hcl
+module "wb_cloud" {
+  source = "github.com/wirenboard/cloud-on-premise//terraform/aws?ref=v2.0.0"
+
+  domain          = "cloud.example.com"
+  route53_zone_id = "Z0123456789ABCDEFGHIJ"
+  admin_email     = "admin@example.com"
+
+  wb_cloud_version = "2.0.0"
+}
+```
+
+```bash
+terraform init && terraform apply
+```
+
+Через 15–20 минут облако отвечает на `https://cloud.example.com`. Разворачивается
+тот же стек Docker Compose, который описан в этом README, поэтому всё
+дальнейшее — `make update`, `make backup`, брендирование, переменные
+окружения — работает без изменений.
+
+Подробности, включая почту через SES и порядок обновления, — в
+[terraform/aws/README.md](./terraform/aws/README.md).
+
+> Остальная часть README описывает установку вручную: на своём железе, в другом
+> облаке или с доменом вне Route53.
+
+---
+
+## 🤖 Установка без участия оператора (любой хост)
+
+`scripts/bootstrap.sh` устанавливает облако на чистый хост с Ubuntu без
+редактора — для cloud-init, Ansible или сборки образа. Скрипт ставит Docker,
+скачивает релиз, собирает `.env` и запускает стек:
+
+```bash
+export ABSOLUTE_SERVER=cloud.example.com
+export ADMIN_EMAIL=admin@example.com
+curl -fsSL https://raw.githubusercontent.com/wirenboard/cloud-on-premise/main/scripts/bootstrap.sh | sudo -E bash
+```
+
+Сертификат ожидается в `/opt/wb-cloud/tls` — положите его туда, и скрипт
+запустит облако. С `WB_CLOUD_TLS_MODE=route53` скрипт выпускает сертификат сам
+через DNS-01.
+
+Чтобы только собрать `.env` на установке, которой вы управляете сами, есть
+`make init-env` — те же переменные, читаемые из окружения:
+
+```bash
+ABSOLUTE_SERVER=cloud.example.com ADMIN_EMAIL=admin@example.com make init-env
+```
+
+Всё, что не передано и что можно сгенерировать, генерируется. Полный список —
+`./scripts/init-env.sh --help`.
+
+---
+
 ## ⚙️ Предварительная настройка
 
 Перед развертыванием приложения должны быть выполнены следующие шаги:

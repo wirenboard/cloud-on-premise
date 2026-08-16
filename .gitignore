@@ -36,3 +36,11 @@ CLAUDE.md
 
 # GeoIP database (operator-provided, see README)
 geoip/*.mmdb
+
+# Terraform state holds credentials
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

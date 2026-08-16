@@ -30,6 +30,10 @@ All notable changes to this project are documented in this file.
 - **SMTP settings are configured with separate variables** (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`), and `EMAIL_ENABLED` must be set explicitly. `make upgrade` converts the old ones for you.
 - **The stack grew** — TimescaleDB, Grafana, Telegraf and two more background workers. The server requirements stay the same: background parallelism is sized for a hundred controllers by default and is tunable in both directions.
 - Settings for your hardware and retention policy appeared: metrics retention, background task parallelism, session geolocation (see `.env.example`).
+- **One-command installation on AWS:** the Terraform module in `terraform/aws` creates the server, the DNS records, the wildcard certificate and its renewal. Optionally sets up email through SES. Version upgrades still go through `make update` on the server, not through Terraform.
+- **Unattended installation on any host:** `scripts/bootstrap.sh` installs Docker, fetches the release and starts the cloud on a clean Ubuntu; `make init-env` builds `.env` from environment variables instead of an editor.
+- Passwords containing `$` are no longer truncated in `.env`: `make init-env` escapes it for docker compose. When editing `.env` by hand the character still has to be doubled (`$$`).
+- GitHub Releases now carry `scripts/`, `doc/` and `terraform/` — without the first one, `make run` from a release archive did not work.
 
 ## [1.5.0] - 2026-07-28
 

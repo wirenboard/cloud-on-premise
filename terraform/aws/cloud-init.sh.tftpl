@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Runs once on the first boot. Only the AWS-specific part lives here — the data
+# volume and publishing the credentials; the rest is scripts/bootstrap.sh.
+set -euo pipefail
+exec > >(tee -a /var/log/wb-cloud-install.log) 2>&1
+
+WB_CLOUD_DIR=/opt/wb-cloud
+DEVICE=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${replace(volume_id, "-", "")}
+
+echo "=== waiting for the data volume ==="
+for _ in $(seq 1 60); do
+    [ -e "$DEVICE" ] && break
+    sleep 5
+done
+if [ ! -e "$DEVICE" ]; then
+    echo "ERROR: the data volume did not appear at $DEVICE" >&2
+    exit 1
+fi
+
+echo "=== mounting the data volume at /var/lib/docker ==="
+# blkid stays quiet on a blank device, which is how a first run is told from a
+# volume that already carries the databases.
+if ! blkid "$DEVICE" >/dev/null 2>&1; then
+    mkfs.ext4 -L wb-cloud-data "$DEVICE"
+fi
+mkdir -p /var/lib/docker
+grep -q "^LABEL=wb-cloud-data" /etc/fstab ||
+    echo "LABEL=wb-cloud-data /var/lib/docker ext4 defaults,nofail 0 2" >> /etc/fstab
+mountpoint -q /var/lib/docker || mount /var/lib/docker
+
+echo "=== installing the AWS CLI ==="
+if ! command -v aws >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq unzip curl
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+    unzip -q /tmp/awscliv2.zip -d /tmp
+    /tmp/aws/install
+    rm -rf /tmp/awscliv2.zip /tmp/aws
+fi
+
+echo "=== installing the cloud ==="
+%{ for key, value in env ~}
+export ${key}='${replace(value, "'", "'\\''")}'
+%{ endfor ~}
+export WB_CLOUD_DIR="$WB_CLOUD_DIR"
+export WB_CLOUD_VERSION='${wb_cloud_version}'
+export WB_CLOUD_TLS_MODE=route53
+export AWS_DEFAULT_REGION='${region}'
+
+curl -fsSL "https://raw.githubusercontent.com/wirenboard/cloud-on-premise/${bootstrap_ref}/scripts/bootstrap.sh" \
+    -o /tmp/bootstrap.sh
+bash /tmp/bootstrap.sh
+
+echo "=== publishing the credentials ==="
+# Read back out of .env rather than passed in: passwords the installer generated
+# are never known to Terraform, and that is the point.
+python3 - "$WB_CLOUD_DIR/.env" '${secret_id}' <<'PY'
+import json, subprocess, sys
+
+env_path, secret_id = sys.argv[1], sys.argv[2]
+wanted = [
+    "ADMIN_EMAIL", "ADMIN_PASSWORD",
+    "GRAFANA_ADMIN_USER", "GRAFANA_ADMIN_PASSWORD",
+    "TUNNEL_DASHBOARD_USER", "TUNNEL_DASHBOARD_PASSWORD",
+    "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB",
+]
+
+values = {}
+with open(env_path, encoding="utf-8") as handle:
+    for line in handle:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() in wanted:
+            values[key.strip()] = value.strip().strip('"')
+
+subprocess.run(
+    ["aws", "secretsmanager", "put-secret-value",
+     "--secret-id", secret_id,
+     "--secret-string", json.dumps(values)],
+    check=True,
+)
+PY
+
+touch /var/lib/cloud/wb-cloud-installed
+echo "=== done ==="

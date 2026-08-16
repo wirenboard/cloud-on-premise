@@ -54,6 +54,70 @@ Sent metrics, as shown in the backend of the On-Premise instance:
 
 ---
 
+## ☁️ Automatic Installation on AWS (Terraform)
+
+If your domain is delegated to a Route53 hosted zone, the whole installation
+below can be done by a Terraform module shipped in this repository — including
+the DNS records, the wildcard TLS certificate and its renewal, which is the step
+manual installations most often stumble on.
+
+```hcl
+module "wb_cloud" {
+  source = "github.com/wirenboard/cloud-on-premise//terraform/aws?ref=v2.0.0"
+
+  domain          = "cloud.example.com"
+  route53_zone_id = "Z0123456789ABCDEFGHIJ"
+  admin_email     = "admin@example.com"
+
+  wb_cloud_version = "2.0.0"
+}
+```
+
+```bash
+terraform init && terraform apply
+```
+
+15–20 minutes later the cloud answers at `https://cloud.example.com`. The stack
+is the same Docker Compose one this README describes, so everything below —
+`make update`, `make backup`, branding, environment variables — applies to it
+unchanged.
+
+See [terraform/aws/README.md](./terraform/aws/README.md) for the details,
+including email through SES and how upgrades work.
+
+> The rest of this README covers installing by hand: on your own hardware, in
+> another cloud, or with a domain that is not in Route53.
+
+---
+
+## 🤖 Unattended Installation (any host)
+
+`scripts/bootstrap.sh` installs the cloud onto a clean Ubuntu host without an
+editor — meant for cloud-init, Ansible or an image build. It installs Docker,
+fetches the release, builds `.env` and starts the stack:
+
+```bash
+export ABSOLUTE_SERVER=cloud.example.com
+export ADMIN_EMAIL=admin@example.com
+curl -fsSL https://raw.githubusercontent.com/wirenboard/cloud-on-premise/main/scripts/bootstrap.sh | sudo -E bash
+```
+
+The certificate is expected in `/opt/wb-cloud/tls`; put it there and the script
+starts the cloud. `WB_CLOUD_TLS_MODE=route53` makes it issue one itself over the
+DNS-01 challenge instead.
+
+To only build `.env` on an installation you manage yourself, use
+`make init-env` — the same variables, read from the environment:
+
+```bash
+ABSOLUTE_SERVER=cloud.example.com ADMIN_EMAIL=admin@example.com make init-env
+```
+
+Anything not passed and safe to generate is generated. Run `./scripts/init-env.sh --help`
+for the full list.
+
+---
+
 ## ⚙️ Preconfiguration
 
 Before deploying the application, the following steps must be completed:
