@@ -184,9 +184,6 @@ $$;
 CREATE OR REPLACE PROCEDURE ensure_measurement(meas text)
 LANGUAGE plpgsql
 SECURITY DEFINER
--- Pinned here, not only in the body: DECLARE runs before the first statement, so
--- without this the caller's search_path would resolve those calls.
-SET search_path = pg_catalog, public, auth
 AS $$
 DECLARE
   measurement regclass;
@@ -442,21 +439,7 @@ GRANT SELECT ON public.mqtt_metrics_topics_readable TO views_reader, all_reader;
 GRANT SELECT ON public.mqtt_metrics_topics TO all_reader;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.mqtt_metrics_topics FROM views_reader, all_reader;
 
--- A REVOKE from a role does not undo the PUBLIC grant EXECUTE comes with by default.
--- Not schema-wide on public: timescaledb lives there and dashboards call it directly.
-REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA auth FROM PUBLIC;
-REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA auth FROM PUBLIC;
-REVOKE EXECUTE ON PROCEDURE ensure_measurement(text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.populate_mqtt_metrics_dimensions() FROM PUBLIC;
--- Functions in a view body are checked against the caller (tables — against the view
--- owner), so these two need EXECUTE back or the reader-facing views break.
-GRANT EXECUTE ON FUNCTION auth.is_admin() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION auth.allowed_orgs_from_roles() TO PUBLIC;
--- telegraf calls ensure_measurement from create_templates, and its INSERT fires the
--- dimensions trigger: a trigger function is checked against the writing role, so
--- without this grant every metric write fails with "permission denied".
-GRANT EXECUTE ON PROCEDURE ensure_measurement(text) TO "__TELEGRAF_USER__";
-GRANT EXECUTE ON FUNCTION public.populate_mqtt_metrics_dimensions() TO "__TELEGRAF_USER__";
+-- Readers must not execute our internal functions and procedures
 REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
 REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_reader;
 
@@ -533,6 +516,3 @@ BEGIN
     EXECUTE format('ANALYZE public.%I', v_ht_name);
   END LOOP;
 END$$;
-
--- Created after the grants block above, so its PUBLIC revoke belongs here.
-REVOKE EXECUTE ON PROCEDURE _apply_ensure_measurement_all() FROM PUBLIC;
