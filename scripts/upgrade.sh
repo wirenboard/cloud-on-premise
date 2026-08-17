@@ -223,12 +223,19 @@ upgrade() {
     # migration would fail it after the backup had already run.
     if ! fix_users scan >/dev/null 2>&1; then
         say "Accounts changed since the check and no longer fit the 2.x schema." "$RED"
-        echo "Repair them with 'make fix-users MODE=resolve', then run 'make upgrade' again."
-        # 'make run' here would start 2.x, and the images migrate on their own start:
-        # that walks straight into the migration this gate just refused.
-        echo "Nothing has been migrated, and the cloud is stopped. Do NOT run 'make run'"
-        echo "on this checkout — it starts 2.x and migrates anyway. To bring the old"
-        echo "version back, return to its tag first: 'git checkout <old tag> && make run'."
+        echo "Nothing has been migrated, and the cloud is stopped. Two ways out:"
+        echo
+        echo "  repair and carry on, staying on this checkout:"
+        echo "      make fix-users MODE=resolve && make upgrade"
+        echo "  or go back to the old version, code first:"
+        echo "      git checkout <old tag> && make run"
+        echo
+        # 'make run' on this checkout would start 2.x, and the images migrate on their
+        # own start: that walks straight into the migration this gate just refused.
+        # Checking the old tag out first also takes 'make fix-users' away — it only
+        # exists in 2.x — so the two ways out are mutually exclusive, in this order.
+        echo "Do NOT run 'make run' on this checkout: it starts 2.x and migrates anyway."
+        echo "And note the old tag has no 'make fix-users' — repair first, or not at all."
         exit 1
     fi
 
