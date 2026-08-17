@@ -452,8 +452,11 @@ REVOKE EXECUTE ON FUNCTION public.populate_mqtt_metrics_dimensions() FROM PUBLIC
 -- owner), so these two need EXECUTE back or the reader-facing views break.
 GRANT EXECUTE ON FUNCTION auth.is_admin() TO PUBLIC;
 GRANT EXECUTE ON FUNCTION auth.allowed_orgs_from_roles() TO PUBLIC;
--- The only outside caller: telegraf's create_templates does CALL ensure_measurement.
+-- telegraf calls ensure_measurement from create_templates, and its INSERT fires the
+-- dimensions trigger: a trigger function is checked against the writing role, so
+-- without this grant every metric write fails with "permission denied".
 GRANT EXECUTE ON PROCEDURE ensure_measurement(text) TO "__TELEGRAF_USER__";
+GRANT EXECUTE ON FUNCTION public.populate_mqtt_metrics_dimensions() TO "__TELEGRAF_USER__";
 REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
 REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_reader;
 
