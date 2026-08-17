@@ -366,7 +366,10 @@ BEGIN
       WHERE c.hypertable_name   = v_ht_name
         AND c.hypertable_schema = 'public'
         AND c.range_end         < now()
-        AND c.range_end         >= now() - INTERVAL '16 days'
+        -- The scan window must cover the longest per-host retention plus a chunk,
+        -- or chunks age past it before they first qualify and are never cleaned
+        -- per-host (upstream computes this as max_retention + chunk_interval).
+        AND c.range_end         >= now() - INTERVAL '__RETENTION_SAFETY_DAYS__ days'
         AND EXISTS (
           SELECT 1
           FROM auth.host_org_map org

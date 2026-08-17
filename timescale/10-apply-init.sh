@@ -14,15 +14,19 @@ OUT="$(mktemp)"
 : "${TELEGRAF_TIMESCALE_USER:=telegraf}"
 : "${TELEGRAF_TIMESCALE_PASSWORD:=telegraf_password}"
 : "${GRAFANA_TIMESCALE_USER:=grafana}"
-: "${GRAFANA_TIMESCALE_PASSWORD:=grafana_db_password}"
+# Must match the compose default, or a stack without .env overrides bakes one
+# password into the volume while the datasource presents another.
+: "${GRAFANA_TIMESCALE_PASSWORD:=grafana_timescale_password}"
 : "${METRICS_RETENTION_DAYS:=30}"
 # Chunks are dropped a couple of days later than the per-host retention job, so a
 # job that skips a run cannot take data with it.
 RETENTION_SAFETY_DAYS=$((METRICS_RETENTION_DAYS + 2))
 
-# In a sed replacement '/', '&' and backslash are special: a password holding one
-# of them would render broken SQL and fail the very first initialisation.
-esc() { printf '%s' "$1" | sed -e 's![\\/&]!\\&!g'; }
+# The values land inside single-quoted SQL literals, and the whole substitution runs
+# through sed: escape the SQL quote first, then the sed specials. A password holding
+# ', '/', '&' or a backslash would otherwise break the very first initialisation and
+# leave the volume half-initialised (init scripts never re-run on an existing volume).
+esc() { printf '%s' "$1" | sed -e "s/'/''/g" -e 's![\\/&]!\\&!g'; }
 
 sed \
   -e "s/__TELEGRAF_USER__/$(esc "$TELEGRAF_TIMESCALE_USER")/g" \
