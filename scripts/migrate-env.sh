@@ -41,13 +41,10 @@ email_off() {
 SRC="$(mktemp)"; cp "$ENV_FILE" "$SRC"
 trap 'rm -f "$SRC"' EXIT
 
-# Present in the old file is enough to carry a value over, empty included: an empty
-# value can be the operator's deliberate choice (a relay without a password), and
-# only a variable this release introduced is worth demanding.
+# Present is enough to carry a value over, empty included: an empty value can be the
+# operator's deliberate choice, so only variables new in this release are demanded.
 has_old()   { grep -qE "^[[:space:]]*$1=" "$SRC"; }
-# check-env is the single source of truth for what must be set, so the list is read
-# from the Makefile instead of being duplicated here. Variables allowed to stay empty
-# are not demanded either.
+# Read from the Makefile rather than duplicated here: check-env owns that list.
 MAKEFILE="Makefile"
 required_vars() {
     [ -f "$MAKEFILE" ] || return 0
@@ -105,8 +102,7 @@ while IFS= read -r line; do
         elif [ -z "$commented" ] && [ "$var" != "${var#EMAIL_}" ] && email_off; then
             printf '#%s\n' "$line" >> "$tmp"
         elif [ -z "$commented" ] && is_required "$var"; then
-            # Left empty on purpose: check-env refuses an empty required variable, so
-            # the upgrade stops on the value itself instead of on a comment to notice.
+            # Left empty on purpose: check-env stops the upgrade on the empty value.
             printf '%s=\n' "$var" >> "$tmp"
             todo="$todo $var"
         elif [ -z "$commented" ]; then

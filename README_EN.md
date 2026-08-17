@@ -238,7 +238,7 @@ If the variables are not set, the Wiren Board defaults are used. Restart the fro
 
 ## 🚀 Application Deployment
 
-> You need `docker compose v1.21.0` or higher to run the application.
+> To run the application you will need Docker Compose v2 (check: `docker compose version`).
 
 ### 1. Configure Environment Variables
 
@@ -620,9 +620,10 @@ web interface footer, which shows the version). Before `make upgrade`, make sure
   ```sh
   make backup
   ```
-- **The 1.x stack is running.** `migration_doctor` works inside the still-running 1.x
-  backend container. Do not stop the containers before upgrading — `make upgrade` manages
-  them for you.
+- **The 1.x stack is running.** Do not stop the containers before upgrading —
+  `make upgrade` manages them for you. `migration_doctor` runs inside the live backend
+  container, and on a stopped stack (after the gate has taken the application down, say)
+  it runs as a one-off container instead — accounts can be repaired there too.
 - **Every user must have a valid, unique email equal to the login.** That is the point of
   the migration. Conflicts you may have to resolve by hand:
   - **admin with no email** (typical 1.x case: `username="admin"`, `email=""`) —
@@ -633,9 +634,10 @@ web interface footer, which shows the version). Before `make upgrade`, make sure
   - **users with no email** — a real email must be supplied for each;
   - **duplicate emails** (case-insensitive) — only one owner can keep it; the rest need a
     different address.
-- **InfluxDB metrics are not converted.** Metric history is preserved as a backup
-  alongside; new metrics accumulate in TimescaleDB from scratch. Keep
-  `./backups/influx-<ts>/` if the historical metrics DB matters to you.
+- **InfluxDB metrics are not converted.** The history is copied alongside when it can
+  be; new metrics accumulate in TimescaleDB from scratch. If the upgrade warned that the
+  copy is empty, the history lives only in the `influxData` docker volume — do not delete
+  it. The copy is written to `./backups/influx-<ts>/`.
 - **The server can carry 2.0.** Compared to 1.5.0 the stack gains TimescaleDB, Telegraf,
   Grafana, dedicated metrics and email workers and a second backend for webhooks — it
   needs more memory. The pre-flight check only watches the disk, so check against the

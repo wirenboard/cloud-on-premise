@@ -56,8 +56,7 @@ backup() {
     # Once the configuration has been migrated the newest .env.bak is itself 2.x and no
     # longer carries the token, so take it from the container that is still running on it.
     [ -z "$token" ] && token="$(docker exec "$cid" printenv DOCKER_INFLUXDB_INIT_ADMIN_TOKEN 2>/dev/null || true)"
-    # Leftovers from an earlier run would pass the non-empty check below and pass a
-    # stale copy off as a fresh one.
+    # Leftovers from an earlier run would pass the non-empty check below as fresh.
     docker exec "$cid" rm -rf /tmp/influx-backup 2>/dev/null || true
     docker exec "$cid" influx backup /tmp/influx-backup -t "$token" >/dev/null 2>&1 || true
     mkdir -p "$dir"
@@ -205,9 +204,8 @@ upgrade() {
     app_services="$(compose config --services | grep -vE '^(postgres|timescale|redis|minio|minio-client)$' | tr '\n' ' ')"
     compose stop $app_services
 
-    # 1.x services gone from the 2.x compose file (influx, worker-influx) are not in
-    # that list, and the 1.x worker would keep writing under the old schema right
-    # through the migration. The backup is done, so stop every orphan too.
+    # The list above misses 1.x-only services (influx, worker-influx), and that worker
+    # would keep writing under the old schema through the migration. Backup is done.
     local proj known name svc
     proj="$(docker inspect "$(compose ps -q postgres)" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
     known="$(compose config --services)"
@@ -230,10 +228,8 @@ upgrade() {
         echo "  or go back to the old version, code first:"
         echo "      git checkout <old tag> && make run"
         echo
-        # 'make run' on this checkout would start 2.x, and the images migrate on their
-        # own start: that walks straight into the migration this gate just refused.
-        # Checking the old tag out first also takes 'make fix-users' away — it only
-        # exists in 2.x — so the two ways out are mutually exclusive, in this order.
+        # Both traps are in the message: 2.x images migrate on their own start, and the
+        # old tag has no fix-users, so the two ways out exclude each other.
         echo "Do NOT run 'make run' on this checkout: it starts 2.x and migrates anyway."
         echo "And note the old tag has no 'make fix-users' — repair first, or not at all."
         exit 1

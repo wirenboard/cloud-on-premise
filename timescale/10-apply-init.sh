@@ -22,10 +22,8 @@ OUT="$(mktemp)"
 # job that skips a run cannot take data with it.
 RETENTION_SAFETY_DAYS=$((METRICS_RETENTION_DAYS + 2))
 
-# The values land inside single-quoted SQL literals, and the whole substitution runs
-# through sed: escape the SQL quote first, then the sed specials. A password holding
-# ', '/', '&' or a backslash would otherwise break the very first initialisation and
-# leave the volume half-initialised (init scripts never re-run on an existing volume).
+# Values land in single-quoted SQL and go through sed: escape the SQL quote, then the
+# sed specials. Otherwise such a password breaks init, and init never runs twice.
 esc() { printf '%s' "$1" | sed -e "s/'/''/g" -e 's![\\/&]!\\&!g'; }
 
 sed \

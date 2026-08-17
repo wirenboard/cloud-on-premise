@@ -328,8 +328,7 @@ def dump_yaml(path):
             "# to skip a row (it will still count as an unresolved conflict).\n"
         )
         yaml.safe_dump(records, fh, allow_unicode=True, sort_keys=False)
-    # The wrapper script chowns the copy to the operator, who edits it next; wider
-    # than 0644 would let any local user slip their own email into the admin row.
+    # Wider than 0644 would let a local user edit the admin row between dump and apply.
     try:
         os.chmod(path, 0o644)
     except OSError:

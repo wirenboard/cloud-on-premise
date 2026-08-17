@@ -56,8 +56,7 @@ ifeq ($(EMAIL_DISABLED),0)
 REQUIRED_VARS += $(EMAIL_REQUIRED_VARS)
 endif
 
-# Required to be present, but an empty value is a legitimate answer: a relay that
-# takes mail without authentication.
+# Empty is a legitimate answer here: a relay that takes mail without authentication.
 ALLOW_EMPTY_VARS := EMAIL_HOST_USER EMAIL_HOST_PASSWORD
 
 #----- [ DOMAIN & CERTIFICATES ] ----------------------------------------------
