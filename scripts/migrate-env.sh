@@ -2,13 +2,12 @@
 # Rebuilds .env from .env.example, carrying over the values of the previous
 # release: same-named variables as they are, renamed ones under their new names,
 # generated secrets (keys, tokens) untouched. Whatever this release added and
-# cannot derive is left with the example value and marked, and the upgrade stops
-# until the operator has filled those in. The previous file is kept alongside.
+# cannot derive is left EMPTY, and check-env stops the upgrade on the empty value
+# itself — no marker to notice and delete. The previous file is kept alongside.
 set -euo pipefail
 
 ENV_FILE=".env"
 TEMPLATE=".env.example"
-MARK="# <<< FILL IN"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
 say() { printf "%b%s%b\n" "$2" "$1" "$NC"; }
@@ -42,11 +41,27 @@ email_off() {
 SRC="$(mktemp)"; cp "$ENV_FILE" "$SRC"
 trap 'rm -f "$SRC"' EXIT
 
-# A line still carrying the mark is not a value: a second run must keep asking
-# for it instead of copying the placeholder over as if it were filled in.
-marked()    { grep -E "^[[:space:]]*$1=" "$SRC" | grep -qF "$MARK"; }
-has_old()   { grep -qE "^[[:space:]]*$1=" "$SRC" && ! marked "$1"; }
-old_value() { grep -E "^[[:space:]]*$1=" "$SRC" | tail -1 | cut -d= -f2- | sed "s/[[:space:]]*# <<<.*//"; }
+# Present in the old file is enough to carry a value over, empty included: an empty
+# value can be the operator's deliberate choice (a relay without a password), and
+# only a variable this release introduced is worth demanding.
+has_old()   { grep -qE "^[[:space:]]*$1=" "$SRC"; }
+# check-env is the single source of truth for what must be set, so the list is read
+# from the Makefile instead of being duplicated here. Variables allowed to stay empty
+# are not demanded either.
+MAKEFILE="Makefile"
+required_vars() {
+    [ -f "$MAKEFILE" ] || return 0
+    awk '/^(EMAIL_)?REQUIRED_VARS[[:space:]]*[:+]?=/{f=1} f{print; if ($0 !~ /\\$/) f=0}' "$MAKEFILE" \
+      | grep -oE '[A-Z][A-Z0-9_]{2,}' | grep -vE '^(EMAIL_)?REQUIRED_VARS$' | sort -u
+    awk '/^ALLOW_EMPTY_VARS[[:space:]]*[:+]?=/{print}' "$MAKEFILE" \
+      | grep -oE '[A-Z][A-Z0-9_]{2,}' | grep -v '^ALLOW_EMPTY_VARS$' | sed 's/^/-/'
+}
+REQ="$(required_vars || true)"
+is_required() {
+    printf '%s\n' "$REQ" | grep -qx -- "-$1" && return 1
+    printf '%s\n' "$REQ" | grep -qx -- "$1"
+}
+old_value() { grep -E "^[[:space:]]*$1=" "$SRC" | tail -1 | cut -d= -f2-; }
 old_names() { grep -oE '^[[:space:]]*[A-Z_][A-Z0-9_]*=' "$SRC" | tr -d '= \t'; }
 is_obsolete() { printf '%s' "$OBSOLETE" | grep -qw -- "$1"; }
 
@@ -58,7 +73,7 @@ for var in $(grep -oE '^[A-Z_][A-Z0-9_]*=' "$TEMPLATE" | tr -d '='); do
 done
 leftovers=0
 for var in $(old_names); do is_obsolete "$var" && leftovers=1; done
-if [ "$missing" -eq 0 ] && [ "$leftovers" -eq 0 ] && ! grep -q "$MARK" "$ENV_FILE"; then
+if [ "$missing" -eq 0 ] && [ "$leftovers" -eq 0 ]; then
     exit 0
 fi
 
@@ -89,9 +104,14 @@ while IFS= read -r line; do
             renamed="$renamed|EMAIL_PROTOCOL -> EMAIL_USE_TLS/EMAIL_USE_SSL"
         elif [ -z "$commented" ] && [ "$var" != "${var#EMAIL_}" ] && email_off; then
             printf '#%s\n' "$line" >> "$tmp"
-        elif [ -z "$commented" ]; then
-            printf '%s  %s\n' "$line" "$MARK" >> "$tmp"
+        elif [ -z "$commented" ] && is_required "$var"; then
+            # Left empty on purpose: check-env refuses an empty required variable, so
+            # the upgrade stops on the value itself instead of on a comment to notice.
+            printf '%s=\n' "$var" >> "$tmp"
             todo="$todo $var"
+        elif [ -z "$commented" ]; then
+            # Not required: the example value is a working default, keep it.
+            printf '%s\n' "$line" >> "$tmp"
         else
             printf '%s\n' "$line" >> "$tmp"
         fi
@@ -125,9 +145,8 @@ echo "  carried over: $(printf '%s\n' $carried | grep -c .) variable(s)"
 
 if [ -n "$todo" ]; then
     echo
-    say "This release added variables that cannot be derived from the old file:" "$YELLOW"
-    printf '    %s\n' $todo
-    echo
-    say "Open $ENV_FILE, fill in every line marked '$MARK' and remove the mark, then re-run 'make upgrade'." "$YELLOW"
+    say "This release added variables that cannot be derived from the old file." "$YELLOW"
+    say "They are left EMPTY in $ENV_FILE — set a value for each and re-run 'make upgrade':" "$YELLOW"
+    printf '    %s=\n' $todo
     exit 1
 fi

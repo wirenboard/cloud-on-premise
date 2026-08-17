@@ -56,6 +56,10 @@ ifeq ($(EMAIL_DISABLED),0)
 REQUIRED_VARS += $(EMAIL_REQUIRED_VARS)
 endif
 
+# Required to be present, but an empty value is a legitimate answer: a relay that
+# takes mail without authentication.
+ALLOW_EMPTY_VARS := EMAIL_HOST_USER EMAIL_HOST_PASSWORD
+
 #----- [ DOMAIN & CERTIFICATES ] ----------------------------------------------
 
 RAW_SERVER      := $(shell grep -E '^ABSOLUTE_SERVER=' $(ENV_FILE) | head -1 | cut -d= -f2- | tr -d '[:space:]')
@@ -198,6 +202,10 @@ endif
 	for var in $(REQUIRED_VARS); do \
 		if ! grep -Eq '^[[:space:]]*'$${var}'=' $(ENV_FILE); then \
 			printf "$(RED)ERROR: Required variable '%s' is missing or commented out in %s.$(NC)\n" "$${var}" "$(ENV_FILE)"; \
+			result=1; \
+		elif [ -z "$$(grep -E '^[[:space:]]*'$${var}'=' $(ENV_FILE) | tail -1 | cut -d= -f2- | tr -d '[:space:]\"')" ] \
+		     && ! printf '%s\n' $(ALLOW_EMPTY_VARS) | grep -qx "$${var}"; then \
+			printf "$(RED)ERROR: Required variable '%s' is empty in %s — set a value.$(NC)\n" "$${var}" "$(ENV_FILE)"; \
 			result=1; \
 		fi; \
 	done; \

@@ -661,10 +661,10 @@ all pass — run it as many times as you need:
 
 1. **Configuration.** `.env` is rebuilt from `.env.example`: same-named variables carry over as they
    are, renamed ones under their new names, keys and tokens verbatim. The previous file stays
-   alongside as `.env.bak-<date>`. Anything the old file did not have is marked `# <<< FILL IN`:
-   write the value in **and remove the mark** — a line still carrying the mark does not count
-   as a value, and the next run puts the example back. Several runs leave several
-   `.env.bak-*` copies; the 1.x configuration is in the oldest one.
+   alongside as `.env.bak-<date>`. Required variables whose value cannot be derived are
+   left **empty** — fill them in, or the check will not let the upgrade through: an empty
+   required variable counts as unset. Optional ones get the example value. Several runs
+   leave several `.env.bak-*` copies; the 1.x configuration is in the oldest one.
 2. **Environment variables** — every required one is set (`make check-env`).
 3. **Certificate** — covers every domain, including `*.apps.<domain>` (`make check-certs`).
 4. **Disk space** — at least 6 GB on the partition holding the repository (that is the one
