@@ -611,41 +611,65 @@ web interface footer, which shows the version). Before `make upgrade`, make sure
   `make check-certs` before the backup: reissue the certificate (see
   [4. TLS Certificates](#4-tls-certificates)) and add the `*.apps` DNS record.
 - **There is room for the backup.** The backup (`pg_dump` + `influx backup`) is written
-  to `./backups` — ensure there is disk space for a copy of the database. The command
-  takes the backup itself, **before** any change; a manual backup is not required but does
-  no harm.
+  to `./backups` — ensure there is disk space for a copy of the database. `make upgrade`
+  takes its own backup before the migration. But if the accounts need repairing (see
+  below), dump the database by hand **first**: `make fix-users` in every mode except
+  `scan` rewrites the user table in the live database before any automatic backup
+  exists, and the previous login/email pairs are not recorded anywhere.
+
+  ```sh
+  make backup
+  ```
 - **The 1.x stack is running.** `migration_doctor` works inside the still-running 1.x
   backend container. Do not stop the containers before upgrading — `make upgrade` manages
   them for you.
 - **Every user must have a valid, unique email equal to the login.** That is the point of
   the migration. Conflicts you may have to resolve by hand:
-  - **admin with no email** (typical 1.x case: `username="admin"`, `email=""`) — set
-    `ADMIN_EMAIL` in `.env` and it is fixed automatically;
+  - **admin with no email** (typical 1.x case: `username="admin"`, `email=""`) —
+    `MODE=auto` assigns it `ADMIN_EMAIL`, but reads the value from the environment of
+    the already-running backend container: a value you just wrote into `.env` is not
+    seen. If you are editing `.env` now, recreate the container (`make run`) or set
+    the address by hand via `MODE=resolve`;
   - **users with no email** — a real email must be supplied for each;
   - **duplicate emails** (case-insensitive) — only one owner can keep it; the rest need a
     different address.
 - **InfluxDB metrics are not converted.** Metric history is preserved as a backup
   alongside; new metrics accumulate in TimescaleDB from scratch. Keep
   `./backups/influx-<ts>/` if the historical metrics DB matters to you.
+- **The server can carry 2.0.** Compared to 1.5.0 the stack gains TimescaleDB, Telegraf,
+  Grafana, dedicated metrics and email workers and a second backend for webhooks — it
+  needs more memory. The pre-flight check only watches the disk, so check against the
+  [system requirements](#minimum-system-requirements) and
+  [background task performance](#background-task-performance) beforehand.
 - **If there are no conflicts** (everyone already has a valid, unique email = login) the
   migration runs **with zero manual steps**: `make upgrade` backs up, scans, migrates, and
   brings up the 2.0 stack on its own.
 
-A single command does the whole thing:
+Update the checkout to 2.0 and start the upgrade — the `upgrade` target only exists in
+2.0, a 1.x checkout does not have it:
 
 ```sh
+git pull
 make upgrade
 ```
+
+Without a terminal (e.g. `ssh host 'make upgrade'`) the confirmation cannot be asked —
+run `make upgrade CONFIRM=yes`.
 
 The command first runs its checks **while the cloud keeps serving** and changes nothing until they
 all pass — run it as many times as you need:
 
 1. **Configuration.** `.env` is rebuilt from `.env.example`: same-named variables carry over as they
    are, renamed ones under their new names, keys and tokens verbatim. The previous file stays
-   alongside as `.env.bak-<date>`. Anything the old file did not have is marked `# <<< FILL IN`.
+   alongside as `.env.bak-<date>`. Anything the old file did not have is marked `# <<< FILL IN`:
+   write the value in **and remove the mark** — a line still carrying the mark does not count
+   as a value, and the next run puts the example back. Several runs leave several
+   `.env.bak-*` copies; the 1.x configuration is in the oldest one.
 2. **Environment variables** — every required one is set (`make check-env`).
 3. **Certificate** — covers every domain, including `*.apps.<domain>` (`make check-certs`).
-4. **Disk space** — at least 6 GB for the new images.
+4. **Disk space** — at least 6 GB on the partition holding the repository (that is the one
+   the check looks at). If Docker keeps its images on another partition, check that one
+   too: `docker info --format '{{.DockerRootDir}}'`.
 5. **Images** — downloaded in advance so the downtime does not wait for them.
 6. **User accounts** — compatible with the 2.0 schema (the check only reads the database).
 
@@ -661,7 +685,16 @@ downtime start:
 4. **Start.** Controllers are handed their metrics collector config right away, without waiting for
    the half-hourly cycle.
 
-See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for the expected downtime and the rollback.
+After the upgrade, put out the 1.x leftovers: the `influx` and `worker-influx` services do
+not exist in 2.0, so the upgrade does not touch them and their containers keep running on
+the old images. The `influxData` volume with the metrics history stays in place.
+
+```sh
+VERSION=$(cat VERSION) docker compose up -d --remove-orphans
+```
+
+See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for the expected downtime and the rollback
+procedure (the release notes are in Russian; the rollback commands are reproduced below).
 
 ### Resolving user conflicts
 
@@ -669,19 +702,25 @@ See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for the expected downtime and
 Django ORM, touching only `username`/`email`) and is idempotent — run it until 0
 conflicts remain.
 
+Of the modes below only `scan` leaves the database untouched; `auto`, `resolve` and
+`dump` all start with the same auto-fixes.
+
 ```sh
-# Read-only conflict report:
+# Only report the conflicts — the one mode that changes nothing:
 make fix-users MODE=scan
 
-# Apply the safe auto-fixes (lowercase email; collapse case/whitespace-only
-# differences; admin email from ADMIN_EMAIL):
+# Auto-fixes: an admin with an empty email gets ADMIN_EMAIL; an empty email whose
+# login is itself an address adopts it; when login and email differ, the email wins —
+# the user's login becomes the address. Empty addresses with nothing to derive from,
+# and duplicates, are left to a human:
 make fix-users MODE=auto
 
-# Interactive wizard: prompts for the correct email per conflict, validating the
-# address and checking for collisions:
+# Interactive wizard: the same auto-fixes first, then a prompt per remaining
+# conflict, validating the address and checking for collisions:
 make fix-users MODE=resolve
 
-# Headless (no TTY): dump conflicts to a file, edit it, apply:
+# Headless (no TTY): dump conflicts to a file, edit it, apply. The dump is also
+# preceded by the auto-fixes, so the file only holds what needs a decision:
 make fix-users MODE=dump          # writes migration/conflicts.yaml
 #   ...edit the new_email field on each row...
 make fix-users MODE=apply         # reads the file back
@@ -690,8 +729,25 @@ make fix-users MODE=apply         # reads the file back
 When `make fix-users MODE=scan` reports `Conflicts: 0`, re-run `make upgrade`:
 migration applies and the 2.0 image comes up.
 
-> The backup `./backups/pg-<ts>.sql.gz` is your safety net. If migration is
-> interrupted for any reason, restore the database from that dump and retry.
+> The backup `./backups/pg-<ts>.sql.gz` is your safety net. If the migration is
+> interrupted, do **not** re-run it on this checkout: some migrations have already been
+> applied, and the 2.x images migrate on their own start. Go back to the previous
+> version together with the database — and in exactly this order:
+>
+> ```sh
+> git checkout v1.5.0
+> VERSION=$(cat VERSION) docker compose down --remove-orphans
+> cp "$(ls -tr .env.bak-* | head -1)" .env
+> VERSION=$(cat VERSION) docker compose up -d postgres
+> docker compose exec -T postgres dropdb -U <POSTGRES_USER> <POSTGRES_DB>
+> docker compose exec -T postgres createdb -U <POSTGRES_USER> -O <POSTGRES_USER> <POSTGRES_DB>
+> gunzip -c backups/pg-<date>.sql.gz | docker compose exec -T postgres psql -U <POSTGRES_USER> -d <POSTGRES_DB>
+> make run
+> ```
+>
+> The `.env` must come from the **oldest** `.env.bak-*`: only that copy is still in the
+> 1.x format. The database must be dropped and recreated first, or the restore trips
+> over the existing tables.
 
 ---
 
