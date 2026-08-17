@@ -79,8 +79,11 @@ while IFS= read -r line; do
             printf '%s=%s\n' "$var" "$(old_value "$src")" >> "$tmp"
             renamed="$renamed|$src -> $var"
         elif [ "$var" = "EMAIL_USE_TLS" ] && has_old EMAIL_PROTOCOL; then
-            case "$(old_value EMAIL_PROTOCOL)" in
+            # Bare smtp means an unencrypted relay (port 25): forcing TLS on it would
+            # silently stop the mail.
+            case "$(old_value EMAIL_PROTOCOL | tr '[:upper:]' '[:lower:]')" in
                 *ssl*) printf 'EMAIL_USE_TLS=False\nEMAIL_USE_SSL=True\n' >> "$tmp" ;;
+                smtp)  printf 'EMAIL_USE_TLS=False\n' >> "$tmp" ;;
                 *)     printf 'EMAIL_USE_TLS=True\n' >> "$tmp" ;;
             esac
             renamed="$renamed|EMAIL_PROTOCOL -> EMAIL_USE_TLS/EMAIL_USE_SSL"

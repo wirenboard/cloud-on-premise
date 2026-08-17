@@ -56,6 +56,9 @@ backup() {
     # Once the configuration has been migrated the newest .env.bak is itself 2.x and no
     # longer carries the token, so take it from the container that is still running on it.
     [ -z "$token" ] && token="$(docker exec "$cid" printenv DOCKER_INFLUXDB_INIT_ADMIN_TOKEN 2>/dev/null || true)"
+    # Leftovers from an earlier run would pass the non-empty check below and pass a
+    # stale copy off as a fresh one.
+    docker exec "$cid" rm -rf /tmp/influx-backup 2>/dev/null || true
     docker exec "$cid" influx backup /tmp/influx-backup -t "$token" >/dev/null 2>&1 || true
     mkdir -p "$dir"
     docker cp "$cid:/tmp/influx-backup/." "$dir/" 2>/dev/null || true
@@ -201,6 +204,20 @@ upgrade() {
     local app_services
     app_services="$(compose config --services | grep -vE '^(postgres|timescale|redis|minio|minio-client)$' | tr '\n' ' ')"
     compose stop $app_services
+
+    # 1.x services gone from the 2.x compose file (influx, worker-influx) are not in
+    # that list, and the 1.x worker would keep writing under the old schema right
+    # through the migration. The backup is done, so stop every orphan too.
+    local proj known name svc
+    proj="$(docker inspect "$(compose ps -q postgres)" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+    known="$(compose config --services)"
+    if [ -n "$proj" ]; then
+        docker ps --filter "label=com.docker.compose.project=$proj" \
+                  --format '{{.Names}} {{.Label "com.docker.compose.service"}}' \
+        | while read -r name svc; do
+            printf '%s\n' "$known" | grep -qx "$svc" || docker stop "$name" >/dev/null 2>&1 || true
+        done
+    fi
 
     # Re-check with nothing writing: a registration between the check and the
     # migration would fail it after the backup had already run.

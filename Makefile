@@ -204,7 +204,12 @@ endif
 	if [ $$result -eq 0 ]; then \
 		printf "$(GREEN)All required variables are present.$(NC)\n"; \
 	else \
-		printf "$(YELLOW)Variables introduced by a newer release are listed in %s — copy the missing ones over and set your own values.$(NC)\n" "$(ENV_EXAMPLE)"; \
+		if grep -Eq '^[[:space:]]*(INFLUXDB_TOKEN|ADMIN_USERNAME|EMAIL_PROTOCOL)=' $(ENV_FILE); then \
+			printf "$(YELLOW)This .env looks like a 1.x one. Do NOT patch it by hand — run 'make upgrade':$(NC)\n"; \
+			printf "$(YELLOW)it migrates the configuration, backs the database up and repairs the accounts first.$(NC)\n"; \
+		else \
+			printf "$(YELLOW)Variables introduced by a newer release are listed in %s — copy the missing ones over and set your own values.$(NC)\n" "$(ENV_EXAMPLE)"; \
+		fi; \
 		exit 1; \
 	fi
 
