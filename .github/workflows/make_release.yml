@@ -124,6 +124,7 @@ jobs:
             VERSION
             CHANGELOG.md
             CHANGELOG_EN.md
+            RELEASE_NOTES_2.0.md
             LICENSE
             README.md
             README_EN.md
@@ -132,6 +133,7 @@ jobs:
             docker-compose.yml
             traefik/**
             jwt/**
+            scripts/**
             timescale/**
             telegraf/**
             grafana/**
