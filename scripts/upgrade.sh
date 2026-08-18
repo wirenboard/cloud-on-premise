@@ -93,38 +93,65 @@ fix_users() {
     fi
 
     # Fallback for a stopped stack: bind-mount and run privileged, then hand the
-    # file back to whoever owns the checkout.
-    compose run --rm --user root -v "$PWD/$MIGRATION_DIR:/migration" backend \
+    # file back to whoever owns the checkout. --no-deps: the doctor needs only
+    # postgres; the full dependency tree would create the metrics volume early.
+    compose up -d postgres >/dev/null 2>&1 || true
+    compose run --rm --no-deps --user root -v "$PWD/$MIGRATION_DIR:/migration" backend \
         sh -c "$(doctor_cmd "$mode" /migration/migration_doctor.py /migration/conflicts.yaml)" || rc=$?
     chown -R --reference="$ENV_FILE" "$MIGRATION_DIR" 2>/dev/null || true
     return $rc
 }
 
+# The metrics store bakes its credentials into its volume on first start, so a
+# volume that predates the passwords in .env can never be logged into again.
+metrics_volume_name() {
+    local proj
+    proj="$(compose config --format json 2>/dev/null | sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' | head -1)"
+    [ -n "$proj" ] || proj="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
+    printf '%s_timescaleData' "$proj"
+}
+
 # Runs while the cloud keeps serving: nothing here touches the database or stops a
 # service, so a failed run costs nothing.
 check_upgrade() {
-    local ready=1 n=0 total=6
+    local ready=1 config_ok=1 n=0 total=6
     step() { n=$((n + 1)); say "$n/$total $1" "$NC"; }
 
     step "Configuration and secrets"
+    # A rolled-back upgrade restores a .env without the passwords the volume was
+    # created with; fresh ones would silently lock telegraf and Grafana out.
+    if [ -z "$(env_value TIMESCALE_PASSWORD)" ] && docker volume inspect "$(metrics_volume_name)" >/dev/null 2>&1; then
+        say "    the metrics store volume '$(metrics_volume_name)' already exists, but .env has no metrics passwords" "$RED"
+        say "    Passwords are baked into the volume when it is created — fresh ones would not match it." "$YELLOW"
+        say "    Either put the previous TIMESCALE_*/TELEGRAF_*/GRAFANA_TIMESCALE_* values back into .env," "$YELLOW"
+        say "    or drop the volume (it only holds 2.x metrics): docker volume rm $(metrics_volume_name)" "$YELLOW"
+        return 1
+    fi
     # Before the migration, so the new passwords are carried over into the 2.x file
     # like any other value: the metrics store bakes them in when it first starts.
     make generate-metrics-passwords >/dev/null || ready=0
     bash ./scripts/migrate-env.sh || ready=0
+    config_ok=$ready
 
-    if [ "$ready" -eq 1 ]; then
-        step "Environment variables"
-        make check-env >/dev/null || ready=0
-        [ "$ready" -eq 1 ] && say "    all required variables are set" "$GREEN"
+    step "Environment variables"
+    if [ "$config_ok" -eq 0 ]; then
+        say "    skipped: fix the configuration above first" "$YELLOW"
+    elif make check-env >/dev/null; then
+        say "    all required variables are set" "$GREEN"
+    else
+        say "    some required variables are missing or empty — 'make check-env' prints the list" "$RED"
+        ready=0
+    fi
 
-        step "TLS certificate"
-        if make check-certs >/dev/null 2>&1; then
-            say "    covers every required domain" "$GREEN"
-        else
-            say "    certificate does not cover all required domains — run 'make check-certs' for details" "$RED"
-            say "    2.x additionally needs *.apps.<domain>; reissuing it takes a DNS challenge, so do it in advance" "$YELLOW"
-            ready=0
-        fi
+    step "TLS certificate"
+    if [ "$config_ok" -eq 0 ]; then
+        say "    skipped: fix the configuration above first" "$YELLOW"
+    elif make check-certs >/dev/null 2>&1; then
+        say "    covers every required domain" "$GREEN"
+    else
+        say "    certificate does not cover all required domains — run 'make check-certs' for details" "$RED"
+        say "    2.x additionally needs *.apps.<domain>; reissuing it takes a DNS challenge, so do it in advance" "$YELLOW"
+        ready=0
     fi
 
     step "Disk space"

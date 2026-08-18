@@ -239,6 +239,11 @@ make fix-users MODE=apply         # reads the file back
 When `make fix-users MODE=scan` reports `Conflicts: 0`, run `make upgrade` again — the
 migration will go through and the 2.0 image will come up.
 
+> ⚠️ Do not restart the 1.x stack between repairing the accounts and upgrading: on
+> every start 1.x re-creates the `admin` user with the address from `ADMIN_EMAIL`,
+> and the database gets a duplicate again. The upgrade will notice and stop — then
+> re-run `make fix-users` and give the re-created `admin` any other address.
+
 ### If something goes wrong
 
 Until the confirmation is given, the migration has not run and the cloud is working. But by
@@ -272,15 +277,30 @@ together with the database — and in exactly this order:
    The second command clears the unfinished-upgrade marker: while it is there,
    `make run` and `make update` on a 2.0 checkout refuse to start.
 
+   If the upgrade got far enough to create the 2.x metrics store, remove its volume:
+   the passwords are baked into it on creation, and you have just restored a `.env`
+   without them — the next `make upgrade` will generate new ones, and telegraf and
+   Grafana would silently fail to connect. The volume only holds 2.x metrics, which
+   you do not have yet; the InfluxDB history is not touched:
+
+   ```bash
+   docker compose rm -sf timescale 2>/dev/null || true
+   docker volume rm "$(basename "$PWD")_timescaleData" 2>/dev/null || true
+   ```
+
 3. **Restore the database** from the dump taken before the migration. The existing database has
    to be recreated, or the restore trips over the tables that are already there:
 
    ```bash
-   VERSION=$(cat VERSION) docker compose up -d postgres
+   export VERSION=$(cat VERSION)
+   docker compose up -d postgres
    docker compose exec -T postgres dropdb -U <POSTGRES_USER> <POSTGRES_DB>
    docker compose exec -T postgres createdb -U <POSTGRES_USER> -O <POSTGRES_USER> <POSTGRES_DB>
    gunzip -c backups/pg-<date>.sql.gz | docker compose exec -T postgres psql -U <POSTGRES_USER> -d <POSTGRES_DB>
    ```
+
+   `export VERSION` is needed by every `docker compose` command — without it compose
+   prints a "VERSION variable is not set" warning on each call.
 
 4. **Start the previous version:** `make run`.
 

@@ -242,6 +242,11 @@ make fix-users MODE=apply         # читает файл обратно
 Когда `make fix-users MODE=scan` сообщает `Conflicts: 0`, повторно запустите
 `make upgrade` — миграция пройдёт, образ 2.0 поднимется.
 
+> ⚠️ Не перезапускайте стек 1.x между ремонтом учёток и обновлением: при каждом
+> старте 1.x заново создаёт пользователя `admin` с адресом из `ADMIN_EMAIL`, и в
+> базе снова появляется дубль. Обновление это заметит и остановится — тогда
+> повторите `make fix-users` и дайте пересозданному `admin` любой другой адрес.
+
 ### Если что-то пошло не так
 
 Пока подтверждение не дано, миграция не выполнялась и облако работает. Но к этому моменту уже
@@ -274,15 +279,29 @@ make fix-users MODE=apply         # читает файл обратно
    Второй командой снимается отметка о незавершённом обновлении: пока она на месте,
    `make run` и `make update` на чекауте 2.0 отказываются стартовать.
 
+   Если обновление успело создать хранилище метрик 2.x, удалите его том: пароли
+   запекаются в него при создании, а вы только что вернули `.env` без них — следующий
+   `make upgrade` сгенерирует новые, и telegraf с Grafana молча не смогут подключиться.
+   Том держит только метрики 2.x, которых у вас ещё нет; история InfluxDB не трогается:
+
+   ```bash
+   docker compose rm -sf timescale 2>/dev/null || true
+   docker volume rm "$(basename "$PWD")_timescaleData" 2>/dev/null || true
+   ```
+
 3. **Восстановите базу** из дампа, снятого перед миграцией. Существующую базу нужно пересоздать,
    иначе восстановление наткнётся на уже существующие таблицы:
 
    ```bash
-   VERSION=$(cat VERSION) docker compose up -d postgres
+   export VERSION=$(cat VERSION)
+   docker compose up -d postgres
    docker compose exec -T postgres dropdb -U <POSTGRES_USER> <POSTGRES_DB>
    docker compose exec -T postgres createdb -U <POSTGRES_USER> -O <POSTGRES_USER> <POSTGRES_DB>
    gunzip -c backups/pg-<дата>.sql.gz | docker compose exec -T postgres psql -U <POSTGRES_USER> -d <POSTGRES_DB>
    ```
+
+   `export VERSION` нужен каждой команде `docker compose` — без него compose печатает
+   предупреждение "VERSION variable is not set" на каждый вызов.
 
 4. **Запустите прежнюю версию:** `make run`.
 
