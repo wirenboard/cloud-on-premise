@@ -107,6 +107,36 @@ help:
 	@printf "  generate-django-secret   Generate Django secret key\n"
 
 #------------------------------------------------------------------------------
+# [ 1.x GUARD ] ---------------------------------------------------------------
+
+# The 2.x images run their migrations as they start, and that migration aborts on
+# an unrepaired 1.x database — so every target that starts the stack has to refuse
+# while the installation is still on 1.x. Only `make upgrade` may proceed: it backs
+# up, repairs the accounts and migrates in the right order. Both signals disappear
+# once the upgrade is done, which is what lets `make update` work again afterwards.
+.PHONY: check-not-1x
+check-not-1x:
+	@if [ -f backups/.upgrade-unfinished ]; then \
+		printf "$(RED)ERROR: an upgrade was interrupted after its backup — the database may be half-migrated.$(NC)\n"; \
+		printf "$(YELLOW)Starting the stack now would migrate on top of that. Finish the upgrade instead:$(NC)\n"; \
+		printf "$(YELLOW)  make fix-users MODE=scan   see what stopped it\n  make upgrade               run it again$(NC)\n"; \
+		printf "$(YELLOW)To go back instead, follow the rollback in RELEASE_NOTES_2.0.md — it clears this state.$(NC)\n"; \
+		exit 1; \
+	fi
+	@old_img="$$(docker ps --format '{{.Image}}' 2>/dev/null | grep -E 'on-premise/wbc-' | sed 's/.*://' | awk -F. '$$1 ~ /^[0-9]+$$/ && $$1 < 2' | sort -u | head -1)"; \
+	if grep -Eq '^[[:space:]]*(INFLUXDB_TOKEN|ADMIN_USERNAME|EMAIL_PROTOCOL)=' $(ENV_FILE) 2>/dev/null; then \
+		old_env="its $(ENV_FILE) is still the 1.x one"; \
+	fi; \
+	if [ -n "$$old_img" ] || [ -n "$${old_env:-}" ]; then \
+		printf "$(RED)ERROR: this installation is still on 1.x%s.$(NC)\n" "$${old_img:+ (running $$old_img)}$${old_env:+ ($$old_env)}"; \
+		printf "$(YELLOW)Starting %s here would migrate the database on image start, and that$(NC)\n" "$(VERSION)"; \
+		printf "$(YELLOW)migration aborts on a 1.x database: the cloud stops and no backup exists.$(NC)\n"; \
+		printf "$(YELLOW)Run 'make upgrade' instead — it backs up, repairs the accounts and$(NC)\n"; \
+		printf "$(YELLOW)migrates in the right order. Afterwards 'make update' works as usual.$(NC)\n"; \
+		exit 1; \
+	fi
+
+#------------------------------------------------------------------------------
 # [ TESTS ] -------------------------------------------------------------------
 # Fixtures only — no containers, no database. Not shipped with the release.
 
@@ -114,6 +144,8 @@ help:
 test:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ TESTS ]====================="
 	@bash tests/test-migrate-env.sh
+	@printf "\n"
+	@bash tests/test-upgrade-gate.sh
 	@printf "\n"
 	@python3 tests/test_migration_doctor.py
 
@@ -334,6 +366,7 @@ generate-env:
 run:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE ]====================="
 	@$(call require_version)
+	@${MAKE} check-not-1x
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@VERSION=$(VERSION) docker compose up -d --build
@@ -342,6 +375,7 @@ run:
 run-no-cert-check:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE (NO CERT CHECK) ]====================="
 	@$(call require_version)
+	@${MAKE} check-not-1x
 	@${MAKE} generate-env
 	@${MAKE} check-cert-paths
 	@VERSION=$(VERSION) docker compose up -d --build
@@ -350,6 +384,7 @@ run-no-cert-check:
 update:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING IMAGES AND RESTARTING CONTAINERS ]====================="
 	@$(call require_version)
+	@${MAKE} check-not-1x
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@VERSION=$(VERSION) docker compose down
@@ -368,6 +403,7 @@ stop:
 restart:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ RESTARTING CONTAINERS ]====================="
 	@$(call require_version)
+	@${MAKE} check-not-1x
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@export VERSION=$(VERSION); docker compose down && docker compose up -d --build

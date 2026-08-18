@@ -144,6 +144,10 @@ git pull
 make upgrade
 ```
 
+There is no way around it: while the installation is still on 1.x, `make run`,
+`make update` and `make restart` refuse to start and point here. Otherwise the 2.0
+images would migrate the database on start — with no backup and no account repair.
+
 It first runs six checks while the cloud keeps serving and **changes nothing** until all six
 pass. You can run it as many times as you like — that is the upgrade rehearsal.
 
@@ -262,7 +266,11 @@ together with the database — and in exactly this order:
 
    ```bash
    cp "$(ls -tr .env.bak-* | head -1)" .env
+   rm -f backups/.upgrade-unfinished
    ```
+
+   The second command clears the unfinished-upgrade marker: while it is there,
+   `make run` and `make update` on a 2.0 checkout refuse to start.
 
 3. **Restore the database** from the dump taken before the migration. The existing database has
    to be recreated, or the restore trips over the tables that are already there:

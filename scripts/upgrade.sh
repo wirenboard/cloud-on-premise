@@ -6,6 +6,8 @@ set -euo pipefail
 
 ENV_FILE=".env"
 BACKUP_DIR="backups"
+# Read by the Makefile guard; see check-not-1x.
+UNFINISHED=".upgrade-unfinished"
 MIGRATION_DIR="migration"
 VERSION="$(cat VERSION)"
 TS="$(date +%Y%m%d-%H%M%S)"
@@ -203,6 +205,9 @@ upgrade() {
     echo
     say "Step 1/4: backup (before ANY database change)." "$YELLOW"
     backup
+    # From here the database can end up half-migrated, and `make run` would happily
+    # start 2.x on top of it. The marker keeps that door shut until this run finishes.
+    : > "$BACKUP_DIR/$UNFINISHED"
 
     say "Step 2/4: stopping the application — the databases stay up for the migration." "$YELLOW"
     local app_services
@@ -233,10 +238,9 @@ upgrade() {
         echo "  or go back to the old version, code first:"
         echo "      git checkout <old tag> && make run"
         echo
-        # Both traps are in the message: 2.x images migrate on their own start, and the
-        # old tag has no fix-users, so the two ways out exclude each other.
-        echo "Do NOT run 'make run' on this checkout: it starts 2.x and migrates anyway."
-        echo "And note the old tag has no 'make fix-users' — repair first, or not at all."
+        # The old tag has no fix-users, so the two ways out exclude each other: repair
+        # here first, or not at all. 'make run' on this checkout is refused meanwhile.
+        echo "Note the old tag has no 'make fix-users' — repair here first, or not at all."
         exit 1
     fi
 
@@ -252,6 +256,7 @@ upgrade() {
         "from organizations.tasks import update_lagging_metrics_configs; update_lagging_metrics_configs.delay()" \
         >/dev/null 2>&1 || true
 
+    rm -f "$BACKUP_DIR/$UNFINISHED"
     say "Upgrade to $VERSION complete." "$GREEN"
 }
 
