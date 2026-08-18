@@ -107,6 +107,17 @@ help:
 	@printf "  generate-django-secret   Generate Django secret key\n"
 
 #------------------------------------------------------------------------------
+# [ TESTS ] -------------------------------------------------------------------
+# Fixtures only — no containers, no database. Not shipped with the release.
+
+.PHONY: test
+test:
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ TESTS ]====================="
+	@bash tests/test-migrate-env.sh
+	@printf "\n"
+	@python3 tests/test_migration_doctor.py
+
+#------------------------------------------------------------------------------
 # [ TLS CERTIFICATE CHECK ] ---------------------------------------------------
 
 # Traefik bind-mounts the certificate files, so Docker creates a directory in place

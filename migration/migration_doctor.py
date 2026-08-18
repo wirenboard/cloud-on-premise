@@ -126,7 +126,9 @@ def detect():
     """Return the list of Conflict rows currently violating the 2.0 invariants."""
     User = get_user_model()
 
-    rows = list(User.objects.all().values_list("pk", "username", "email"))
+    # Ordered: auto_fix mutates while iterating, so with two rows competing for the
+    # same address the winner must not depend on what the database returns first.
+    rows = list(User.objects.all().order_by("pk").values_list("pk", "username", "email"))
 
     # Case-insensitive email -> count, to find duplicate groups.
     counts = {}
