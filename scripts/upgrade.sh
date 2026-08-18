@@ -105,6 +105,9 @@ check_upgrade() {
     local ready=1
 
     say "1/6 Configuration" "$NC"
+    # Before the migration, so the new passwords are carried over into the 2.x file
+    # like any other value: the metrics store bakes them in when it first starts.
+    make generate-metrics-passwords >/dev/null || ready=0
     bash ./scripts/migrate-env.sh || ready=0
 
     if [ "$ready" -eq 1 ]; then

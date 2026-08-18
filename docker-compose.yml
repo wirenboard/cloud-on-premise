@@ -100,6 +100,8 @@ services:
     logging: *default-logging
     restart: always
     environment:
+      # The three passwords are generated into .env by 'make generate-env' and are
+      # required by check-env: the literals below are only a bare-compose fallback.
       POSTGRES_USER: ${TIMESCALE_USER:-timescale}
       POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-timescale_password}
       POSTGRES_DB: ${TIMESCALE_DB:-metrics}

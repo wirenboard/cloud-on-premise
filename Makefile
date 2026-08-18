@@ -50,7 +50,10 @@ REQUIRED_VARS := \
   SECRET_KEY \
   ABSOLUTE_SERVER_REGEX \
   PRIVATE_KEY \
-  PUBLIC_KEY
+  PUBLIC_KEY \
+  TIMESCALE_PASSWORD \
+  TELEGRAF_TIMESCALE_PASSWORD \
+  GRAFANA_TIMESCALE_PASSWORD
 
 ifeq ($(EMAIL_DISABLED),0)
 REQUIRED_VARS += $(EMAIL_REQUIRED_VARS)
@@ -216,6 +219,7 @@ endif
 			printf "$(YELLOW)it migrates the configuration, backs the database up and repairs the accounts first.$(NC)\n"; \
 		else \
 			printf "$(YELLOW)Variables introduced by a newer release are listed in %s — copy the missing ones over and set your own values.$(NC)\n" "$(ENV_EXAMPLE)"; \
+			printf "$(YELLOW)Secrets and passwords are not listed there: 'make generate-env' creates them.$(NC)\n"; \
 		fi; \
 		exit 1; \
 	fi
@@ -239,6 +243,15 @@ endef
 generate-tunnel-token:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating SSH/HTTP tunnel token ------"
 	$(call gen_token,TUNNEL_AUTH_TOKEN,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 64)
+
+# Alphanumeric only: TIMESCALE_PASSWORD goes into a connection URL, the other two
+# into the SQL that creates the roles.
+.PHONY: generate-metrics-passwords
+generate-metrics-passwords:
+	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating metrics store passwords ------"
+	$(call gen_token,TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
+	$(call gen_token,TELEGRAF_TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
+	$(call gen_token,GRAFANA_TIMESCALE_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
 
 .PHONY: generate-django-secret
 generate-django-secret:
@@ -277,6 +290,7 @@ update-geoip:
 generate-env:
 	@printf  "\n\n\033[1;37m%s\033[0m\n" "=====================[ GENERATING SECRETS AND ENVIRONMENT VARIABLES ]====================="
 	@${MAKE} generate-tunnel-token
+	@${MAKE} generate-metrics-passwords
 	@${MAKE} generate-django-secret
 	@${MAKE} generate-absolute-server-regex
 	@${MAKE} generate-jwt
