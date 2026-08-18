@@ -77,7 +77,10 @@ fix_users() {
     # conflicts file is exchanged through it instead of a root-owned mount.
     local remote="/tmp/migration_doctor.py" yaml="/tmp/conflicts.yaml"
     local local_yaml="$MIGRATION_DIR/conflicts.yaml"
-    local cmd="uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '$mode', '$yaml']; exec(open('$remote').read())\""
+    # $1 script, $2 conflicts file — the stopped-stack fallback below uses other paths.
+    doctor_cmd() {
+        printf "uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '%s', '%s']; exec(open('%s').read())\"" "$mode" "$2" "$1"
+    }
 
     if compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then
         local cid
@@ -85,7 +88,7 @@ fix_users() {
         docker cp "$MIGRATION_DIR/migration_doctor.py" "$cid:$remote"
         [ -f "$local_yaml" ] && docker cp "$local_yaml" "$cid:$yaml"
         # A non-zero exit means "conflicts remain" — still bring conflicts.yaml back.
-        compose exec backend sh -c "$cmd" || rc=$?
+        compose exec backend sh -c "$(doctor_cmd "$remote" "$yaml")" || rc=$?
         docker cp "$cid:$yaml" "$local_yaml" 2>/dev/null || true
         return $rc
     fi
@@ -93,14 +96,13 @@ fix_users() {
     # Fallback for a stopped stack: bind-mount and run privileged, then hand the
     # file back to whoever owns the checkout.
     compose run --rm --user root -v "$PWD/$MIGRATION_DIR:/migration" backend \
-        sh -c "uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '$mode', '/migration/conflicts.yaml']; exec(open('/migration/migration_doctor.py').read())\"" || rc=$?
+        sh -c "$(doctor_cmd /migration/migration_doctor.py /migration/conflicts.yaml)" || rc=$?
     chown -R --reference="$ENV_FILE" "$MIGRATION_DIR" 2>/dev/null || true
     return $rc
 }
 
-# Everything that can be done while the cloud keeps serving: prepare the
-# configuration, verify the environment, and warm the image cache. Nothing here
-# touches the database or stops a service, so a failed run costs nothing.
+# Runs while the cloud keeps serving: nothing here touches the database or stops a
+# service, so a failed run costs nothing.
 check_upgrade() {
     local ready=1
 

@@ -1,6 +1,7 @@
 -- TimescaleDB bootstrap for single-node on-premise.
--- Rendered from cloud-infrastructure stacks (timescale-init.sql.j2) with the
--- HA cluster (Patroni/etcd/HAProxy) collapsed to a single node.
+-- Rendered from cloud-infrastructure roles/deploy_stack/templates/timescale-init.sql.j2
+-- at cd394bae, with the HA cluster (Patroni/etcd/HAProxy) collapsed to a single node.
+-- Update the revision above when re-syncing: it is the base for the next diff.
 --
 -- __TELEGRAF_USER__ / __TELEGRAF_PASSWORD__ / __GRAFANA_USER__ / __GRAFANA_PASSWORD__
 -- are substituted from the environment by 10-apply-init.sh.

@@ -64,6 +64,14 @@ x-backend-common-env: &backend-common-env
   AWS_STORAGE_BUCKET_NAME: "media"
   AWS_S3_REGION_NAME: "eu-west-1"
 
+x-backend-healthcheck: &backend-healthcheck
+  test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/"]
+  interval: 10s
+  timeout: 3s
+  # Django needs a while to answer on a cold start, and everything starts at once.
+  start_period: 90s
+  retries: 3
+
 # Container logs are capped so a chatty service cannot fill the disk of a
 # machine sized to the documented minimum.
 x-logging: &default-logging
@@ -316,13 +324,7 @@ services:
       traefik.http.routers.backend_grafana.service: "backend"
       traefik.http.routers.backend_grafana.tls: "true"
       traefik.http.routers.backend_grafana.priority: "99"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/"]
-      interval: 10s
-      timeout: 3s
-      # Django needs a while to answer on a cold start, and everything starts at once.
-      start_period: 90s
-      retries: 3
+    healthcheck: *backend-healthcheck
     depends_on:
       redis:
         condition: service_healthy
@@ -340,13 +342,7 @@ services:
     restart: always
     environment:
       <<: *backend-common-env
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/"]
-      interval: 10s
-      timeout: 3s
-      # Django needs a while to answer on a cold start, and everything starts at once.
-      start_period: 90s
-      retries: 3
+    healthcheck: *backend-healthcheck
     depends_on:
       redis:
         condition: service_healthy

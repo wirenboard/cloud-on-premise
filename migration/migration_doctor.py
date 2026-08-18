@@ -20,8 +20,11 @@ This script is mounted into and executed **inside the backend container**, on th
 still-running 1.x backend image (which boots without the new TimescaleDB env), via
 Django's ``manage.py shell``::
 
-    docker compose run --rm -v ./migration:/migration backend \\
-        uv run --no-dev ./manage.py shell -c "exec(open('/migration/migration_doctor.py').read())" -- <args>
+    docker compose run --rm -v ./migration:/migration backend uv run --no-dev \\
+        ./manage.py shell -c "import sys; sys.argv = ['migration_doctor', '<mode>']; \\
+        exec(open('/migration/migration_doctor.py').read())"
+
+The mode goes through ``sys.argv``: Django's shell rejects arguments of its own.
 
 The ``make`` targets wrap that for you (``make fix-users``, ``make upgrade``).
 
@@ -384,42 +387,28 @@ def main(argv=None):
     parser.add_argument("file", nargs="?", default=DEFAULT_YAML, help="conflicts.yaml path")
     args = parser.parse_args(argv)
 
-    if args.mode == "scan":
-        conflicts = detect()
-        print_table(conflicts)
-        print_summary(conflicts)
-        sys.exit(1 if conflicts else 0)
-
-    if args.mode == "auto":
+    # dump auto-fixes first, so only the rows that need a human reach the file.
+    if args.mode in ("auto", "resolve", "dump"):
         n = auto_fix()
-        print(f"Auto-fixed {n} row(s).")
-        conflicts = detect()
-        print_table(conflicts)
-        print_summary(conflicts)
-        sys.exit(1 if conflicts else 0)
+        if args.mode == "auto":
+            print(f"Auto-fixed {n} row(s).")
+        elif args.mode == "resolve":
+            print(f"Auto-fixed {n} row(s) before interactive resolution.")
 
     if args.mode == "resolve":
-        n = auto_fix()
-        print(f"Auto-fixed {n} row(s) before interactive resolution.")
         wizard()
-        conflicts = detect()
-        print_table(conflicts)
-        print_summary(conflicts)
-        sys.exit(1 if conflicts else 0)
-
-    if args.mode == "dump":
-        auto_fix()  # shrink the file to only the rows that need a human
+    elif args.mode == "dump":
         dump_yaml(args.file)
-        conflicts = detect()
-        print_summary(conflicts)
-        sys.exit(1 if conflicts else 0)
-
-    if args.mode == "apply":
+    elif args.mode == "apply":
         apply_yaml(args.file)
-        conflicts = detect()
+
+    # One exit protocol for every mode: non-zero while any conflict remains is what
+    # gates `make upgrade`.
+    conflicts = detect()
+    if args.mode != "dump":
         print_table(conflicts)
-        print_summary(conflicts)
-        sys.exit(1 if conflicts else 0)
+    print_summary(conflicts)
+    sys.exit(1 if conflicts else 0)
 
 
 # Support both ``python migration_doctor.py <mode>`` and being exec()'d from
@@ -436,8 +425,5 @@ def _resolve_argv():
     return candidate
 
 
-if __name__ == "__main__":
-    main(_resolve_argv())
-else:
-    # Being exec()'d inside ``manage.py shell -c``.
-    main(_resolve_argv())
+# No ``__name__`` guard on purpose: under exec() it would not fire.
+main(_resolve_argv())
