@@ -170,7 +170,15 @@ code, out = run("scan", [{"pk": "1", "username": "a b", "email": "not-an-email"}
 check("an invalid address stays a conflict", code == 1)
 
 print()
-if failures:
-    print(f"FAILED: {len(failures)} — " + ", ".join(failures))
-    sys.exit(1)
-print("all checks passed")
+
+
+def test_migration_doctor():
+    """Collected by pytest; the checks above already ran on import."""
+    assert not failures, ", ".join(failures)
+
+
+if __name__ == "__main__":
+    if failures:
+        print(f"FAILED: {len(failures)} — " + ", ".join(failures))
+        sys.exit(1)
+    print("all checks passed")
