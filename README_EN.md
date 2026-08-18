@@ -327,6 +327,14 @@ TUNNEL_DASHBOARD_PASSWORD=tunnel_password
 > storage, which loses the accumulated history.
 
 
+> 💡 The credentials of the built-in S3 storage (`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`) can be
+> set in `.env` if the defaults do not suit you.
+
+> 💡 The remaining required variables — `SECRET_KEY`, `TUNNEL_AUTH_TOKEN`, `PRIVATE_KEY`,
+> `PUBLIC_KEY`, `ABSOLUTE_SERVER_REGEX` — are not written by hand: `make generate-env` creates them,
+> and it runs as part of `make run`. Before the first launch `make check-env` reports them as
+> missing — that is expected.
+
 > 💡 Email sending can be disabled entirely — see [Working Without Email](#working-without-email).
 
 ### 2. Automatic Initialization and Launch
@@ -785,9 +793,79 @@ sudo certbot certonly --manual --preferred-challenges dns \
 
 > All six `-d` lines are mandatory: without `*.apps.$DOMAIN_NAME` the certificate fails `make check-certs`.
 
-Add DNS TXT records as prompted by Certbot. Use `dig` to verify.
+Then create the records on your DNS server, one at a time, from what Certbot prints:
 
-Certificates are saved to:
+### 🔹 First record from Certbot
+
+```
+Type: TXT
+Name: _acme-challenge.your-domain-name.com.
+Value: some_token_1
+```
+
+Add the record on your DNS server.
+
+Without closing the terminal, check in another window that the record is live:
+
+```bash
+dig TXT _acme-challenge.your-domain-name.com +short
+```
+
+Once it resolves, press **Enter** (Continue) in the first window.
+
+### 🔹 Second record (`http`), same as the first
+
+```
+Type: TXT
+Name: _acme-challenge.http.your-domain-name.com.
+Value: some_token_2
+```
+
+Check:
+
+```bash
+dig TXT _acme-challenge.http.your-domain-name.com +short
+```
+
+Once it resolves, press **Enter** (Continue).
+
+### 🔹 Third record (`ssh`), same as the previous ones
+
+```
+Type: TXT
+Name: _acme-challenge.ssh.your-domain-name.com.
+Value: some_token_3
+```
+
+Check:
+
+```bash
+dig TXT _acme-challenge.ssh.your-domain-name.com +short
+```
+
+Once it resolves, press **Enter** (Continue).
+
+### 🔹 Fourth record (`apps`), same as the previous ones
+
+```
+Type: TXT
+Name: _acme-challenge.apps.your-domain-name.com.
+Value: some_token_4
+```
+
+> For `apps.$DOMAIN_NAME` and `*.apps.$DOMAIN_NAME` Certbot asks for **two** TXT records under the same name — add both.
+
+Check:
+
+```bash
+dig TXT _acme-challenge.apps.your-domain-name.com +short
+```
+
+Once they resolve, press **Enter** (Continue).
+
+### ✅ Result
+
+Certbot saves the certificate to:
 
 ```
 /etc/letsencrypt/live/your-domain.com/fullchain.pem
