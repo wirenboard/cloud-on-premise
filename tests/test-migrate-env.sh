@@ -50,7 +50,7 @@ ENV
 setup() { # fresh scratch copy of the repo files the script touches
     rm -rf "$WORK/case"; mkdir -p "$WORK/case/scripts"
     cp "$ROOT/Makefile" "$ROOT/.env.example" "$WORK/case/"
-    cp "$ROOT/scripts/migrate-env.sh" "$WORK/case/scripts/"
+    cp "$ROOT/scripts/migrate-env.sh" "$ROOT/scripts/lib.sh" "$WORK/case/scripts/"
     cd "$WORK/case" || exit 1
 }
 
@@ -71,6 +71,43 @@ check "the old file still has them"        "$(grep -q '^INFLUXDB_TOKEN=' .env.ba
 # check-env, seeing a value, would wave it through.
 check "new required variables are left empty" "$(has .env 'GRAFANA_ADMIN_PASSWORD='; echo $?)"
 check "not filled from the example"           "$(! has .env 'GRAFANA_ADMIN_PASSWORD=grafana_password'; echo $?)"
+
+# The required-vars list is asked for, not scraped: a reformat of it in the Makefile
+# used to leave every variable looking optional, which filled the new ones from the
+# example instead of stopping the upgrade.
+setup; write_1x .env
+python3 - <<'PY'
+lines = open("Makefile", encoding="utf-8").read().split("\n")
+out, names, grabbing = [], [], False
+for line in lines:
+    if line.startswith("REQUIRED_VARS := "):
+        grabbing = True
+        continue
+    if grabbing:
+        name = line.strip().rstrip("\\").strip()
+        if name:
+            names.append(name)
+        if not line.rstrip().endswith("\\"):
+            grabbing = False
+            out.append("CORE_VARS := " + " ".join(names))
+            out.append("REQUIRED_VARS = $(CORE_VARS)")
+        continue
+    out.append(line)
+open("Makefile", "w", encoding="utf-8").write("\n".join(out))
+PY
+make -s print-required-vars >/dev/null 2>&1
+check "the reformatted Makefile is still valid" "$?"
+bash scripts/migrate-env.sh >/dev/null 2>&1; rc=$?
+check "a reformatted list still stops the upgrade" "$([ $rc -eq 1 ]; echo $?)"
+check "and still leaves the value empty" "$(has .env 'GRAFANA_ADMIN_PASSWORD='; echo $?)"
+
+# If the list cannot be read at all, refusing is the only safe answer: treating
+# everything as optional is what used to fill the new variables from the example.
+setup; write_1x .env
+printf 'REQUIRED_VARS := \\\n  BROKEN\n' > Makefile
+out="$(bash scripts/migrate-env.sh 2>&1)"; rc=$?
+check "an unreadable list aborts" "$([ $rc -ne 0 ]; echo $?)"
+check "and says why" "$(printf '%s' "$out" | grep -q 'required variables'; echo $?)"
 
 echo
 echo "idempotence"

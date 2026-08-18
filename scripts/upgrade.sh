@@ -4,26 +4,21 @@
 # Delete together with the make targets once 1.x is out of support.
 set -euo pipefail
 
-ENV_FILE=".env"
+. "$(dirname "$0")/lib.sh"
+
+ENV_FILE="$ENV_FILE_DEFAULT"
 BACKUP_DIR="backups"
-# Read by the Makefile guard; see check-not-1x.
-UNFINISHED=".upgrade-unfinished"
 MIGRATION_DIR="migration"
 VERSION="$(cat VERSION)"
 TS="$(date +%Y%m%d-%H%M%S)"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
 say() { printf "%b%s%b\n" "$2" "$1" "$NC"; }
-# `|| true`: a missing variable is an empty value, not a fatal error under set -e.
-env_value() { grep -E "^[[:space:]]*$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' || true; }
 # The configuration migration runs before the backup and drops the variables this
 # release no longer uses, so a value needed only by 1.x is read from the copy it left.
 legacy_env_value() {
     local value; value="$(env_value "$1")"
-    if [ -z "$value" ]; then
-        local previous; previous="$(ls -t "$ENV_FILE".bak-* 2>/dev/null | head -1)"
-        [ -n "$previous" ] && value="$(grep -E "^[[:space:]]*$1=" "$previous" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' || true)"
-    fi
+    [ -n "$value" ] || value="$(env_value "$1" "$(ls -t "$ENV_FILE".bak-* 2>/dev/null | head -1)")"
     printf '%s' "$value"
 }
 compose() { VERSION="$VERSION" docker compose "$@"; }
@@ -71,18 +66,20 @@ backup() {
     fi
 }
 
+# $1 mode, $2 script path, $3 conflicts file — the stopped-stack fallback uses other
+# paths. The mode goes through sys.argv: Django's shell rejects arguments of its own.
+doctor_cmd() {
+    printf "uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '%s', '%s']; exec(open('%s').read())\"" "$1" "$3" "$2"
+}
+
 # The doctor runs inside the still-running 1.x backend container and touches only
-# username/email. The mode goes through sys.argv: Django's shell rejects extra args.
+# username/email.
 fix_users() {
     local mode="${1:-scan}" rc=0
     # /tmp is the only path writable by the image's unprivileged user, so the
     # conflicts file is exchanged through it instead of a root-owned mount.
     local remote="/tmp/migration_doctor.py" yaml="/tmp/conflicts.yaml"
     local local_yaml="$MIGRATION_DIR/conflicts.yaml"
-    # $1 script, $2 conflicts file — the stopped-stack fallback below uses other paths.
-    doctor_cmd() {
-        printf "uv run --no-dev ./manage.py shell -c \"import sys; sys.argv = ['migration_doctor', '%s', '%s']; exec(open('%s').read())\"" "$mode" "$2" "$1"
-    }
 
     if compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then
         local cid
@@ -90,7 +87,7 @@ fix_users() {
         docker cp "$MIGRATION_DIR/migration_doctor.py" "$cid:$remote"
         [ -f "$local_yaml" ] && docker cp "$local_yaml" "$cid:$yaml"
         # A non-zero exit means "conflicts remain" — still bring conflicts.yaml back.
-        compose exec backend sh -c "$(doctor_cmd "$remote" "$yaml")" || rc=$?
+        compose exec backend sh -c "$(doctor_cmd "$mode" "$remote" "$yaml")" || rc=$?
         docker cp "$cid:$yaml" "$local_yaml" 2>/dev/null || true
         return $rc
     fi
@@ -98,7 +95,7 @@ fix_users() {
     # Fallback for a stopped stack: bind-mount and run privileged, then hand the
     # file back to whoever owns the checkout.
     compose run --rm --user root -v "$PWD/$MIGRATION_DIR:/migration" backend \
-        sh -c "$(doctor_cmd /migration/migration_doctor.py /migration/conflicts.yaml)" || rc=$?
+        sh -c "$(doctor_cmd "$mode" /migration/migration_doctor.py /migration/conflicts.yaml)" || rc=$?
     chown -R --reference="$ENV_FILE" "$MIGRATION_DIR" 2>/dev/null || true
     return $rc
 }
@@ -106,20 +103,21 @@ fix_users() {
 # Runs while the cloud keeps serving: nothing here touches the database or stops a
 # service, so a failed run costs nothing.
 check_upgrade() {
-    local ready=1
+    local ready=1 n=0 total=6
+    step() { n=$((n + 1)); say "$n/$total $1" "$NC"; }
 
-    say "1/6 Configuration" "$NC"
+    step "Configuration and secrets"
     # Before the migration, so the new passwords are carried over into the 2.x file
     # like any other value: the metrics store bakes them in when it first starts.
     make generate-metrics-passwords >/dev/null || ready=0
     bash ./scripts/migrate-env.sh || ready=0
 
     if [ "$ready" -eq 1 ]; then
-        say "2/6 Environment variables" "$NC"
+        step "Environment variables"
         make check-env >/dev/null || ready=0
         [ "$ready" -eq 1 ] && say "    all required variables are set" "$GREEN"
 
-        say "3/6 TLS certificate" "$NC"
+        step "TLS certificate"
         if make check-certs >/dev/null 2>&1; then
             say "    covers every required domain" "$GREEN"
         else
@@ -129,7 +127,7 @@ check_upgrade() {
         fi
     fi
 
-    say "4/6 Disk space" "$NC"
+    step "Disk space"
     local free_mb enough=1
     free_mb="$(df -Pm . | awk 'NR==2 {print $4}')"
     # The 2.x images take about 5 GB; the rest is headroom for the dump and logs.
@@ -142,7 +140,7 @@ check_upgrade() {
         say "    ${free_mb} MB free" "$GREEN"
     fi
 
-    say "5/6 Images" "$NC"
+    step "Images"
     if [ "$enough" -eq 0 ]; then
         say "    skipped: free the disk first, downloading now would fill it" "$YELLOW"
     elif compose pull --quiet 2>/dev/null; then
@@ -152,7 +150,7 @@ check_upgrade() {
         ready=0
     fi
 
-    say "6/6 User accounts" "$NC"
+    step "User accounts"
     if fix_users scan >/dev/null 2>&1; then
         say "    every account fits the 2.x schema" "$GREEN"
     else
@@ -199,17 +197,20 @@ confirm() {
 # The maintenance window itself: back up, stop the application, migrate, start.
 # Everything slow has already happened in check-upgrade.
 upgrade() {
+    local n=0 total=4
+    step() { n=$((n + 1)); say "Step $n/$total: $1" "$YELLOW"; }
+
     check_upgrade || exit 1
     confirm || exit 0
 
     echo
-    say "Step 1/4: backup (before ANY database change)." "$YELLOW"
+    step "backup (before ANY database change)."
     backup
     # From here the database can end up half-migrated, and `make run` would happily
     # start 2.x on top of it. The marker keeps that door shut until this run finishes.
-    : > "$BACKUP_DIR/$UNFINISHED"
+    : > "$UPGRADE_MARKER"
 
-    say "Step 2/4: stopping the application — the databases stay up for the migration." "$YELLOW"
+    step "stopping the application — the databases stay up for the migration."
     local app_services
     app_services="$(compose config --services | grep -vE '^(postgres|timescale|redis|minio|minio-client)$' | tr '\n' ' ')"
     compose stop $app_services
@@ -244,10 +245,10 @@ upgrade() {
         exit 1
     fi
 
-    say "Step 3/4: applying database migrations." "$YELLOW"
+    step "applying database migrations."
     compose run --rm backend uv run --no-dev ./manage.py migrate
 
-    say "Step 4/4: starting $VERSION." "$YELLOW"
+    step "starting $VERSION."
     compose up -d --build
 
     # Controllers only start reporting once the cloud hands them the collector
@@ -256,7 +257,7 @@ upgrade() {
         "from organizations.tasks import update_lagging_metrics_configs; update_lagging_metrics_configs.delay()" \
         >/dev/null 2>&1 || true
 
-    rm -f "$BACKUP_DIR/$UNFINISHED"
+    rm -f "$UPGRADE_MARKER"
     say "Upgrade to $VERSION complete." "$GREEN"
 }
 

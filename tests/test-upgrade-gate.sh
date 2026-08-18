@@ -16,7 +16,9 @@ check() {
 
 setup() {
     rm -rf "$WORK/case"; mkdir -p "$WORK/case"
+    mkdir -p "$WORK/case/scripts"
     cp "$ROOT/Makefile" "$ROOT/.env.example" "$ROOT/VERSION" "$WORK/case/"
+    cp "$ROOT/scripts/lib.sh" "$WORK/case/scripts/"
     cd "$WORK/case" || exit 1
 }
 
@@ -64,9 +66,15 @@ check "the English rollback too" \
 
 # upgrade.sh has to both raise and clear it, or the guard is either dead or permanent.
 check "upgrade.sh raises the marker after the backup" \
-  "$(grep -q ': > "$BACKUP_DIR/$UNFINISHED"' "$ROOT/scripts/upgrade.sh"; echo $?)"
+  "$(grep -q ': > "$UPGRADE_MARKER"' "$ROOT/scripts/upgrade.sh"; echo $?)"
 check "upgrade.sh clears it when done" \
-  "$(grep -q 'rm -f "$BACKUP_DIR/$UNFINISHED"' "$ROOT/scripts/upgrade.sh"; echo $?)"
+  "$(grep -q 'rm -f "$UPGRADE_MARKER"' "$ROOT/scripts/upgrade.sh"; echo $?)"
+
+# One source for the name, or the two sides drift apart.
+check "the marker name is defined in lib.sh" \
+  "$(grep -q '^UPGRADE_MARKER=' "$ROOT/scripts/lib.sh"; echo $?)"
+check "and is not spelled out anywhere else" \
+  "$(! grep -rl 'backups/\.upgrade-unfinished' "$ROOT/Makefile" "$ROOT/scripts/upgrade.sh" >/dev/null 2>&1; echo $?)"
 
 # The guard has to sit on every target that starts the stack.
 setup

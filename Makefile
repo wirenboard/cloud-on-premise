@@ -19,12 +19,19 @@ endef
 
 ENV_FILE      := .env
 ENV_EXAMPLE   := .env.example
+ENV_GET        = $(shell bash scripts/lib.sh get $(1) $(ENV_FILE))
+
+# Both defined once and shared with the scripts: the marker name lives in lib.sh,
+# and these are the variables whose presence still marks a 1.x configuration.
+UPGRADE_MARKER := $(shell bash scripts/lib.sh marker)
+LEGACY_VARS    := INFLUXDB_TOKEN ADMIN_USERNAME EMAIL_PROTOCOL
+LEGACY_RE      := ^[[:space:]]*($(shell printf '%s' "$(LEGACY_VARS)" | tr ' ' '|'))=
 
 #----- [ REQUIRED ENVIRONMENT VARIABLES ] -------------------------------------
 
 # EMAIL_ENABLED is mandatory since 2.0 (REQUIRED_VARS + compose fail-fast).
 # False/Off/No/0 (case-insensitive) disables email and makes EMAIL_* optional.
-EMAIL_ENABLED_VALUE := $(shell grep -E '^[[:space:]]*EMAIL_ENABLED=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]')
+EMAIL_ENABLED_VALUE := $(shell printf '%s' "$(call ENV_GET,EMAIL_ENABLED)" | tr '[:upper:]' '[:lower:]')
 EMAIL_DISABLED := $(if $(filter $(EMAIL_ENABLED_VALUE),false off no 0),1,0)
 
 EMAIL_REQUIRED_VARS := \
@@ -67,10 +74,10 @@ URL_CRED_VARS := POSTGRES_USER POSTGRES_PASSWORD GRAFANA_ADMIN_USER GRAFANA_ADMI
 
 #----- [ DOMAIN & CERTIFICATES ] ----------------------------------------------
 
-RAW_SERVER      := $(shell grep -E '^ABSOLUTE_SERVER=' $(ENV_FILE) | head -1 | cut -d= -f2- | tr -d '[:space:]')
+RAW_SERVER      := $(call ENV_GET,ABSOLUTE_SERVER)
 BASE_DOMAIN     := $(shell echo $(RAW_SERVER) | sed -E 's@https?://@@;s@/.*@@' | cut -d':' -f1)
 
-TLS_DIR         := $(or $(TLS_CERTS_PATH),$(shell grep ^TLS_CERTS_PATH $(ENV_FILE) | cut -d= -f2 | tr -d '[:space:]'))
+TLS_DIR         := $(or $(TLS_CERTS_PATH),$(call ENV_GET,TLS_CERTS_PATH))
 TLS_DIR         := $(or $(TLS_DIR),./tls)
 
 FULLCHAIN       := $(TLS_DIR)/fullchain.pem
@@ -107,6 +114,19 @@ help:
 	@printf "  generate-django-secret   Generate Django secret key\n"
 
 #------------------------------------------------------------------------------
+# [ INTROSPECTION ] -----------------------------------------------------------
+# scripts/migrate-env.sh asks for these instead of scraping the file: make expands
+# the lists itself, so the conditional EMAIL_* part is already resolved.
+
+.PHONY: print-required-vars
+print-required-vars:
+	@printf '%s\n' $(REQUIRED_VARS)
+
+.PHONY: print-allow-empty-vars
+print-allow-empty-vars:
+	@printf '%s\n' $(ALLOW_EMPTY_VARS)
+
+#------------------------------------------------------------------------------
 # [ 1.x GUARD ] ---------------------------------------------------------------
 
 # The 2.x images run their migrations as they start, and that migration aborts on
@@ -116,7 +136,7 @@ help:
 # once the upgrade is done, which is what lets `make update` work again afterwards.
 .PHONY: check-not-1x
 check-not-1x:
-	@if [ -f backups/.upgrade-unfinished ]; then \
+	@if [ -f "$(UPGRADE_MARKER)" ]; then \
 		printf "$(RED)ERROR: an upgrade was interrupted after its backup — the database may be half-migrated.$(NC)\n"; \
 		printf "$(YELLOW)Starting the stack now would migrate on top of that. Finish the upgrade instead:$(NC)\n"; \
 		printf "$(YELLOW)  make fix-users MODE=scan   see what stopped it\n  make upgrade               run it again$(NC)\n"; \
@@ -124,7 +144,7 @@ check-not-1x:
 		exit 1; \
 	fi
 	@old_img="$$(docker ps --format '{{.Image}}' 2>/dev/null | grep -E 'on-premise/wbc-' | sed 's/.*://' | awk -F. '$$1 ~ /^[0-9]+$$/ && $$1 < 2' | sort -u | head -1)"; \
-	if grep -Eq '^[[:space:]]*(INFLUXDB_TOKEN|ADMIN_USERNAME|EMAIL_PROTOCOL)=' $(ENV_FILE) 2>/dev/null; then \
+	if grep -Eq '$(LEGACY_RE)' $(ENV_FILE) 2>/dev/null; then \
 		old_env="its $(ENV_FILE) is still the 1.x one"; \
 	fi; \
 	if [ -n "$$old_img" ] || [ -n "$${old_env:-}" ]; then \
@@ -248,7 +268,7 @@ endif
 	fi
 	@bad=0; \
 	for var in $(URL_CRED_VARS); do \
-		val="$$(grep -E '^[[:space:]]*'$${var}'=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\"')"; \
+		val="$$(bash scripts/lib.sh getraw "$$var" | tr -d '\"')"; \
 		[ -n "$$val" ] || continue; \
 		why=""; \
 		printf '%s' "$$val" | grep -q '[]/?#[]' && why="one of ] / ? # ["; \
@@ -266,7 +286,7 @@ endif
 		if ! grep -Eq '^[[:space:]]*'$${var}'=' $(ENV_FILE); then \
 			printf "$(RED)ERROR: Required variable '%s' is missing or commented out in %s.$(NC)\n" "$${var}" "$(ENV_FILE)"; \
 			result=1; \
-		elif [ -z "$$(grep -E '^[[:space:]]*'$${var}'=' $(ENV_FILE) | tail -1 | cut -d= -f2- | tr -d '[:space:]\"')" ] \
+		elif [ -z "$$(bash scripts/lib.sh get "$$var")" ] \
 		     && ! printf '%s\n' $(ALLOW_EMPTY_VARS) | grep -qx "$${var}"; then \
 			printf "$(RED)ERROR: Required variable '%s' is empty in %s — set a value.$(NC)\n" "$${var}" "$(ENV_FILE)"; \
 			result=1; \
@@ -275,7 +295,7 @@ endif
 	if [ $$result -eq 0 ]; then \
 		printf "$(GREEN)All required variables are present.$(NC)\n"; \
 	else \
-		if grep -Eq '^[[:space:]]*(INFLUXDB_TOKEN|ADMIN_USERNAME|EMAIL_PROTOCOL)=' $(ENV_FILE); then \
+		if grep -Eq '$(LEGACY_RE)' $(ENV_FILE); then \
 			printf "$(YELLOW)This .env looks like a 1.x one. Do NOT patch it by hand — run 'make upgrade':$(NC)\n"; \
 			printf "$(YELLOW)it migrates the configuration, backs the database up and repairs the accounts first.$(NC)\n"; \
 		else \
@@ -322,7 +342,7 @@ generate-django-secret:
 .PHONY: generate-absolute-server-regex
 generate-absolute-server-regex:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating ABSOLUTE_SERVER_REGEX ------"
-	@ABSOLUTE_SERVER=$$(grep -E '^[[:space:]]*ABSOLUTE_SERVER=' $(ENV_FILE) | cut -d= -f2-); \
+	@ABSOLUTE_SERVER=$$(bash scripts/lib.sh get ABSOLUTE_SERVER); \
 	if [ -z "$$ABSOLUTE_SERVER" ]; then \
 		printf "\n$(RED)ERROR: ABSOLUTE_SERVER variable is missing.$(NC)\n"; exit 1; \
 	fi; \

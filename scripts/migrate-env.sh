@@ -6,7 +6,9 @@
 # itself — no marker to notice and delete. The previous file is kept alongside.
 set -euo pipefail
 
-ENV_FILE=".env"
+. "$(dirname "$0")/lib.sh"
+
+ENV_FILE="$ENV_FILE_DEFAULT"
 TEMPLATE=".env.example"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
@@ -28,12 +30,7 @@ OBSOLETE="ADMIN_USERNAME EMAIL_URL EMAIL_PROTOCOL EMAIL_SERVER EMAIL_LOGIN EMAIL
 
 # With email switched off the EMAIL_* variables are optional — the same rule
 # check-env follows — so they are carried over commented out, never demanded.
-email_off() {
-    case "$(grep -E '^[[:space:]]*EMAIL_ENABLED=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]' || true)" in
-        false|off|no|0) return 0 ;;
-    esac
-    return 1
-}
+email_off() { env_false "$(env_value EMAIL_ENABLED)"; }
 
 [ -f "$ENV_FILE" ] || { say "No $ENV_FILE — nothing to migrate." "$YELLOW"; exit 0; }
 [ -f "$TEMPLATE" ] || { say "No $TEMPLATE — cannot migrate." "$RED"; exit 1; }
@@ -44,21 +41,21 @@ trap 'rm -f "$SRC"' EXIT
 # Present is enough to carry a value over, empty included: an empty value can be the
 # operator's deliberate choice, so only variables new in this release are demanded.
 has_old()   { grep -qE "^[[:space:]]*$1=" "$SRC"; }
-# Read from the Makefile rather than duplicated here: check-env owns that list.
-MAKEFILE="Makefile"
-required_vars() {
-    [ -f "$MAKEFILE" ] || return 0
-    awk '/^(EMAIL_)?REQUIRED_VARS[[:space:]]*[:+]?=/{f=1} f{print; if ($0 !~ /\\$/) f=0}' "$MAKEFILE" \
-      | grep -oE '[A-Z][A-Z0-9_]{2,}' | grep -vE '^(EMAIL_)?REQUIRED_VARS$' | sort -u
-    awk '/^ALLOW_EMPTY_VARS[[:space:]]*[:+]?=/{print}' "$MAKEFILE" \
-      | grep -oE '[A-Z][A-Z0-9_]{2,}' | grep -v '^ALLOW_EMPTY_VARS$' | sed 's/^/-/'
-}
-REQ="$(required_vars || true)"
+# check-env owns the list; ask make for it rather than parsing the Makefile, so a
+# reformat of that list cannot silently turn every variable into an optional one.
+REQ="$(make -s print-required-vars 2>/dev/null || true)"
+ALLOW_EMPTY="$(make -s print-allow-empty-vars 2>/dev/null || true)"
+# An empty answer would make every variable look optional, and the new ones would
+# silently get the example values instead of stopping the upgrade.
+if [ -z "$REQ" ]; then
+    say "Cannot read the list of required variables from the Makefile — aborting." "$RED"
+    exit 1
+fi
 is_required() {
-    printf '%s\n' "$REQ" | grep -qx -- "-$1" && return 1
+    printf '%s\n' "$ALLOW_EMPTY" | grep -qx -- "$1" && return 1
     printf '%s\n' "$REQ" | grep -qx -- "$1"
 }
-old_value() { grep -E "^[[:space:]]*$1=" "$SRC" | tail -1 | cut -d= -f2-; }
+old_value() { env_value_raw "$1" "$SRC"; }
 old_names() { grep -oE '^[[:space:]]*[A-Z_][A-Z0-9_]*=' "$SRC" | tr -d '= \t'; }
 is_obsolete() { printf '%s' "$OBSOLETE" | grep -qw -- "$1"; }
 

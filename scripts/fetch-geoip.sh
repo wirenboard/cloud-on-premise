@@ -8,20 +8,17 @@ set -euo pipefail
 FORCE=""
 [ "${1:-}" = "--force" ] && FORCE=1
 
-ENV_FILE=".env"
+. "$(dirname "$0")/lib.sh"
+
+ENV_FILE="$ENV_FILE_DEFAULT"
 TARGET="geoip/dbip-city-lite.mmdb"
 YELLOW='\033[0;33m'; GREEN='\033[0;32m'; NC='\033[0m'
 say() { printf "%b%s%b\n" "$2" "$1" "$NC"; }
 
-# `|| true`: no match must read as "disabled", not abort the script under set -e.
-enabled="$(grep -E '^[[:space:]]*GEOIP_ENABLED=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]"' | tr '[:upper:]' '[:lower:]' || true)"
-case "$enabled" in
-    true|on|ok|y|yes|1) ;;
-    *)
-        [ -n "$FORCE" ] && say "Session geolocation is off: set GEOIP_ENABLED=True in $ENV_FILE first." "$YELLOW"
-        exit 0
-        ;;
-esac
+if ! env_true "$(env_value GEOIP_ENABLED)"; then
+    [ -n "$FORCE" ] && say "Session geolocation is off: set GEOIP_ENABLED=True in $ENV_FILE first." "$YELLOW"
+    exit 0
+fi
 
 printf "\n\033[0;37m%s\033[0m\n" "------ Session geolocation database ------"
 if [ -z "$FORCE" ] && [ -s "$TARGET" ]; then
