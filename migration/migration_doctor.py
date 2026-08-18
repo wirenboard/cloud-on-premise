@@ -92,12 +92,11 @@ def is_valid_email(value):
 
 
 def collides(User, email, exclude_pk):
-    """True if another user already owns ``email`` (case-insensitive)."""
-    return (
-        User.objects.exclude(pk=exclude_pk)
-        .filter(email__iexact=email)
-        .exists()
-    )
+    """True if another user already owns ``email`` — as an email (case-insensitive)
+    or as a username (exact match: usernames also become the address, and the
+    unique key on username is what an UPDATE would trip over)."""
+    others = User.objects.exclude(pk=exclude_pk)
+    return others.filter(email__iexact=email).exists() or others.filter(username=email).exists()
 
 
 # ----------------------------------------------------------------------------

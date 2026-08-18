@@ -37,6 +37,8 @@ class _QS:
         for key, value in kw.items():
             if key == "email__iexact":
                 data = [r for r in data if (r["email"] or "").lower() == value.lower()]
+            elif key == "username":
+                data = [r for r in data if r["username"] == value]
             elif key == "pk":
                 data = [r for r in data if r["pk"] == value]
             else:
@@ -164,6 +166,18 @@ check("the winner is the lowest pk, not the table order", winners == {"1"})
 _, out = run("auto", list(reversed(pair)))
 check("and it does not depend on the input order",
       next(r["pk"] for r in out if r["email"]) == "1")
+
+print("\nusername collision: the address is someone else's login")
+# The unique key is on username: handing pk1 an address that pk2 already uses as
+# its username must be skipped, not crash the whole run with an IntegrityError.
+pair = [{"pk": "1", "username": "Frank@x.com", "email": ""},
+        {"pk": "2", "username": "frank@x.com", "email": ""}]
+code, out = run("auto", pair)
+check("the exact-match row wins", by_pk(out, "2")["email"] == "frank@x.com")
+check("the case-variant row is left to a human", by_pk(out, "1")["email"] == "")
+code, out = run("auto", [{"pk": "1", "username": "old", "email": "eve@x.com"},
+                         {"pk": "2", "username": "eve@x.com", "email": ""}])
+check("a mismatch fix also respects foreign usernames", by_pk(out, "1")["username"] == "old")
 
 print("\napply: only valid, free addresses are written")
 code, out = run("scan", [{"pk": "1", "username": "a b", "email": "not-an-email"}])
