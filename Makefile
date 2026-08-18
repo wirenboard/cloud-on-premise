@@ -62,6 +62,9 @@ endif
 # Empty is a legitimate answer here: a relay that takes mail without authentication.
 ALLOW_EMPTY_VARS := EMAIL_HOST_USER EMAIL_HOST_PASSWORD
 
+# These end up inside credential URLs (DATABASE_URL, GRAFANA_ADMIN_MANAGEMENT_URL).
+URL_CRED_VARS := POSTGRES_USER POSTGRES_PASSWORD GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD
+
 #----- [ DOMAIN & CERTIFICATES ] ----------------------------------------------
 
 RAW_SERVER      := $(shell grep -E '^ABSOLUTE_SERVER=' $(ENV_FILE) | head -1 | cut -d= -f2- | tr -d '[:space:]')
@@ -200,6 +203,21 @@ endif
 	@if [ ! -f $(ENV_FILE) ]; then \
 		printf "$(RED)ERROR: File %s not found. Please create it based on %s.$(NC)\n" "$(ENV_FILE)" "$(ENV_EXAMPLE)"; exit 1; \
 	fi
+	@bad=0; \
+	for var in $(URL_CRED_VARS); do \
+		val="$$(grep -E '^[[:space:]]*'$${var}'=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\"')"; \
+		[ -n "$$val" ] || continue; \
+		why=""; \
+		printf '%s' "$$val" | grep -q '[]/?#[]' && why="one of ] / ? # ["; \
+		printf '%s' "$$val" | grep -q '[[:space:]]' && why="a space"; \
+		printf '%s' "$$val" | grep -qE '%[0-9A-Fa-f][0-9A-Fa-f]' && why="a percent escape (it decodes into another character)"; \
+		case "$$var" in *_USER) printf '%s' "$$val" | grep -q ':' && why="a colon";; esac; \
+		if [ -n "$$why" ]; then \
+			printf "$(RED)ERROR: %s contains %s — it goes into a credential URL and would break it.$(NC)\n" "$$var" "$$why"; \
+			bad=1; \
+		fi; \
+	done; \
+	[ $$bad -eq 0 ] || exit 1
 	@result=0; \
 	for var in $(REQUIRED_VARS); do \
 		if ! grep -Eq '^[[:space:]]*'$${var}'=' $(ENV_FILE); then \
