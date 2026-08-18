@@ -125,6 +125,7 @@ jobs:
             CHANGELOG.md
             CHANGELOG_EN.md
             RELEASE_NOTES_2.0.md
+            RELEASE_NOTES_2.0_EN.md
             LICENSE
             README.md
             README_EN.md

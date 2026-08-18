@@ -242,100 +242,38 @@ If the variables are not set, the Wiren Board defaults are used. Restart the fro
 
 ### 1. Configure Environment Variables
 
-Copy the sample environment file:
+Copy the environment file and fill it in:
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in the required variables as in the example below.
-The `EMAIL_*` variables can be left unset if email sending is disabled — see [Working Without Email](#working-without-email).
+Every variable is documented by a comment in `.env.example` itself — we do not repeat those
+here, so that the description cannot drift away from the file. Before the first launch it is
+enough to know the following:
 
-`ABSOLUTE_SERVER` must match the full public hostname of the cloud. If the cloud will be available at `https://cloud.example.com`, set `ABSOLUTE_SERVER=cloud.example.com`.
+- `ABSOLUTE_SERVER` — the full external hostname of the cloud: for `https://cloud.example.com`
+  that is `cloud.example.com`. Every subdomain is derived from it, and it must match the
+  certificate.
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD` — the first cloud administrator. The email is also the
+  login.
+- The `EMAIL_*` variables can be left unset if email sending is disabled — see
+  [Working Without Email](#working-without-email).
+- `METRICS_RETENTION_DAYS` — how long metrics are kept. Set it **before the first launch**: it
+  can be lowered afterwards but not raised, otherwise the metrics store has to be recreated.
+- Secrets and passwords — `SECRET_KEY`, `TUNNEL_AUTH_TOKEN`, the JWT keys,
+  `ABSOLUTE_SERVER_REGEX`, the metrics store passwords — are not written by hand:
+  `make generate-env` creates them, and it runs as part of `make run`. They are not in
+  `.env.example`, and before the first launch `make check-env` reports them as missing — that
+  is expected.
 
-```dotenv
-ABSOLUTE_SERVER=my-domain-name.com
+> ⚠️ The metrics store passwords are baked into it when it is created. Changing them in `.env`
+> after the first launch achieves nothing: the store keeps the old ones and the connection
+> breaks.
 
-# Cloud administrator. The email is also the login
-ADMIN_EMAIL=admin@mail.com
-ADMIN_PASSWORD=password
+> After any change to `.env`, restart the stack: `make restart`.
 
-# Email sending (True/False). When False, no emails are sent; invitations and
-# password resets are handled via the admin panel — see "Working Without Email".
-EMAIL_ENABLED=True
-EMAIL_HOST=smtp.mail.com
-EMAIL_PORT=587
-EMAIL_HOST_USER=mymail@mail.com
-EMAIL_HOST_PASSWORD=password
-EMAIL_NOTIFICATIONS_FROM=mymail@mail.com
-# TLS on port 587. For the SSL port 465 set EMAIL_USE_SSL=True instead
-EMAIL_USE_TLS=True
-
-# Application database
-POSTGRES_DB=db_name
-POSTGRES_USER=postgres_user
-POSTGRES_PASSWORD=postgres_password
-
-# Metrics dashboards (Grafana). This account signs in at metrics.<your domain>
-GRAFANA_ADMIN_USER=grafana_admin
-GRAFANA_ADMIN_PASSWORD=grafana_password
-
-# Tunnel service ports and its dashboard account
-TUNNEL_PORT=7107
-TUNNEL_DASHBOARD_PORT=7501
-TUNNEL_DASHBOARD_USER=tunnel_admin
-TUNNEL_DASHBOARD_PASSWORD=tunnel_password
-
-#--------------------------------------------------------------------------
-# Optional ----------------------------------------------------------------
-#--------------------------------------------------------------------------
-
-# How long controller metrics are kept. Raise it if you have the disk space
-#METRICS_RETENTION_DAYS=30
-
-# Session geolocation. When True, the DB-IP City Lite database is downloaded
-# on `make run` (~62 MB over the network, ~124 MB on disk) — see "Session Geolocation"
-#GEOIP_ENABLED=True
-
-# Override the organization invitation email subject and body.
-# Leave commented to keep the built-in RU/EN translation (selected by the
-# inviter's language).
-# Use \n in INVITE_EMAIL_BODY for line breaks; the invitation link is always
-# appended at the end of the body.
-#INVITE_EMAIL_SUBJECT="You have been invited to a Wiren Board Cloud organization"
-#INVITE_EMAIL_BODY="Hello!\nYou have been invited to our organization.\nClick the link to register:"
-
-# Set the path to the directory with TLS certificates if required. Default is "./tls"
-#TLS_CERTS_PATH=path/to/my/certs/
-
-# Set Docker network name if required. Default is "wb_net"
-#DOCKER_NET_NAME=my-docker-network
-
-# Set the external port for Traefik
-#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
-
-```
-
-> ⚠️ For the submission port 587 keep `EMAIL_USE_TLS=True`; for the SSL port 465 drop it and set `EMAIL_USE_SSL=True` instead.
-> After editing `.env`, restart the stack: `make restart`.
-
-> ⚠️ **The metrics retention period** is set at the first launch. On a running installation it can be **lowered** at any
-> time — the cloud starts deleting earlier. It cannot be **raised**: the safety-net deletion policy
-> is written into the metrics storage when it is created and keeps deleting by the original period
-> even if the variable goes up. Raising it on a live installation means recreating the metrics
-> storage, which loses the accumulated history.
-
-
-> 💡 The credentials of the built-in S3 storage (`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`) can be
-> set in `.env` if the defaults do not suit you.
-
-> 💡 The remaining required variables — `SECRET_KEY`, `TUNNEL_AUTH_TOKEN`, `PRIVATE_KEY`,
-> `PUBLIC_KEY`, `ABSOLUTE_SERVER_REGEX` — are not written by hand: `make generate-env` creates them,
-> and it runs as part of `make run`. Before the first launch `make check-env` reports them as
-> missing — that is expected.
-
-> 💡 Email sending can be disabled entirely — see [Working Without Email](#working-without-email).
 
 ### 2. Automatic Initialization and Launch
 
@@ -474,20 +412,12 @@ stays empty. Private addresses (LAN/VPN) are not geolocated — this is by desig
 
 ## 🎛 Environment Variables
 
-You can override some environment variables manually in `.env`. If a variable is already set, it won’t be generated again.
+The full list of variables, each with its description, is in [`.env.example`](.env.example). Any
+generated variable can also be set by hand: if a value is already present in `.env`, generation
+skips it.
 
-Example:
-
-```dotenv
-# Token for opening tunnels
-TUNNEL_AUTH_TOKEN=GLgTbKtCiwF8J4tI439NJba0pbXfW0a39E7jZOOr0qO67xonhhfaNIWiH7FzPP
-
-# Secret key for Django
-SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
-
-```
-
-For JWT, place `private.pem` and `public.pem` in the `jwt` directory; otherwise, they will be generated automatically.
+If you want to use your own private and public JWT keys, place `private.pem` and `public.pem` in
+the `jwt` directory in the project root — otherwise they are generated automatically.
 
 ### Background task performance
 
@@ -602,162 +532,26 @@ make help
 
 ## ⬆️ Upgrading from 1.x to 2.0
 
-The **2.0** release is incompatible with 1.x, but **user data is not discarded**
-— it is migrated in place. The key change: **email becomes the login** — it is
-mandatory, unique, and must equal the account name. The new schema requires this
-but does not repair the data itself, so the database has to be put in order before
-migrating — which is what `make upgrade` does.
+Release **2.0** is incompatible with 1.x, but **no user data is deleted** — it is migrated in
+place. The key change: **the email becomes the login** — it is mandatory, unique, and must match
+the account name. The new schema requires this but does not repair the data itself, so the
+database has to be put in order before the migration — that is what `make upgrade` does.
 
-### Migration conditions — read before running
+The upgrade runs as a single command:
 
-Upgrade **only if** you are currently on a 1.x version (see the `VERSION` file, or the
-web interface footer, which shows the version). Before `make upgrade`, make sure:
-
-- **The certificate has been reissued with `*.apps.<domain>`.** Since release 2.0.0 controller web
-  services are a standard feature, so `*.apps.your-domain.com` belongs to the mandatory
-  domain set. If your 1.x certificate does not cover it, `make upgrade` stops at
-  `make check-certs` before the backup: reissue the certificate (see
-  [4. TLS Certificates](#4-tls-certificates)) and add the `*.apps` DNS record.
-- **There is room for the backup.** The backup (`pg_dump` + `influx backup`) is written
-  to `./backups` — ensure there is disk space for a copy of the database. `make upgrade`
-  takes its own backup before the migration. But if the accounts need repairing (see
-  below), dump the database by hand **first**: `make fix-users` in every mode except
-  `scan` rewrites the user table in the live database before any automatic backup
-  exists, and the previous login/email pairs are not recorded anywhere.
-
-  ```sh
-  make backup
-  ```
-- **The 1.x stack is running.** Do not stop the containers before upgrading —
-  `make upgrade` manages them for you. `migration_doctor` runs inside the live backend
-  container, and on a stopped stack (after the gate has taken the application down, say)
-  it runs as a one-off container instead — accounts can be repaired there too.
-- **Every user must have a valid, unique email equal to the login.** That is the point of
-  the migration. Conflicts you may have to resolve by hand:
-  - **admin with no email** (typical 1.x case: `username="admin"`, `email=""`) —
-    `MODE=auto` assigns it `ADMIN_EMAIL`, but reads the value from the environment of
-    the already-running backend container: a value you just wrote into `.env` is not
-    seen. If you are editing `.env` now, recreate the container (`make run`) or set
-    the address by hand via `MODE=resolve`;
-  - **users with no email** — a real email must be supplied for each;
-  - **duplicate emails** (case-insensitive) — only one owner can keep it; the rest need a
-    different address.
-- **InfluxDB metrics are not converted.** The history is copied alongside when it can
-  be; new metrics accumulate in TimescaleDB from scratch. If the upgrade warned that the
-  copy is empty, the history lives only in the `influxData` docker volume — do not delete
-  it. The copy is written to `./backups/influx-<ts>/`.
-- **The server can carry 2.0.** Compared to 1.5.0 the stack gains TimescaleDB, Telegraf,
-  Grafana, dedicated metrics and email workers and a second backend for webhooks — it
-  needs more memory. The pre-flight check only watches the disk, so check against the
-  [system requirements](#minimum-system-requirements) and
-  [background task performance](#background-task-performance) beforehand.
-- **If there are no conflicts** (everyone already has a valid, unique email = login) the
-  migration runs **with zero manual steps**: `make upgrade` backs up, scans, migrates, and
-  brings up the 2.0 stack on its own.
-
-Update the checkout to 2.0 and start the upgrade — the `upgrade` target only exists in
-2.0, a 1.x checkout does not have it:
-
-```sh
+```bash
 git pull
 make upgrade
 ```
 
-Without a terminal (e.g. `ssh host 'make upgrade'`) the confirmation cannot be asked —
-run `make upgrade CONFIRM=yes`.
+It runs its checks while the cloud keeps serving and changes nothing until all of them pass,
+then asks for confirmation and only after that begins the downtime.
 
-The command first runs its checks **while the cloud keeps serving** and changes nothing until they
-all pass — run it as many times as you need:
+> 📖 Migration conditions, resolving account conflicts, the expected downtime and the rollback
+> procedure are in [`RELEASE_NOTES_2.0_EN.md`](RELEASE_NOTES_2.0_EN.md). Read it **before**
+> starting the upgrade: it also covers what to decide in advance (the metrics retention period,
+> for one).
 
-1. **Configuration.** `.env` is rebuilt from `.env.example`: same-named variables carry over as they
-   are, renamed ones under their new names, keys and tokens verbatim. The previous file stays
-   alongside as `.env.bak-<date>`. Required variables whose value cannot be derived are
-   left **empty** — fill them in, or the check will not let the upgrade through: an empty
-   required variable counts as unset. Optional ones get the example value. Several runs
-   leave several `.env.bak-*` copies; the 1.x configuration is in the oldest one.
-2. **Environment variables** — every required one is set (`make check-env`).
-3. **Certificate** — covers every domain, including `*.apps.<domain>` (`make check-certs`).
-4. **Disk space** — at least 6 GB on the partition holding the repository (that is the one
-   the check looks at). If Docker keeps its images on another partition, check that one
-   too: `docker info --format '{{.DockerRootDir}}'`.
-5. **Images** — downloaded in advance so the downtime does not wait for them.
-6. **User accounts** — compatible with the 2.0 schema (the check only reads the database).
-
-The command then shows what happens next and asks for confirmation. Only after you answer does the
-downtime start:
-
-1. **Backup** — `pg_dump` of the main database and, if InfluxDB is still running, `influx backup` of
-   the metrics into `./backups`. InfluxDB is **not** converted to TimescaleDB — it is kept alongside
-   so you can consult the historical metrics later.
-2. **The application stops.** The databases stay up for the migration. The accounts are checked once
-   more, with nothing writing to the database.
-3. **Migrations** on the new image.
-4. **Start.** Controllers are handed their metrics collector config right away, without waiting for
-   the half-hourly cycle.
-
-After the upgrade, put out the 1.x leftovers: the `influx` and `worker-influx` services do
-not exist in 2.0, so the upgrade does not touch them and their containers keep running on
-the old images. The `influxData` volume with the metrics history stays in place.
-
-```sh
-VERSION=$(cat VERSION) docker compose up -d --remove-orphans
-```
-
-See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for the expected downtime and the rollback
-procedure (the release notes are in Russian; the rollback commands are reproduced below).
-
-### Resolving user conflicts
-
-`migration_doctor` runs inside the still-running backend container (via the
-Django ORM, touching only `username`/`email`) and is idempotent — run it until 0
-conflicts remain.
-
-Of the modes below only `scan` leaves the database untouched; `auto`, `resolve` and
-`dump` all start with the same auto-fixes.
-
-```sh
-# Only report the conflicts — the one mode that changes nothing:
-make fix-users MODE=scan
-
-# Auto-fixes: an admin with an empty email gets ADMIN_EMAIL; an empty email whose
-# login is itself an address adopts it; when login and email differ, the email wins —
-# the user's login becomes the address. Empty addresses with nothing to derive from,
-# and duplicates, are left to a human:
-make fix-users MODE=auto
-
-# Interactive wizard: the same auto-fixes first, then a prompt per remaining
-# conflict, validating the address and checking for collisions:
-make fix-users MODE=resolve
-
-# Headless (no TTY): dump conflicts to a file, edit it, apply. The dump is also
-# preceded by the auto-fixes, so the file only holds what needs a decision:
-make fix-users MODE=dump          # writes migration/conflicts.yaml
-#   ...edit the new_email field on each row...
-make fix-users MODE=apply         # reads the file back
-```
-
-When `make fix-users MODE=scan` reports `Conflicts: 0`, re-run `make upgrade`:
-migration applies and the 2.0 image comes up.
-
-> The backup `./backups/pg-<ts>.sql.gz` is your safety net. If the migration is
-> interrupted, do **not** re-run it on this checkout: some migrations have already been
-> applied, and the 2.x images migrate on their own start. Go back to the previous
-> version together with the database — and in exactly this order:
->
-> ```sh
-> git checkout v1.5.0
-> VERSION=$(cat VERSION) docker compose down --remove-orphans
-> cp "$(ls -tr .env.bak-* | head -1)" .env
-> VERSION=$(cat VERSION) docker compose up -d postgres
-> docker compose exec -T postgres dropdb -U <POSTGRES_USER> <POSTGRES_DB>
-> docker compose exec -T postgres createdb -U <POSTGRES_USER> -O <POSTGRES_USER> <POSTGRES_DB>
-> gunzip -c backups/pg-<date>.sql.gz | docker compose exec -T postgres psql -U <POSTGRES_USER> -d <POSTGRES_DB>
-> make run
-> ```
->
-> The `.env` must come from the **oldest** `.env.bak-*`: only that copy is still in the
-> 1.x format. The database must be dropped and recreated first, or the restore trips
-> over the existing tables.
 
 ---
 

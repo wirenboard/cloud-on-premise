@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## [2.0.0] - 2026-08-12
 
-> Breaking release. See [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md) for the
+> Breaking release. See [`RELEASE_NOTES_2.0_EN.md`](RELEASE_NOTES_2.0_EN.md) for the
 > upgrade procedure.
 
 ### Added
