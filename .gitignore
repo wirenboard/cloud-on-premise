@@ -40,3 +40,8 @@ CLAUDE.md
 
 # GeoIP database (operator-provided, see README)
 geoip/*.mmdb
+
+# Local review working notes (never tracked)
+REVIEW-*.md
+CHECKLIST-*.md
+.pr30-body-full-backup.md

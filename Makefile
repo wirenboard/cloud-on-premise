@@ -115,7 +115,7 @@ help:
 
 #------------------------------------------------------------------------------
 # [ INTROSPECTION ] -----------------------------------------------------------
-# scripts/migrate-env.sh asks for these instead of scraping the file: make expands
+# migration/migrate-env.sh asks for these instead of scraping the file: make expands
 # the lists itself, so the conditional EMAIL_* part is already resolved.
 
 .PHONY: print-required-vars
@@ -140,7 +140,7 @@ check-not-1x:
 		printf "$(RED)ERROR: an upgrade was interrupted after its backup — the database may be half-migrated.$(NC)\n"; \
 		printf "$(YELLOW)Starting the stack now would migrate on top of that. Finish the upgrade instead:$(NC)\n"; \
 		printf "$(YELLOW)  make fix-users MODE=scan   see what stopped it\n  make upgrade               run it again$(NC)\n"; \
-		printf "$(YELLOW)To go back instead, follow the rollback in RELEASE_NOTES_2.0.md — it clears this state.$(NC)\n"; \
+		printf "$(YELLOW)To go back instead, follow the rollback in migration/RELEASE_NOTES_2.0.md — it clears this state.$(NC)\n"; \
 		exit 1; \
 	fi
 	@old_img="$$(docker ps --format '{{.Image}}' 2>/dev/null | grep -E 'on-premise/wbc-' | sed 's/.*://' | awk -F. '$$1 ~ /^[0-9]+$$/ && $$1 < 2' | sort -u | head -1)"; \
@@ -163,11 +163,11 @@ check-not-1x:
 .PHONY: test
 test:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ TESTS ]====================="
-	@bash tests/test-migrate-env.sh
+	@bash migration/tests/test-migrate-env.sh
 	@printf "\n"
-	@bash tests/test-upgrade-gate.sh
+	@bash migration/tests/test-upgrade-gate.sh
 	@printf "\n"
-	@python3 tests/test_migration_doctor.py
+	@python3 migration/tests/test_migration_doctor.py
 
 #------------------------------------------------------------------------------
 # [ TLS CERTIFICATE CHECK ] ---------------------------------------------------
@@ -439,7 +439,7 @@ reload-certs:
 
 #------------------------------------------------------------------------------
 # [ 1.x -> 2.x UPGRADE ] ------------------------------------------------------
-# Thin wrappers over scripts/upgrade.sh; both go away once 1.x is unsupported.
+# Thin wrappers over migration/upgrade.sh; both go away once 1.x is unsupported.
 
 MODE ?= scan
 
@@ -447,17 +447,17 @@ MODE ?= scan
 backup:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ BACKUP ]====================="
 	@$(call require_version)
-	@bash ./scripts/upgrade.sh backup
+	@bash ./migration/upgrade.sh backup
 
 # MODE=scan (read-only) | auto (safe fixes) | resolve (wizard) | dump / apply (edit conflicts.yaml)
 .PHONY: fix-users
 fix-users:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ migration_doctor: $(MODE) ]====================="
 	@$(call require_version)
-	@bash ./scripts/upgrade.sh fix-users $(MODE)
+	@bash ./migration/upgrade.sh fix-users $(MODE)
 
 .PHONY: upgrade
 upgrade:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ 1.x -> 2.x UPGRADE ]====================="
 	@$(call require_version)
-	@bash ./scripts/upgrade.sh upgrade
+	@bash ./migration/upgrade.sh upgrade

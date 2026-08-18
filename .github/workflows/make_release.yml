@@ -124,8 +124,8 @@ jobs:
             VERSION
             CHANGELOG.md
             CHANGELOG_EN.md
-            RELEASE_NOTES_2.0.md
-            RELEASE_NOTES_2.0_EN.md
+            migration/RELEASE_NOTES_2.0.md
+            migration/RELEASE_NOTES_2.0_EN.md
             LICENSE
             README.md
             README_EN.md
@@ -138,7 +138,9 @@ jobs:
             timescale/**
             telegraf/**
             grafana/**
-            migration/**
+            migration/upgrade.sh
+            migration/migrate-env.sh
+            migration/migration_doctor.py
 
       - name: Done
         run: echo "✅ Release completed for version ${{ needs.read-version.outputs.version }}"

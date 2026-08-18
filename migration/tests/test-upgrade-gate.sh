@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # `make run` / `update` / `restart` must refuse while the installation is on 1.x.
 #
-#     bash tests/test-upgrade-gate.sh
+#     bash migration/tests/test-upgrade-gate.sh
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 failures=0
@@ -60,21 +60,21 @@ check "clearing the marker unblocks it" "$(make check-not-1x >/dev/null 2>&1; ec
 
 # The rollback documents that removal, or the operator is stuck with the marker.
 check "the rollback clears the marker" \
-  "$(grep -q 'rm -f backups/.upgrade-unfinished' "$ROOT/RELEASE_NOTES_2.0.md"; echo $?)"
+  "$(grep -q 'rm -f backups/.upgrade-unfinished' "$ROOT/migration/RELEASE_NOTES_2.0.md"; echo $?)"
 check "the English rollback too" \
-  "$(grep -q 'rm -f backups/.upgrade-unfinished' "$ROOT/RELEASE_NOTES_2.0_EN.md"; echo $?)"
+  "$(grep -q 'rm -f backups/.upgrade-unfinished' "$ROOT/migration/RELEASE_NOTES_2.0_EN.md"; echo $?)"
 
 # upgrade.sh has to both raise and clear it, or the guard is either dead or permanent.
 check "upgrade.sh raises the marker after the backup" \
-  "$(grep -q ': > "$UPGRADE_MARKER"' "$ROOT/scripts/upgrade.sh"; echo $?)"
+  "$(grep -q ': > "$UPGRADE_MARKER"' "$ROOT/migration/upgrade.sh"; echo $?)"
 check "upgrade.sh clears it when done" \
-  "$(grep -q 'rm -f "$UPGRADE_MARKER"' "$ROOT/scripts/upgrade.sh"; echo $?)"
+  "$(grep -q 'rm -f "$UPGRADE_MARKER"' "$ROOT/migration/upgrade.sh"; echo $?)"
 
 # One source for the name, or the two sides drift apart.
 check "the marker name is defined in lib.sh" \
   "$(grep -q '^UPGRADE_MARKER=' "$ROOT/scripts/lib.sh"; echo $?)"
 check "and is not spelled out anywhere else" \
-  "$(! grep -rl 'backups/\.upgrade-unfinished' "$ROOT/Makefile" "$ROOT/scripts/upgrade.sh" >/dev/null 2>&1; echo $?)"
+  "$(! grep -rl 'backups/\.upgrade-unfinished' "$ROOT/Makefile" "$ROOT/migration/upgrade.sh" >/dev/null 2>&1; echo $?)"
 
 # The guard has to sit on every target that starts the stack.
 setup

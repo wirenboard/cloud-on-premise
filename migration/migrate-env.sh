@@ -6,7 +6,7 @@
 # itself — no marker to notice and delete. The previous file is kept alongside.
 set -euo pipefail
 
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/../scripts/lib.sh"
 
 ENV_FILE="$ENV_FILE_DEFAULT"
 TEMPLATE=".env.example"

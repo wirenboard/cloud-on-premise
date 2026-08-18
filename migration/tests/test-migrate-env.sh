@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Runs scripts/migrate-env.sh against fixture .env files in a scratch directory.
+# Runs migration/migrate-env.sh against fixture .env files in a scratch directory.
 #
-#     bash tests/test-migrate-env.sh
+#     bash migration/tests/test-migrate-env.sh
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 failures=0
@@ -48,15 +48,16 @@ ENV
 }
 
 setup() { # fresh scratch copy of the repo files the script touches
-    rm -rf "$WORK/case"; mkdir -p "$WORK/case/scripts"
+    rm -rf "$WORK/case"; mkdir -p "$WORK/case/scripts" "$WORK/case/migration"
     cp "$ROOT/Makefile" "$ROOT/.env.example" "$WORK/case/"
-    cp "$ROOT/scripts/migrate-env.sh" "$ROOT/scripts/lib.sh" "$WORK/case/scripts/"
+    cp "$ROOT/scripts/lib.sh" "$WORK/case/scripts/"
+    cp "$ROOT/migration/migrate-env.sh" "$WORK/case/migration/"
     cd "$WORK/case" || exit 1
 }
 
 echo "1.x -> 2.0 conversion"
 setup; write_1x .env
-bash scripts/migrate-env.sh >/dev/null 2>&1; rc=$?
+bash migration/migrate-env.sh >/dev/null 2>&1; rc=$?
 check "stops for the operator while values are missing" "$([ $rc -eq 1 ]; echo $?)"
 check "EMAIL_SERVER -> EMAIL_HOST"        "$([ "$(val .env EMAIL_HOST)" = "smtp.example.com" ]; echo $?)"
 check "EMAIL_LOGIN -> EMAIL_HOST_USER"    "$([ "$(val .env EMAIL_HOST_USER)" = "bot@example.com" ]; echo $?)"
@@ -97,7 +98,7 @@ open("Makefile", "w", encoding="utf-8").write("\n".join(out))
 PY
 make -s print-required-vars >/dev/null 2>&1
 check "the reformatted Makefile is still valid" "$?"
-bash scripts/migrate-env.sh >/dev/null 2>&1; rc=$?
+bash migration/migrate-env.sh >/dev/null 2>&1; rc=$?
 check "a reformatted list still stops the upgrade" "$([ $rc -eq 1 ]; echo $?)"
 check "and still leaves the value empty" "$(has .env 'GRAFANA_ADMIN_PASSWORD='; echo $?)"
 
@@ -105,17 +106,17 @@ check "and still leaves the value empty" "$(has .env 'GRAFANA_ADMIN_PASSWORD='; 
 # everything as optional is what used to fill the new variables from the example.
 setup; write_1x .env
 printf 'REQUIRED_VARS := \\\n  BROKEN\n' > Makefile
-out="$(bash scripts/migrate-env.sh 2>&1)"; rc=$?
+out="$(bash migration/migrate-env.sh 2>&1)"; rc=$?
 check "an unreadable list aborts" "$([ $rc -ne 0 ]; echo $?)"
 check "and says why" "$(printf '%s' "$out" | grep -q 'required variables'; echo $?)"
 
 echo
 echo "idempotence"
 setup; write_1x .env
-bash scripts/migrate-env.sh >/dev/null 2>&1
+bash migration/migrate-env.sh >/dev/null 2>&1
 sed -i.bak 's/^GRAFANA_ADMIN_USER=$/GRAFANA_ADMIN_USER=ga/; s/^GRAFANA_ADMIN_PASSWORD=$/GRAFANA_ADMIN_PASSWORD=gp/' .env
 cp .env .env.settled
-bash scripts/migrate-env.sh >/dev/null 2>&1; rc=$?
+bash migration/migrate-env.sh >/dev/null 2>&1; rc=$?
 check "a settled file passes"       "$([ $rc -eq 0 ]; echo $?)"
 check "and is left untouched"       "$(diff -q .env .env.settled >/dev/null; echo $?)"
 check "no second backup is written" "$([ "$(ls .env.bak-* 2>/dev/null | wc -l)" -eq 1 ]; echo $?)"
@@ -127,7 +128,7 @@ for proto_case in "smtp+tls:True:" "smtp+ssl:False:True" "smtp:False:"; do
     want_tls="${rest%%:*}"; want_ssl="${rest#*:}"
     setup; write_1x .env
     sed -i.bak "s|^EMAIL_PROTOCOL=.*|EMAIL_PROTOCOL=$proto|" .env
-    bash scripts/migrate-env.sh >/dev/null 2>&1
+    bash migration/migrate-env.sh >/dev/null 2>&1
     check "$proto -> EMAIL_USE_TLS=$want_tls" "$([ "$(val .env EMAIL_USE_TLS)" = "$want_tls" ]; echo $?)"
     [ -n "$want_ssl" ] && check "$proto -> EMAIL_USE_SSL=$want_ssl" "$([ "$(val .env EMAIL_USE_SSL)" = "$want_ssl" ]; echo $?)"
 done
@@ -136,7 +137,7 @@ echo
 echo "email switched off"
 setup; write_1x .env
 sed -i.bak 's/^EMAIL_ENABLED=True/EMAIL_ENABLED=False/' .env
-bash scripts/migrate-env.sh >/dev/null 2>&1
+bash migration/migrate-env.sh >/dev/null 2>&1
 check "EMAIL_* are not demanded" "$(! grep -qE '^EMAIL_(HOST|PORT|NOTIFICATIONS_FROM)=$' .env; echo $?)"
 check "EMAIL_ENABLED stays False" "$([ "$(val .env EMAIL_ENABLED)" = "False" ]; echo $?)"
 
@@ -144,13 +145,13 @@ echo
 echo "custom values outside the template"
 setup; write_1x .env
 echo "MY_CUSTOM_SETTING=keep-me" >> .env
-bash scripts/migrate-env.sh >/dev/null 2>&1
+bash migration/migrate-env.sh >/dev/null 2>&1
 check "are carried over" "$([ "$(val .env MY_CUSTOM_SETTING)" = "keep-me" ]; echo $?)"
 
 echo
 echo "nothing to migrate"
 setup
-bash scripts/migrate-env.sh >/dev/null 2>&1
+bash migration/migrate-env.sh >/dev/null 2>&1
 check "no .env is not an error" "$([ $? -eq 0 ]; echo $?)"
 
 echo

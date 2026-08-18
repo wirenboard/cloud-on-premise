@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs migration_doctor against an in-memory user table. No Django, no containers.
 
-    python3 tests/test_migration_doctor.py
+    python3 migration/tests/test_migration_doctor.py
 """
 
 import contextlib
@@ -10,7 +10,7 @@ import pathlib
 import sys
 import types
 
-DOCTOR = pathlib.Path(__file__).resolve().parent.parent / "migration" / "migration_doctor.py"
+DOCTOR = pathlib.Path(__file__).resolve().parent.parent / "migration_doctor.py"
 
 rows = []
 

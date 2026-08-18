@@ -4,7 +4,7 @@
 # Delete together with the make targets once 1.x is out of support.
 set -euo pipefail
 
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/../scripts/lib.sh"
 
 ENV_FILE="$ENV_FILE_DEFAULT"
 BACKUP_DIR="backups"
@@ -130,7 +130,7 @@ check_upgrade() {
     # Before the migration, so the new passwords are carried over into the 2.x file
     # like any other value: the metrics store bakes them in when it first starts.
     make generate-metrics-passwords >/dev/null || ready=0
-    bash ./scripts/migrate-env.sh || ready=0
+    bash ./migration/migrate-env.sh || ready=0
     config_ok=$ready
 
     step "Environment variables"

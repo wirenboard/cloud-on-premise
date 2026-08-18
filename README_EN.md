@@ -548,7 +548,7 @@ It runs its checks while the cloud keeps serving and changes nothing until all o
 then asks for confirmation and only after that begins the downtime.
 
 > 📖 Migration conditions, resolving account conflicts, the expected downtime and the rollback
-> procedure are in [`RELEASE_NOTES_2.0_EN.md`](RELEASE_NOTES_2.0_EN.md). Read it **before**
+> procedure are in [`RELEASE_NOTES_2.0_EN.md`](migration/RELEASE_NOTES_2.0_EN.md). Read it **before**
 > starting the upgrade: it also covers what to decide in advance (the metrics retention period,
 > for one).
 

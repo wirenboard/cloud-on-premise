@@ -5,7 +5,7 @@
 ## [2.0.0] - 2026-08-12
 
 > Мажорный релиз с несовместимыми изменениями. Порядок обновления —
-> в [`RELEASE_NOTES_2.0.md`](RELEASE_NOTES_2.0.md).
+> в [`RELEASE_NOTES_2.0.md`](migration/RELEASE_NOTES_2.0.md).
 
 ### Добавлено
 
