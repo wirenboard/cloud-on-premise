@@ -398,6 +398,32 @@ generate-env:
 	@printf "\n\n$(GREEN)All secrets and environment variables are ready.$(NC)\n"
 
 #------------------------------------------------------------------------------
+# [ METRICS SCHEMA ] ----------------------------------------------------------
+
+# The one-shot that re-applies the metrics schema fails quietly: `compose up`
+# reports success as long as the container started. A schema left unapplied shows
+# up much later, as metrics that quietly stopped arriving.
+.PHONY: check-metrics-schema
+check-metrics-schema:
+	@cid=""; for i in $$(seq 1 60); do \
+		cid="$$(VERSION=$(VERSION) docker compose ps -aq timescale-init 2>/dev/null | head -1)"; \
+		[ -n "$$cid" ] || { sleep 2; continue; }; \
+		state="$$(docker inspect --format '{{.State.Status}}' "$$cid" 2>/dev/null)"; \
+		[ "$$state" = "running" ] || break; \
+		sleep 2; \
+	done; \
+	[ -n "$$cid" ] || exit 0; \
+	code="$$(docker inspect --format '{{.State.ExitCode}}' "$$cid" 2>/dev/null || echo 0)"; \
+	if [ "$$code" != "0" ]; then \
+		printf "$(RED)ERROR: the metrics schema was not applied (timescale-init exited $$code).$(NC)\n"; \
+		printf "$(YELLOW)The stack is up, but the metrics store did not get this release's schema —$(NC)\n"; \
+		printf "$(YELLOW)metrics may stop arriving without any other sign. See what happened:$(NC)\n"; \
+		printf "$(YELLOW)  docker compose logs timescale-init$(NC)\n"; \
+		exit 1; \
+	fi; \
+	printf "$(GREEN)Metrics schema applied.$(NC)\n"
+
+#------------------------------------------------------------------------------
 # [ COMPOSITE TARGETS ] -------------------------------------------------------
 
 .PHONY: run
@@ -408,6 +434,7 @@ run:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@VERSION=$(VERSION) docker compose up -d --build
+	@${MAKE} check-metrics-schema
 
 .PHONY: run-no-cert-check
 run-no-cert-check:
@@ -417,6 +444,7 @@ run-no-cert-check:
 	@${MAKE} generate-env
 	@${MAKE} check-cert-paths
 	@VERSION=$(VERSION) docker compose up -d --build
+	@${MAKE} check-metrics-schema
 
 .PHONY: update
 update:
@@ -430,6 +458,7 @@ update:
 	docker container prune -f
 	@VERSION=$(VERSION) docker compose pull
 	@VERSION=$(VERSION) docker compose up -d --build
+	@${MAKE} check-metrics-schema
 
 .PHONY: stop
 stop:
@@ -445,6 +474,7 @@ restart:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@export VERSION=$(VERSION); docker compose down && docker compose up -d --build
+	@${MAKE} check-metrics-schema
 
 # Traefik reads the certificate files once at startup, so a renewed certificate
 # needs it restarted — only it, the rest of the stack keeps serving.

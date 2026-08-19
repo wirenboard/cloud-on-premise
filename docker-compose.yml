@@ -137,6 +137,34 @@ services:
       start_period: 30s
       retries: 6
 
+  # The entrypoint applies init.sql only on a fresh data volume, so a schema change
+  # would otherwise never reach an installation that already exists. The cloud
+  # re-applies its own init.sql on every deploy; this is the same thing for one node.
+  # The file is idempotent and goes in as one transaction, so a repeat is a no-op.
+  timescale-init:
+    image: timescale/timescaledb-ha:pg17.5-ts2.21.3
+    logging: *default-logging
+    restart: "no"
+    environment:
+      # psql picks these up itself; POSTGRES_* are what the script substitutes.
+      PGHOST: timescale
+      PGPASSWORD: ${TIMESCALE_PASSWORD:-timescale_password}
+      POSTGRES_USER: ${TIMESCALE_USER:-timescale}
+      POSTGRES_DB: ${TIMESCALE_DB:-metrics}
+      TELEGRAF_TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER:-telegraf}
+      TELEGRAF_TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD:-telegraf_password}
+      GRAFANA_TIMESCALE_USER: ${GRAFANA_TIMESCALE_USER:-grafana}
+      GRAFANA_TIMESCALE_PASSWORD: ${GRAFANA_TIMESCALE_PASSWORD:-grafana_timescale_password}
+      METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
+      TZ: UTC
+    entrypoint: ["/bin/bash", "/timescale/10-apply-init.sh"]
+    volumes:
+      - ./timescale/10-apply-init.sh:/timescale/10-apply-init.sh:ro
+      - ./timescale/init.sql.tmpl:/timescale/init.sql.tmpl:ro
+    depends_on:
+      timescale:
+        condition: service_healthy
+
   redis:
     image: redis:7.4.8-alpine
     logging: *default-logging
