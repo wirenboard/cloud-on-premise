@@ -36,12 +36,12 @@ BEGIN
 
   -- Exporter user (unused on-premise, kept for SQL parity)
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ts_exporter') THEN
-    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', 'ts_exporter', 'ts_exporter_unused');
+    CREATE ROLE ts_exporter NOLOGIN;
   END IF;
 
   -- Backup user (unused on-premise, kept for SQL parity)
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ts_backup') THEN
-    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', 'ts_backup', 'ts_backup_unused');
+    CREATE ROLE ts_backup NOLOGIN;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='views_reader') THEN
@@ -52,6 +52,11 @@ BEGIN
     CREATE ROLE all_reader NOLOGIN;
   END IF;
 END$$;
+
+-- Nothing here connects as these two: no exporter, no pgbackrest. Earlier versions
+-- of this file gave them a login with a password published in the repository.
+ALTER ROLE ts_exporter NOLOGIN;
+ALTER ROLE ts_backup   NOLOGIN;
 
 -- Org role management
 CREATE OR REPLACE PROCEDURE auth.ensure_org_role(org_id uuid)
@@ -298,6 +303,9 @@ BEGIN
     ('org_host_topic_time_desc_idx', '(organization_id, host, topic, time DESC)', '')
     ) AS v(suffix, columns, where_clause)
   LOOP
+    -- A new index here builds under the lock of the single transaction this file
+    -- runs in, holding up ingestion on a populated store. The cloud avoids that by
+    -- pre-creating indexes per chunk, outside any transaction, before it applies.
     EXECUTE format(
       'CREATE INDEX IF NOT EXISTS %I ON public.%I %s %s',
       v_index.indexname,
