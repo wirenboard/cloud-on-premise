@@ -81,13 +81,19 @@ fix_users() {
     local remote="/tmp/migration_doctor.py" yaml="/tmp/conflicts.yaml"
     local local_yaml="$MIGRATION_DIR/conflicts.yaml"
 
+    # The container's environment was fixed when it started, and the admin whose email
+    # is blank is exactly the case where 1.x started without ADMIN_EMAIL — so the value
+    # is passed in from the current .env instead of being read from inside.
+    local admin_email; admin_email="$(env_value ADMIN_EMAIL)"
+
     if compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then
         local cid
         cid="$(compose ps -q backend)"
         docker cp "$MIGRATION_DIR/migration_doctor.py" "$cid:$remote"
         [ -f "$local_yaml" ] && docker cp "$local_yaml" "$cid:$yaml"
         # A non-zero exit means "conflicts remain" — still bring conflicts.yaml back.
-        compose exec backend sh -c "$(doctor_cmd "$mode" "$remote" "$yaml")" || rc=$?
+        compose exec -e ADMIN_EMAIL="$admin_email" backend \
+            sh -c "$(doctor_cmd "$mode" "$remote" "$yaml")" || rc=$?
         docker cp "$cid:$yaml" "$local_yaml" 2>/dev/null || true
         return $rc
     fi
@@ -96,7 +102,8 @@ fix_users() {
     # file back to whoever owns the checkout. --no-deps: the doctor needs only
     # postgres; the full dependency tree would create the metrics volume early.
     compose up -d postgres >/dev/null 2>&1 || true
-    compose run --rm --no-deps --user root -v "$PWD/$MIGRATION_DIR:/migration" backend \
+    compose run --rm --no-deps --user root -e ADMIN_EMAIL="$admin_email" \
+        -v "$PWD/$MIGRATION_DIR:/migration" backend \
         sh -c "$(doctor_cmd "$mode" /migration/migration_doctor.py /migration/conflicts.yaml)" || rc=$?
     chown -R --reference="$ENV_FILE" "$MIGRATION_DIR" 2>/dev/null || true
     return $rc
@@ -127,11 +134,30 @@ check_upgrade() {
         say "    or drop the volume (it only holds 2.x metrics): docker volume rm $(metrics_volume_name)" "$YELLOW"
         return 1
     fi
+    # Whether the configuration still looks like 1.x has to be answered before the
+    # migration rewrites it — the marker below depends on the answer.
+    local was_1x=0 v
+    for v in INFLUXDB_TOKEN ADMIN_USERNAME EMAIL_PROTOCOL; do
+        if [ -n "$(env_value "$v")" ]; then was_1x=1; fi
+    done
+
     # Before the migration, so the new passwords are carried over into the 2.x file
     # like any other value: the metrics store bakes them in when it first starts.
     make generate-metrics-passwords >/dev/null || ready=0
+    # Installations updating from a release archive have no key pair yet, and the
+    # public key is mounted as a file: without this docker creates a directory in
+    # its place and the tunnels break after the migration, not before.
+    make generate-jwt >/dev/null || ready=0
     bash ./migration/migrate-env.sh || ready=0
     config_ok=$ready
+
+    # From here the configuration is 2.x while the database can still be 1.x, and
+    # both 1.x signals the guard relies on are gone. The marker keeps `make run`
+    # out until the upgrade finishes or the rollback clears it.
+    if [ "$config_ok" -eq 1 ] && [ "$was_1x" -eq 1 ]; then
+        mkdir -p "$BACKUP_DIR"
+        : > "$UPGRADE_MARKER"
+    fi
 
     step "Environment variables"
     if [ "$config_ok" -eq 0 ]; then
@@ -168,7 +194,11 @@ check_upgrade() {
     fi
 
     step "Images"
-    if [ "$enough" -eq 0 ]; then
+    # Every compose call reads the whole file, so an unfinished configuration makes
+    # them fail for a reason that has nothing to do with images or accounts.
+    if [ "$config_ok" -eq 0 ]; then
+        say "    skipped: fix the configuration above first" "$YELLOW"
+    elif [ "$enough" -eq 0 ]; then
         say "    skipped: free the disk first, downloading now would fill it" "$YELLOW"
     elif compose pull --quiet 2>/dev/null; then
         say "    downloaded, the update itself will not wait for them" "$GREEN"
@@ -178,7 +208,9 @@ check_upgrade() {
     fi
 
     step "User accounts"
-    if fix_users scan >/dev/null 2>&1; then
+    if [ "$config_ok" -eq 0 ]; then
+        say "    skipped: fix the configuration above first" "$YELLOW"
+    elif fix_users scan >/dev/null 2>&1; then
         say "    every account fits the 2.x schema" "$GREEN"
     else
         say "    accounts conflict with the 2.x schema (email becomes the login)" "$RED"
@@ -194,8 +226,10 @@ check_upgrade() {
         say "Everything is ready." "$GREEN"
         return 0
     fi
-    say "Not ready yet. Fix what is marked above and run 'make upgrade' again —" "$YELLOW"
-    say "nothing has been changed and the cloud keeps running." "$YELLOW"
+    say "Not ready yet. Fix what is marked above and run 'make upgrade' again." "$YELLOW"
+    say "The cloud keeps running and the database has not been touched. The configuration," "$YELLOW"
+    say "however, has already been migrated to $VERSION — the previous one is kept next to it" "$YELLOW"
+    say "as .env.bak-<date>, and going back to 1.x means restoring the oldest of those copies." "$YELLOW"
     return 1
 }
 
@@ -217,7 +251,7 @@ confirm() {
     printf "Stop the cloud and upgrade now? [y/N] "
     read -r answer
     case "$answer" in y|Y|yes|YES) return 0 ;; esac
-    say "Cancelled. Nothing was changed." "$YELLOW"
+    say "Cancelled. The database was not touched; the configuration is already $VERSION." "$YELLOW"
     return 1
 }
 
@@ -233,8 +267,8 @@ upgrade() {
     echo
     step "backup (before ANY database change)."
     backup
-    # From here the database can end up half-migrated, and `make run` would happily
-    # start 2.x on top of it. The marker keeps that door shut until this run finishes.
+    # Raised back in check_upgrade, as soon as the configuration became 2.x. Kept
+    # here for the case where that never happened — a 2.x .env with a 1.x database.
     : > "$UPGRADE_MARKER"
 
     step "stopping the application — the databases stay up for the migration."
@@ -243,7 +277,10 @@ upgrade() {
     compose stop $app_services
 
     # The list above misses 1.x-only services (influx, worker-influx), and that worker
-    # would keep writing under the old schema through the migration. Backup is done.
+    # would keep writing under the old schema through the migration. Backup is done,
+    # so they are removed rather than stopped: they carry `restart: always` and would
+    # come back with the docker daemon, after which `make update` sees a 1.x image and
+    # refuses to work on an installation that is already upgraded. Volumes stay.
     local proj known name svc
     proj="$(docker inspect "$(compose ps -q postgres)" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
     known="$(compose config --services)"
@@ -251,7 +288,7 @@ upgrade() {
         docker ps --filter "label=com.docker.compose.project=$proj" \
                   --format '{{.Names}} {{.Label "com.docker.compose.service"}}' \
         | while read -r name svc; do
-            printf '%s\n' "$known" | grep -qx "$svc" || docker stop "$name" >/dev/null 2>&1 || true
+            printf '%s\n' "$known" | grep -qx "$svc" || docker rm -f "$name" >/dev/null 2>&1 || true
         done
     fi
 

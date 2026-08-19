@@ -113,10 +113,9 @@ You only need to upgrade **if** you are currently running version 1.x — the ve
 - **Every user must have a valid, unique email equal to the login.** That is the whole point of
   the migration. The conflicts you will have to resolve by hand:
   - **an admin without an email** (the typical 1.x case: `username="admin"`, `email=""`) —
-    `MODE=auto` fills in `ADMIN_EMAIL` for them, but it takes the value from the environment of
-    the already running backend container: a value you have just written into `.env` is not
-    visible to it. If you are editing `.env` right now, recreate the container (`make run`) or
-    set the address by hand with `MODE=resolve`;
+    `MODE=auto` fills in `ADMIN_EMAIL` for them from the current `.env`, even when the backend
+    container started without that variable. If the address has to be a different one, use
+    `MODE=resolve`;
   - **users without an email** — a real email has to be provided for each of them;
   - **duplicate emails** (case-insensitively) — only one owner can keep the address, the rest
     have to be given a different one.

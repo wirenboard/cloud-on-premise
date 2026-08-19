@@ -336,8 +336,10 @@ BEGIN
 END;
 $$;
 
--- Per-host retention job.
-CREATE OR REPLACE PROCEDURE auth.run_host_retention()
+-- Per-host retention job. The two arguments are what the TimescaleDB scheduler
+-- passes to a user-defined action; without them every run dies on lookup.
+DROP PROCEDURE IF EXISTS auth.run_host_retention();
+CREATE OR REPLACE PROCEDURE auth.run_host_retention(job_id INTEGER, config JSONB)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public, auth

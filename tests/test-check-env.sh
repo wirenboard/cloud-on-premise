@@ -55,8 +55,32 @@ check "and offers True or False"   "$(printf '%s' "$out" | grep -q "Use True or 
 # An empty value is a different error (required-variable), not this one.
 setup
 printf 'ABSOLUTE_SERVER=cloud.example.com\nEMAIL_ENABLED=\n' > .env
-check "an empty value is left to the required-variable check" \
-  "$(! make check-env 2>&1 | grep -q "is not a boolean"; echo $?)"
+out="$(make check-env 2>&1 || true)"
+says() { printf '%s' "$out" | grep -q -- "$1"; }   # captured: pipefail hides grep otherwise
+check "an empty value is left to the required-variable check" "$(! says "is not a boolean"; echo $?)"
+
+# The metrics store writes the value into a CHECK constraint (1..3650). Out of that
+# range every metric insert fails, and the store is only built once.
+echo
+echo "METRICS_RETENTION_DAYS is refused before it reaches the metrics store"
+retention_refused() { # value -> 0 when check-env complains about it
+    setup
+    printf 'ABSOLUTE_SERVER=cloud.example.com\nEMAIL_ENABLED=True\nMETRICS_RETENTION_DAYS=%s\n' "$1" > .env
+    printf '%s' "$(make check-env 2>&1 || true)" | grep -q "METRICS_RETENTION_DAYS"
+}
+for v in 1 30 3650; do
+    check "$v is accepted" "$(! retention_refused "$v"; echo $?)"
+done
+for v in 0 -1 3651 30d abc 30.5; do
+    check "'$v' is refused" "$(retention_refused "$v"; echo $?)"
+done
+# Whitespace only: compose trims it away and falls back to the default, so the
+# check has to read it the same way instead of inventing an error.
+check "a whitespace-only value counts as absent" "$(! retention_refused ' '; echo $?)"
+setup
+printf 'ABSOLUTE_SERVER=cloud.example.com\nEMAIL_ENABLED=True\n' > .env
+printf '%s' "$(make check-env 2>&1 || true)" | grep -q "METRICS_RETENTION_DAYS"
+check "absent means the default, not an error" "$([ $? -ne 0 ]; echo $?)"
 
 echo
 if [ "$failures" -ne 0 ]; then echo "FAILED: $failures check(s)"; exit 1; fi

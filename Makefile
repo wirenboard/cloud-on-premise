@@ -143,7 +143,7 @@ print-allow-empty-vars:
 .PHONY: check-not-1x
 check-not-1x:
 	@if [ -f "$(UPGRADE_MARKER)" ]; then \
-		printf "$(RED)ERROR: an upgrade was interrupted after its backup — the database may be half-migrated.$(NC)\n"; \
+		printf "$(RED)ERROR: an upgrade is unfinished — the configuration is already 2.x while the database may not be.$(NC)\n"; \
 		printf "$(YELLOW)Starting the stack now would migrate on top of that. Finish the upgrade instead:$(NC)\n"; \
 		printf "$(YELLOW)  make fix-users MODE=scan   see what stopped it\n  make upgrade               run it again$(NC)\n"; \
 		printf "$(YELLOW)To go back instead, follow the rollback in migration/RELEASE_NOTES_2.0.md — it clears this state.$(NC)\n"; \
@@ -271,6 +271,14 @@ endif
 	if [ -n "$$v" ] && ! printf '%s\n' $(EMAIL_BOOL_OK) | grep -qx -- "$$v"; then \
 		printf "$(RED)ERROR: EMAIL_ENABLED='%s' is not a boolean both the cloud and Grafana read the same way.$(NC)\n" "$$v"; \
 		printf "$(YELLOW)Spellings like 'ok' or 'Y' switch email on for the cloud while Grafana alerts stay silent. Use True or False.$(NC)\n"; \
+		exit 1; \
+	fi
+	@r="$$(bash scripts/env.sh getraw METRICS_RETENTION_DAYS | tr -d '\"')"; \
+	r="$${r#"$${r%%[![:space:]]*}"}"; r="$${r%"$${r##*[![:space:]]}"}"; \
+	if [ -n "$$r" ] && ! { printf '%s' "$$r" | grep -qE '^[0-9]+$$' && [ "$$r" -ge 1 ] && [ "$$r" -le 3650 ]; }; then \
+		printf "$(RED)ERROR: METRICS_RETENTION_DAYS='%s' — the metrics store takes a whole number of days from 1 to 3650.$(NC)\n" "$$r"; \
+		printf "$(YELLOW)It is written into the store as a constraint: an out-of-range value makes every metric insert fail.$(NC)\n"; \
+		printf "$(YELLOW)There is no 'keep forever' value — leave the variable out to take the default of 30 days.$(NC)\n"; \
 		exit 1; \
 	fi
 	@if [ ! -f $(ENV_FILE) ]; then \

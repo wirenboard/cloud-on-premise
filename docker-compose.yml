@@ -3,7 +3,10 @@ x-traefik-common: &traefik-common
   traefik.docker.network: ${DOCKER_NET_NAME:-wb_net}
 
 x-backend-common-env: &backend-common-env
-  EMAIL_ENABLED: "${EMAIL_ENABLED:?set EMAIL_ENABLED to True or False in .env}"
+  # No colon before '?': an empty value has to reach check-env, which explains it.
+  # Failing here instead would break every compose command, `make stop` included,
+  # exactly while the operator is mid-upgrade with the variable not yet filled in.
+  EMAIL_ENABLED: "${EMAIL_ENABLED?set EMAIL_ENABLED to True or False in .env}"
   EMAIL_HOST: ${EMAIL_HOST:-}
   EMAIL_PORT: ${EMAIL_PORT:-587}
   EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
@@ -473,7 +476,10 @@ services:
       - ./grafana/clients-grafana.ini:/clients-grafana.ini:ro
     labels:
       <<: *traefik-common
-      traefik.http.routers.clients_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`)"
+      # Password routes stay closed, as in the cloud: the backend holds its own copy
+      # of the Grafana password, and a change made inside Grafana would lock the user
+      # out of the metrics for good.
+      traefik.http.routers.clients_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathPrefix(`/user/password`) && !PathPrefix(`/api/user/password`)"
       traefik.http.routers.clients_grafana.entrypoints: "websecure"
       traefik.http.routers.clients_grafana.service: "clients_grafana"
       traefik.http.routers.clients_grafana.tls: "true"
