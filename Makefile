@@ -34,8 +34,8 @@ LEGACY_RE      := ^[[:space:]]*($(shell printf '%s' "$(LEGACY_VARS)" | tr ' ' '|
 EMAIL_ENABLED_VALUE := $(shell printf '%s' "$(call ENV_GET,EMAIL_ENABLED)" | tr '[:upper:]' '[:lower:]')
 EMAIL_DISABLED := $(if $(filter $(EMAIL_ENABLED_VALUE),false off no 0),1,0)
 
-# Read by the backend and by Grafana, whose boolean dictionaries differ: 'ok' and
-# 'Y' mean on for the cloud and off for Grafana. Only shared spellings are allowed.
+# Only spellings the backend and Grafana read alike: 'ok' and 'Y' mean on for one
+# and off for the other.
 EMAIL_ENABLED_RAW := $(call ENV_GET,EMAIL_ENABLED)
 EMAIL_BOOL_OK := true True TRUE yes Yes YES on On ON 1 y \
                  false False FALSE no No NO off Off OFF 0
@@ -400,9 +400,8 @@ generate-env:
 #------------------------------------------------------------------------------
 # [ METRICS SCHEMA ] ----------------------------------------------------------
 
-# The one-shot that re-applies the metrics schema fails quietly: `compose up`
-# reports success as long as the container started. A schema left unapplied shows
-# up much later, as metrics that quietly stopped arriving.
+# `compose up` succeeds as long as the one-shot started, so its exit code is the
+# only sign that the schema was applied.
 .PHONY: check-metrics-schema
 check-metrics-schema:
 	@cid="$$(VERSION=$(VERSION) docker compose ps -aq timescale-init 2>/dev/null | head -1)"; \

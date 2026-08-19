@@ -22,12 +22,9 @@ setup() {
     cd "$WORK/case" || exit 1
 }
 
-# The check runs before the required-variable loop, so a minimal .env is enough:
-# an accepted value simply has to get past it, not to make the whole file valid.
 verdict() { # value -> prints "rejected" or "passed"
     setup
     printf 'ABSOLUTE_SERVER=cloud.example.com\nEMAIL_ENABLED=%s\n' "$1" > .env
-    # Captured, not piped: under pipefail a failing make would mask a matching grep.
     local out; out="$(make check-env 2>&1 || true)"
     case "$out" in *"is not a boolean"*) echo rejected ;; *) echo passed ;; esac
 }
@@ -59,8 +56,6 @@ out="$(make check-env 2>&1 || true)"
 says() { printf '%s' "$out" | grep -q -- "$1"; }   # captured: pipefail hides grep otherwise
 check "an empty value is left to the required-variable check" "$(! says "is not a boolean"; echo $?)"
 
-# The metrics store writes the value into a CHECK constraint (1..3650). Out of that
-# range every metric insert fails, and the store is only built once.
 echo
 echo "METRICS_RETENTION_DAYS is refused before it reaches the metrics store"
 retention_refused() { # value -> 0 when check-env complains about it
@@ -74,8 +69,7 @@ done
 for v in 0 -1 3651 30d abc 30.5; do
     check "'$v' is refused" "$(retention_refused "$v"; echo $?)"
 done
-# Whitespace only: compose trims it away and falls back to the default, so the
-# check has to read it the same way instead of inventing an error.
+# Compose trims it away and falls back to the default; the check reads it the same.
 check "a whitespace-only value counts as absent" "$(! retention_refused ' '; echo $?)"
 setup
 printf 'ABSOLUTE_SERVER=cloud.example.com\nEMAIL_ENABLED=True\n' > .env

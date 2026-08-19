@@ -3,9 +3,7 @@ x-traefik-common: &traefik-common
   traefik.docker.network: ${DOCKER_NET_NAME:-wb_net}
 
 x-backend-common-env: &backend-common-env
-  # No colon before '?': an empty value has to reach check-env, which explains it.
-  # Failing here instead would break every compose command, `make stop` included,
-  # exactly while the operator is mid-upgrade with the variable not yet filled in.
+  # No colon: an empty value must reach check-env, not kill every compose command.
   EMAIL_ENABLED: "${EMAIL_ENABLED?set EMAIL_ENABLED to True or False in .env}"
   EMAIL_HOST: ${EMAIL_HOST:-}
   EMAIL_PORT: ${EMAIL_PORT:-587}
@@ -137,10 +135,8 @@ services:
       start_period: 30s
       retries: 6
 
-  # The entrypoint applies init.sql only on a fresh data volume, so a schema change
-  # would otherwise never reach an installation that already exists. The cloud
-  # re-applies its own init.sql on every deploy; this is the same thing for one node.
-  # The file is idempotent and goes in as one transaction, so a repeat is a no-op.
+  # The entrypoint applies init.sql only on a fresh volume, so without this a schema
+  # change never reaches an existing installation. Idempotent, one transaction.
   timescale-init:
     image: timescale/timescaledb-ha:pg17.5-ts2.21.3
     logging: *default-logging
@@ -505,9 +501,8 @@ services:
       - ./grafana/clients-grafana.ini:/clients-grafana.ini:ro
     labels:
       <<: *traefik-common
-      # Password routes stay closed, as in the cloud: the backend holds its own copy
-      # of the Grafana password, and a change made inside Grafana would lock the user
-      # out of the metrics for good.
+      # Closed as in the cloud: a password changed inside Grafana diverges from the
+      # copy the backend keeps, and the user loses the metrics for good.
       traefik.http.routers.clients_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathPrefix(`/user/password`) && !PathPrefix(`/api/user/password`)"
       traefik.http.routers.clients_grafana.entrypoints: "websecure"
       traefik.http.routers.clients_grafana.service: "clients_grafana"

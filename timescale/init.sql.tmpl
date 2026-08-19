@@ -3,11 +3,8 @@
 -- at cd394bae. Update the revision when re-syncing: it is the base for the next diff.
 --
 -- Deliberate differences from that base, so the next diff is not mistaken for drift:
---   * the HA cluster (Patroni/etcd/HAProxy) is collapsed to a single node;
---   * Jinja variables are collapsed to constants, or to __PLACEHOLDERS__ that
---     10-apply-init.sh substitutes from the environment;
---   * the exporter and backup roles are created for parity, but nothing on-premise
---     logs in as them: there is no metrics exporter and no pgbackrest here.
+-- the HA cluster is collapsed to one node, Jinja variables to constants and
+-- __PLACEHOLDERS__, and nothing here logs in as the exporter or backup roles.
 --
 -- __TELEGRAF_USER__ / __TELEGRAF_PASSWORD__ / __GRAFANA_USER__ / __GRAFANA_PASSWORD__
 -- are substituted from the environment by 10-apply-init.sh.
@@ -102,10 +99,9 @@ BEGIN
   END IF;
 END$$;
 
--- Bring the CHECK in line with the ceiling above. Upstream needs this because the
--- ceiling is a deploy variable there; here it matters because this file is applied
--- again on every start, so a ceiling changed by a release has to reach installations
--- that already exist. The inline constraint gets a generated name, hence the lookup.
+-- Carries a ceiling changed by a release to installations that already exist —
+-- this file is applied again on every start. The inline constraint has a generated
+-- name, hence the lookup.
 DO $$
 DECLARE
   v_conname text;
@@ -370,9 +366,8 @@ $$;
 
 -- Per-host retention job. The two arguments are what the TimescaleDB scheduler
 -- passes to a user-defined action; without them every run dies on lookup.
--- An installation created before that was fixed keeps the argument-less procedure
--- next to this one; it is never called again (the scheduler passes both arguments),
--- and dropping it is refused while the job still points at it.
+-- An older installation keeps the argument-less one next to this: never called
+-- again, and dropping it is refused while the job points at it.
 CREATE OR REPLACE PROCEDURE auth.run_host_retention(job_id INTEGER, config JSONB)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -476,7 +471,6 @@ GRANT SELECT ON public.mqtt_metrics_topics_readable TO views_reader, all_reader;
 GRANT SELECT ON public.mqtt_metrics_topics TO all_reader;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.mqtt_metrics_topics FROM views_reader, all_reader;
 
--- Nobody has business connecting to the maintenance database
 REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
 
 -- Readers must not execute our internal functions and procedures

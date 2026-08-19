@@ -370,9 +370,8 @@ def apply_yaml(path):
                 sys.stderr.write(f"  id={pk}: no such user, skipped\n")
                 errors += 1
                 continue
-            # The row may have been repaired by other means between dump and apply;
-            # writing the file's answer over it would undo that silently, and the
-            # previous pair is not recorded anywhere.
+            # Repaired by other means since the dump: overwriting would undo that
+            # silently, and the previous pair is recorded nowhere.
             _, username, email = row[0]
             if (username or "") != (rec.get("username") or "") or normalize(email) != normalize(
                 rec.get("current_email")
@@ -420,8 +419,7 @@ def main(argv=None):
         skipped = apply_yaml(args.file)
 
     # One exit protocol for every mode: non-zero while any conflict remains is what
-    # gates `make upgrade`. A row the file could not be applied to counts too — the
-    # operator's answer was not written, and that must not read as success.
+    # gates `make upgrade`. A skipped row counts too — the answer was not written.
     conflicts = detect()
     if args.mode != "dump":
         print_table(conflicts)

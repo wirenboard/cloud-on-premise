@@ -96,9 +96,8 @@ fix_users() {
     local remote="/tmp/migration_doctor.py" yaml="/tmp/conflicts.yaml"
     local local_yaml="$MIGRATION_DIR/conflicts.yaml"
 
-    # The container's environment was fixed when it started, and the admin whose email
-    # is blank is exactly the case where 1.x started without ADMIN_EMAIL — so the value
-    # is passed in from the current .env instead of being read from inside.
+    # Passed in, not read from inside: the container started without ADMIN_EMAIL in
+    # exactly the case where the admin has no email.
     local admin_email; admin_email="$(env_value ADMIN_EMAIL)"
 
     if compose ps --services --filter status=running 2>/dev/null | grep -qx backend; then
@@ -113,9 +112,8 @@ fix_users() {
         return $rc
     fi
 
-    # Only the backend is missing while the installation still serves people: the
-    # fallback below would recreate postgres from the 2.x definition under a running
-    # 1.x stack, and this check promises to change nothing.
+    # The fallback below would recreate postgres from the 2.x definition under a
+    # running 1.x stack, and this check promises to change nothing.
     local still_serving; still_serving="$(running_app_services | tr '\n' ' ')"
     if [ -n "${still_serving// /}" ]; then
         say "ERROR: the backend is not running, but the installation still is (${still_serving%% })." "$RED"
@@ -161,24 +159,21 @@ check_upgrade() {
         say "    or drop the volume (it only holds 2.x metrics): docker volume rm $(metrics_volume_name)" "$YELLOW"
         return 1
     fi
-    # Whether the configuration still looks like 1.x has to be answered before the
-    # migration rewrites it — the marker below depends on the answer.
+    # Has to be answered before the migration rewrites the file.
     local was_1x; was_1x="$(looks_1x)"
 
     # Before the migration, so the new passwords are carried over into the 2.x file
     # like any other value: the metrics store bakes them in when it first starts.
     make generate-metrics-passwords >/dev/null || ready=0
-    # Installations updating from a release archive have no key pair yet, and the
-    # public key is mounted as a file: without this docker creates a directory in
-    # its place and the tunnels break after the migration, not before.
+    # An install from a release archive has no key pair, and the public key is
+    # mounted as a file: docker would create a directory there and kill the tunnels.
     make generate-jwt >/dev/null || ready=0
     bash ./migration/migrate-env.sh || ready=0
     config_ok=$ready
 
-    # The moment the configuration stops looking like 1.x, both signals the guard
-    # relies on are gone while the database can still be 1.x. Keyed on the rewrite
-    # itself, not on the exit code: migrate-env also returns non-zero when it merely
-    # asks the operator to fill a variable in, and the file is already rewritten then.
+    # Config is 2.x while the database may not be: both signals the guard reads are
+    # gone. Keyed on the rewrite, not the exit code — that is non-zero for a variable
+    # the operator still has to fill in, and the file is already rewritten by then.
     if [ "$was_1x" = 1 ] && [ "$(looks_1x)" = 0 ]; then
         mkdir -p "$BACKUP_DIR"
         : > "$UPGRADE_MARKER"
