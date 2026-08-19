@@ -23,6 +23,12 @@ legacy_env_value() {
 }
 compose() { VERSION="$VERSION" docker compose "$@"; }
 
+# Everything that is not the application itself: these stay up through the migration.
+DATA_SERVICES_RE='^(postgres|timescale|redis|minio|minio-client)$'
+running_app_services() {
+    compose ps --services --filter status=running 2>/dev/null | grep -vE "$DATA_SERVICES_RE" || true
+}
+
 # The same signals the Makefile guard reads: 1 while .env is still a 1.x one.
 looks_1x() {
     local v
@@ -105,6 +111,18 @@ fix_users() {
             sh -c "$(doctor_cmd "$mode" "$remote" "$yaml")" || rc=$?
         docker cp "$cid:$yaml" "$local_yaml" 2>/dev/null || true
         return $rc
+    fi
+
+    # Only the backend is missing while the installation still serves people: the
+    # fallback below would recreate postgres from the 2.x definition under a running
+    # 1.x stack, and this check promises to change nothing.
+    local still_serving; still_serving="$(running_app_services | tr '\n' ' ')"
+    if [ -n "${still_serving// /}" ]; then
+        say "ERROR: the backend is not running, but the installation still is (${still_serving%% })." "$RED"
+        say "Start the backend so the accounts can be checked inside it, or stop the stack" "$YELLOW"
+        say "completely — repairing them from a separate container would recreate the database" "$YELLOW"
+        say "container from the 2.x definition while 1.x is still serving." "$YELLOW"
+        return 1
     fi
 
     # Fallback for a stopped stack: bind-mount and run privileged, then hand the
@@ -280,7 +298,7 @@ upgrade() {
 
     step "stopping the application — the databases stay up for the migration."
     local app_services
-    app_services="$(compose config --services | grep -vE '^(postgres|timescale|redis|minio|minio-client)$' | tr '\n' ' ')"
+    app_services="$(compose config --services | grep -vE "$DATA_SERVICES_RE" | tr '\n' ' ')"
     compose stop $app_services
 
     # The list above misses 1.x-only services (influx, worker-influx), and that worker
