@@ -6,9 +6,8 @@
 --   * the HA cluster (Patroni/etcd/HAProxy) is collapsed to a single node;
 --   * Jinja variables are collapsed to constants, or to __PLACEHOLDERS__ that
 --     10-apply-init.sh substitutes from the environment;
---   * upstream re-applies the host_org_map retention CHECK on every deploy, to follow
---     a ceiling that can change. Here the ceiling is a constant and this file runs once,
---     on an empty data volume, so the block would never do anything.
+--   * the exporter and backup roles are created for parity, but nothing on-premise
+--     logs in as them: there is no metrics exporter and no pgbackrest here.
 --
 -- __TELEGRAF_USER__ / __TELEGRAF_PASSWORD__ / __GRAFANA_USER__ / __GRAFANA_PASSWORD__
 -- are substituted from the environment by 10-apply-init.sh.
@@ -101,6 +100,32 @@ BEGIN
   ) THEN
     ALTER TABLE auth.host_org_map ADD COLUMN retention_days int NOT NULL DEFAULT __RETENTION_DAYS__ CHECK (retention_days BETWEEN 1 AND 3650);
   END IF;
+END$$;
+
+-- Bring the CHECK in line with the ceiling above. Upstream needs this because the
+-- ceiling is a deploy variable there; here it matters because this file is applied
+-- again on every start, so a ceiling changed by a release has to reach installations
+-- that already exist. The inline constraint gets a generated name, hence the lookup.
+DO $$
+DECLARE
+  v_conname text;
+BEGIN
+  FOR v_conname IN
+    SELECT con.conname
+    FROM pg_constraint con
+    JOIN pg_class rel     ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE nsp.nspname = 'auth'
+      AND rel.relname = 'host_org_map'
+      AND con.contype = 'c'
+      AND pg_get_constraintdef(con.oid) ILIKE '%retention_days%'
+  LOOP
+    EXECUTE format('ALTER TABLE auth.host_org_map DROP CONSTRAINT %I', v_conname);
+  END LOOP;
+
+  ALTER TABLE auth.host_org_map
+    ADD CONSTRAINT host_org_map_retention_days_check
+    CHECK (retention_days BETWEEN 1 AND 3650);
 END$$;
 
 -- Admin predicate
@@ -450,6 +475,9 @@ GRANT SELECT ON public.org_controllers TO views_reader, all_reader;
 GRANT SELECT ON public.mqtt_metrics_topics_readable TO views_reader, all_reader;
 GRANT SELECT ON public.mqtt_metrics_topics TO all_reader;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.mqtt_metrics_topics FROM views_reader, all_reader;
+
+-- Nobody has business connecting to the maintenance database
+REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
 
 -- Readers must not execute our internal functions and procedures
 REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
