@@ -23,6 +23,15 @@ legacy_env_value() {
 }
 compose() { VERSION="$VERSION" docker compose "$@"; }
 
+# The same signals the Makefile guard reads: 1 while .env is still a 1.x one.
+looks_1x() {
+    local v
+    for v in INFLUXDB_TOKEN ADMIN_USERNAME EMAIL_PROTOCOL; do
+        if [ -n "$(env_value "$v")" ]; then printf 1; return; fi
+    done
+    printf 0
+}
+
 backup() {
     mkdir -p "$BACKUP_DIR"
     local out="$BACKUP_DIR/pg-$TS.sql.gz" part="$BACKUP_DIR/pg-$TS.sql.gz.part"
@@ -136,10 +145,7 @@ check_upgrade() {
     fi
     # Whether the configuration still looks like 1.x has to be answered before the
     # migration rewrites it — the marker below depends on the answer.
-    local was_1x=0 v
-    for v in INFLUXDB_TOKEN ADMIN_USERNAME EMAIL_PROTOCOL; do
-        if [ -n "$(env_value "$v")" ]; then was_1x=1; fi
-    done
+    local was_1x; was_1x="$(looks_1x)"
 
     # Before the migration, so the new passwords are carried over into the 2.x file
     # like any other value: the metrics store bakes them in when it first starts.
@@ -151,10 +157,11 @@ check_upgrade() {
     bash ./migration/migrate-env.sh || ready=0
     config_ok=$ready
 
-    # From here the configuration is 2.x while the database can still be 1.x, and
-    # both 1.x signals the guard relies on are gone. The marker keeps `make run`
-    # out until the upgrade finishes or the rollback clears it.
-    if [ "$config_ok" -eq 1 ] && [ "$was_1x" -eq 1 ]; then
+    # The moment the configuration stops looking like 1.x, both signals the guard
+    # relies on are gone while the database can still be 1.x. Keyed on the rewrite
+    # itself, not on the exit code: migrate-env also returns non-zero when it merely
+    # asks the operator to fill a variable in, and the file is already rewritten then.
+    if [ "$was_1x" = 1 ] && [ "$(looks_1x)" = 0 ]; then
         mkdir -p "$BACKUP_DIR"
         : > "$UPGRADE_MARKER"
     fi
