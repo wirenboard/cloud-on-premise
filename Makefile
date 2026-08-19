@@ -34,6 +34,13 @@ LEGACY_RE      := ^[[:space:]]*($(shell printf '%s' "$(LEGACY_VARS)" | tr ' ' '|
 EMAIL_ENABLED_VALUE := $(shell printf '%s' "$(call ENV_GET,EMAIL_ENABLED)" | tr '[:upper:]' '[:lower:]')
 EMAIL_DISABLED := $(if $(filter $(EMAIL_ENABLED_VALUE),false off no 0),1,0)
 
+# The same value is read by the backend and, through the config file, by Grafana —
+# and they understand different spellings. Only the ones both agree on are allowed;
+# 'ok' and 'Y' would switch email on for the cloud and leave Grafana alerts silent.
+EMAIL_ENABLED_RAW := $(call ENV_GET,EMAIL_ENABLED)
+EMAIL_BOOL_OK := true True TRUE yes Yes YES on On ON 1 y \
+                 false False FALSE no No NO off Off OFF 0
+
 EMAIL_REQUIRED_VARS := \
   EMAIL_HOST \
   EMAIL_PORT \
@@ -160,9 +167,12 @@ check-not-1x:
 # [ TESTS ] -------------------------------------------------------------------
 # Fixtures only — no containers, no database. Not shipped with the release.
 
+# tests/ covers the product; migration/tests/ goes away with the 1.x upgrade path.
 .PHONY: test
 test:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ TESTS ]====================="
+	@bash tests/test-check-env.sh
+	@printf "\n"
 	@bash migration/tests/test-migrate-env.sh
 	@printf "\n"
 	@bash migration/tests/test-upgrade-gate.sh
@@ -258,11 +268,12 @@ check-env:
 ifeq ($(EMAIL_DISABLED),1)
 	@printf "$(YELLOW)Email is disabled (EMAIL_ENABLED=$(EMAIL_ENABLED_VALUE)): EMAIL_* variables are not required.$(NC)\n"
 endif
-	@v="$(EMAIL_ENABLED_VALUE)"; \
-	if [ -n "$$v" ]; then case "$$v" in \
-	  true|on|ok|y|yes|1|false|off|no|0) ;; \
-	  *) printf "$(RED)ERROR: EMAIL_ENABLED='%s' is not a recognized boolean — the backend would silently disable email. Use True or False.$(NC)\n" "$$v"; exit 1;; \
-	esac; fi
+	@v='$(EMAIL_ENABLED_RAW)'; \
+	if [ -n "$$v" ] && ! printf '%s\n' $(EMAIL_BOOL_OK) | grep -qx -- "$$v"; then \
+		printf "$(RED)ERROR: EMAIL_ENABLED='%s' is not a boolean both the cloud and Grafana read the same way.$(NC)\n" "$$v"; \
+		printf "$(YELLOW)Spellings like 'ok' or 'Y' switch email on for the cloud while Grafana alerts stay silent. Use True or False.$(NC)\n"; \
+		exit 1; \
+	fi
 	@if [ ! -f $(ENV_FILE) ]; then \
 		printf "$(RED)ERROR: File %s not found. Please create it based on %s.$(NC)\n" "$(ENV_FILE)" "$(ENV_EXAMPLE)"; exit 1; \
 	fi
