@@ -1,0 +1,21 @@
+name: Tests
+
+# Fixtures only: no containers, no database, seconds to run. They guard the
+# parts an operator meets before anything starts — .env validation, the config
+# migration and the 1.x guard — so they run on every change, not by hand.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'onprem-release/**'
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run fixture tests
+        run: make test
