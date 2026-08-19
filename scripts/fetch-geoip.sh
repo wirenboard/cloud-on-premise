@@ -8,7 +8,7 @@ set -euo pipefail
 FORCE=""
 [ "${1:-}" = "--force" ] && FORCE=1
 
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/env.sh"
 
 ENV_FILE="$ENV_FILE_DEFAULT"
 TARGET="geoip/dbip-city-lite.mmdb"

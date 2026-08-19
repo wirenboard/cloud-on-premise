@@ -2,7 +2,7 @@
 # Shared between the upgrade scripts and the Makefile, so that reading .env and
 # naming the upgrade marker happen in exactly one place.
 #
-# Source it, or call it: `bash scripts/lib.sh get VAR [FILE]` / `... marker`.
+# Source it, or call it: `bash scripts/env.sh get VAR [FILE]` / `... marker`.
 
 ENV_FILE_DEFAULT=".env"
 

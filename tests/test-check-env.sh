@@ -18,7 +18,7 @@ check() {
 setup() {
     rm -rf "$WORK/case"; mkdir -p "$WORK/case/scripts"
     cp "$ROOT/Makefile" "$ROOT/.env.example" "$ROOT/VERSION" "$WORK/case/"
-    cp "$ROOT/scripts/lib.sh" "$WORK/case/scripts/"
+    cp "$ROOT/scripts/env.sh" "$WORK/case/scripts/"
     cd "$WORK/case" || exit 1
 }
 

@@ -50,7 +50,7 @@ ENV
 setup() { # fresh scratch copy of the repo files the script touches
     rm -rf "$WORK/case"; mkdir -p "$WORK/case/scripts" "$WORK/case/migration"
     cp "$ROOT/Makefile" "$ROOT/.env.example" "$WORK/case/"
-    cp "$ROOT/scripts/lib.sh" "$WORK/case/scripts/"
+    cp "$ROOT/scripts/env.sh" "$WORK/case/scripts/"
     cp "$ROOT/migration/migrate-env.sh" "$WORK/case/migration/"
     cd "$WORK/case" || exit 1
 }

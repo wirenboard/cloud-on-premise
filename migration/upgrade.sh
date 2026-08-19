@@ -4,7 +4,7 @@
 # Delete together with the make targets once 1.x is out of support.
 set -euo pipefail
 
-. "$(dirname "$0")/../scripts/lib.sh"
+. "$(dirname "$0")/../scripts/env.sh"
 
 ENV_FILE="$ENV_FILE_DEFAULT"
 BACKUP_DIR="backups"

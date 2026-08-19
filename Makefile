@@ -19,11 +19,11 @@ endef
 
 ENV_FILE      := .env
 ENV_EXAMPLE   := .env.example
-ENV_GET        = $(shell bash scripts/lib.sh get $(1) $(ENV_FILE))
+ENV_GET        = $(shell bash scripts/env.sh get $(1) $(ENV_FILE))
 
-# Both defined once and shared with the scripts: the marker name lives in lib.sh,
+# Both defined once and shared with the scripts: the marker name lives in env.sh,
 # and these are the variables whose presence still marks a 1.x configuration.
-UPGRADE_MARKER := $(shell bash scripts/lib.sh marker)
+UPGRADE_MARKER := $(shell bash scripts/env.sh marker)
 LEGACY_VARS    := INFLUXDB_TOKEN ADMIN_USERNAME EMAIL_PROTOCOL
 LEGACY_RE      := ^[[:space:]]*($(shell printf '%s' "$(LEGACY_VARS)" | tr ' ' '|'))=
 
@@ -278,7 +278,7 @@ endif
 	fi
 	@bad=0; \
 	for var in $(URL_CRED_VARS); do \
-		val="$$(bash scripts/lib.sh getraw "$$var" | tr -d '\"')"; \
+		val="$$(bash scripts/env.sh getraw "$$var" | tr -d '\"')"; \
 		[ -n "$$val" ] || continue; \
 		why=""; \
 		printf '%s' "$$val" | grep -q '[]/?#[]' && why="one of ] / ? # ["; \
@@ -296,7 +296,7 @@ endif
 		if ! grep -Eq '^[[:space:]]*'$${var}'=' $(ENV_FILE); then \
 			printf "$(RED)ERROR: Required variable '%s' is missing or commented out in %s.$(NC)\n" "$${var}" "$(ENV_FILE)"; \
 			result=1; \
-		elif [ -z "$$(bash scripts/lib.sh get "$$var")" ] \
+		elif [ -z "$$(bash scripts/env.sh get "$$var")" ] \
 		     && ! printf '%s\n' $(ALLOW_EMPTY_VARS) | grep -qx "$${var}"; then \
 			printf "$(RED)ERROR: Required variable '%s' is empty in %s — set a value.$(NC)\n" "$${var}" "$(ENV_FILE)"; \
 			result=1; \
@@ -352,7 +352,7 @@ generate-django-secret:
 .PHONY: generate-absolute-server-regex
 generate-absolute-server-regex:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating ABSOLUTE_SERVER_REGEX ------"
-	@ABSOLUTE_SERVER=$$(bash scripts/lib.sh get ABSOLUTE_SERVER); \
+	@ABSOLUTE_SERVER=$$(bash scripts/env.sh get ABSOLUTE_SERVER); \
 	if [ -z "$$ABSOLUTE_SERVER" ]; then \
 		printf "\n$(RED)ERROR: ABSOLUTE_SERVER variable is missing.$(NC)\n"; exit 1; \
 	fi; \

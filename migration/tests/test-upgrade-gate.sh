@@ -18,7 +18,7 @@ setup() {
     rm -rf "$WORK/case"; mkdir -p "$WORK/case"
     mkdir -p "$WORK/case/scripts"
     cp "$ROOT/Makefile" "$ROOT/.env.example" "$ROOT/VERSION" "$WORK/case/"
-    cp "$ROOT/scripts/lib.sh" "$WORK/case/scripts/"
+    cp "$ROOT/scripts/env.sh" "$WORK/case/scripts/"
     cd "$WORK/case" || exit 1
 }
 
@@ -71,8 +71,8 @@ check "upgrade.sh clears it when done" \
   "$(grep -q 'rm -f "$UPGRADE_MARKER"' "$ROOT/migration/upgrade.sh"; echo $?)"
 
 # One source for the name, or the two sides drift apart.
-check "the marker name is defined in lib.sh" \
-  "$(grep -q '^UPGRADE_MARKER=' "$ROOT/scripts/lib.sh"; echo $?)"
+check "the marker name is defined in env.sh" \
+  "$(grep -q '^UPGRADE_MARKER=' "$ROOT/scripts/env.sh"; echo $?)"
 check "and is not spelled out anywhere else" \
   "$(! grep -rl 'backups/\.upgrade-unfinished' "$ROOT/Makefile" "$ROOT/migration/upgrade.sh" >/dev/null 2>&1; echo $?)"
 
