@@ -35,5 +35,9 @@ sed \
   -e "s/__RETENTION_SAFETY_DAYS__/${RETENTION_SAFETY_DAYS}/g" \
   "$TMPL" > "$OUT"
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$OUT"
+# All or nothing: the entrypoint runs this once, on an empty data volume. A partial
+# init would leave a store that looks healthy — pg_isready answers, the container
+# stays up — while telegraf silently writes nothing, and no restart would repair it.
+psql -v ON_ERROR_STOP=1 --single-transaction \
+     --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$OUT"
 rm -f "$OUT"

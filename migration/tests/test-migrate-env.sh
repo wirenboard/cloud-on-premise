@@ -142,6 +142,17 @@ check "EMAIL_* are not demanded" "$(! grep -qE '^EMAIL_(HOST|PORT|NOTIFICATIONS_
 check "EMAIL_ENABLED stays False" "$([ "$(val .env EMAIL_ENABLED)" = "False" ]; echo $?)"
 
 echo
+echo "a relay that takes mail without credentials"
+setup; write_1x .env
+# The 1.x file of such an installation simply has no login and no password.
+sed -i.bak '/^EMAIL_LOGIN=/d; /^EMAIL_PASSWORD=/d' .env
+bash migration/migrate-env.sh >/dev/null 2>&1
+check "EMAIL_HOST_USER is left empty"     "$([ -z "$(val .env EMAIL_HOST_USER)" ]; echo $?)"
+check "EMAIL_HOST_PASSWORD is left empty" "$([ -z "$(val .env EMAIL_HOST_PASSWORD)" ]; echo $?)"
+check "no example credentials sneak in"   "$(! grep -qE '^EMAIL_HOST_(USER|PASSWORD)=(mymail@mail\.com|password)$' .env; echo $?)"
+check "and the rest of the file is still migrated" "$([ "$(val .env EMAIL_HOST)" = "smtp.example.com" ]; echo $?)"
+
+echo
 echo "custom values outside the template"
 setup; write_1x .env
 echo "MY_CUSTOM_SETTING=keep-me" >> .env

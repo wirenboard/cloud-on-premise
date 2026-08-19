@@ -471,6 +471,7 @@ services:
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-noreply@${ABSOLUTE_SERVER}}
+      EMAIL_STARTTLS_POLICY: ${EMAIL_STARTTLS_POLICY:-MandatoryStartTLS}
     volumes:
       - clientsGrafanaData:/var/lib/grafana
       - ./grafana/clients-grafana.ini:/clients-grafana.ini:ro

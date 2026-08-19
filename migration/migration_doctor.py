@@ -365,13 +365,28 @@ def apply_yaml(path):
                 sys.stderr.write(f"  id={pk}: {new_email!r} collides with another user, skipped\n")
                 errors += 1
                 continue
-            if not User.objects.filter(pk=pk).exists():
+            row = User.objects.filter(pk=pk).values_list("pk", "username", "email")
+            if not row:
                 sys.stderr.write(f"  id={pk}: no such user, skipped\n")
+                errors += 1
+                continue
+            # The row may have been repaired by other means between dump and apply;
+            # writing the file's answer over it would undo that silently, and the
+            # previous pair is not recorded anywhere.
+            _, username, email = row[0]
+            if (username or "") != (rec.get("username") or "") or normalize(email) != normalize(
+                rec.get("current_email")
+            ):
+                sys.stderr.write(
+                    f"  id={pk}: the account changed since the dump "
+                    f"(now {username!r}/{email!r}), skipped — re-run dump\n"
+                )
                 errors += 1
                 continue
             set_identity(User, pk, new_email)
             applied += 1
     print(f"Applied {applied} change(s); {errors} skipped.")
+    return errors
 
 
 # ----------------------------------------------------------------------------
@@ -396,20 +411,22 @@ def main(argv=None):
         elif args.mode == "resolve":
             print(f"Auto-fixed {n} row(s) before interactive resolution.")
 
+    skipped = 0
     if args.mode == "resolve":
         wizard()
     elif args.mode == "dump":
         dump_yaml(args.file)
     elif args.mode == "apply":
-        apply_yaml(args.file)
+        skipped = apply_yaml(args.file)
 
     # One exit protocol for every mode: non-zero while any conflict remains is what
-    # gates `make upgrade`.
+    # gates `make upgrade`. A row the file could not be applied to counts too — the
+    # operator's answer was not written, and that must not read as success.
     conflicts = detect()
     if args.mode != "dump":
         print_table(conflicts)
     print_summary(conflicts)
-    sys.exit(1 if conflicts else 0)
+    sys.exit(1 if conflicts or skipped else 0)
 
 
 # Support both ``python migration_doctor.py <mode>`` and being exec()'d from

@@ -1,7 +1,14 @@
 -- TimescaleDB bootstrap for single-node on-premise.
 -- Rendered from cloud-infrastructure roles/deploy_stack/templates/timescale-init.sql.j2
--- at cd394bae, with the HA cluster (Patroni/etcd/HAProxy) collapsed to a single node.
--- Update the revision above when re-syncing: it is the base for the next diff.
+-- at cd394bae. Update the revision when re-syncing: it is the base for the next diff.
+--
+-- Deliberate differences from that base, so the next diff is not mistaken for drift:
+--   * the HA cluster (Patroni/etcd/HAProxy) is collapsed to a single node;
+--   * Jinja variables are collapsed to constants, or to __PLACEHOLDERS__ that
+--     10-apply-init.sh substitutes from the environment;
+--   * upstream re-applies the host_org_map retention CHECK on every deploy, to follow
+--     a ceiling that can change. Here the ceiling is a constant and this file runs once,
+--     on an empty data volume, so the block would never do anything.
 --
 -- __TELEGRAF_USER__ / __TELEGRAF_PASSWORD__ / __GRAFANA_USER__ / __GRAFANA_PASSWORD__
 -- are substituted from the environment by 10-apply-init.sh.

@@ -51,8 +51,9 @@ if [ -z "$REQ" ]; then
     say "Cannot read the list of required variables from the Makefile — aborting." "$RED"
     exit 1
 fi
+may_be_empty() { printf '%s\n' "$ALLOW_EMPTY" | grep -qx -- "$1"; }
 is_required() {
-    printf '%s\n' "$ALLOW_EMPTY" | grep -qx -- "$1" && return 1
+    may_be_empty "$1" && return 1
     printf '%s\n' "$REQ" | grep -qx -- "$1"
 }
 old_value() { env_value_raw "$1" "$SRC"; }
@@ -102,6 +103,11 @@ while IFS= read -r line; do
             # Left empty on purpose: check-env stops the upgrade on the empty value.
             printf '%s=\n' "$var" >> "$tmp"
             todo="$todo $var"
+        elif [ -z "$commented" ] && may_be_empty "$var"; then
+            # Nothing came over from the old file, and empty is a legitimate answer
+            # here — a relay that takes mail without credentials. The example login
+            # and password would pass every check and quietly break the mail instead.
+            printf '%s=\n' "$var" >> "$tmp"
         elif [ -z "$commented" ]; then
             # Not required: the example value is a working default, keep it.
             printf '%s\n' "$line" >> "$tmp"

@@ -85,13 +85,13 @@ def _install_django_stub():
     })
 
 
-def run(mode, table, admin_email=""):
+def run(mode, table, admin_email="", argv_extra=None):
     """Run the doctor over `table`; return (exit code, resulting rows)."""
     global rows
     rows = [dict(r) for r in table]
     _install_django_stub()
     os.environ["ADMIN_EMAIL"] = admin_email
-    sys.argv = ["migration_doctor", mode]
+    sys.argv = ["migration_doctor", mode] + ([argv_extra] if argv_extra else [])
     code = None
     try:
         with contextlib.redirect_stdout(open(os.devnull, "w")):
@@ -182,6 +182,44 @@ check("a mismatch fix also respects foreign usernames", by_pk(out, "1")["usernam
 print("\napply: only valid, free addresses are written")
 code, out = run("scan", [{"pk": "1", "username": "a b", "email": "not-an-email"}])
 check("an invalid address stays a conflict", code == 1)
+
+# dump -> edit -> apply is the path for machines without a terminal, so it earns the
+# same scrutiny as the automatic fixes.
+try:
+    import tempfile
+
+    import yaml
+except ImportError:
+    print("\ndump/apply: skipped, PyYAML is not installed here")
+else:
+    fd, YAML_PATH = tempfile.mkstemp(suffix=".yaml")
+    os.close(fd)
+
+    print("\ndump: writes down what a human has to decide")
+    table = [{"pk": "1", "username": "someone", "email": ""}]
+    run("dump", table, argv_extra=YAML_PATH)
+    with open(YAML_PATH, encoding="utf-8") as fh:
+        records = yaml.safe_load(fh) or []
+    check("the row is in the file", len(records) == 1 and records[0]["id"] == "1")
+    check("with the pair it had at dump time",
+          records[0]["username"] == "someone" and records[0]["current_email"] == "")
+    check("and an empty answer to fill in", records[0]["new_email"] == "")
+
+    print("\napply: writes the operator's answer back")
+    records[0]["new_email"] = "someone@x.com"
+    with open(YAML_PATH, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(records, fh)
+    code, out = run("apply", table, argv_extra=YAML_PATH)
+    check("the address is applied", by_pk(out, "1")["email"] == "someone@x.com")
+    check("and becomes the login too", by_pk(out, "1")["username"] == "someone@x.com")
+
+    print("\napply: a file older than the database is refused")
+    # Same file, but the row was repaired by other means after the dump was taken.
+    repaired = [{"pk": "1", "username": "fixed@x.com", "email": "fixed@x.com"}]
+    code, out = run("apply", repaired, argv_extra=YAML_PATH)
+    check("the repaired row is left alone", by_pk(out, "1")["email"] == "fixed@x.com")
+    check("and the run does not report success", code != 0)
+    os.unlink(YAML_PATH)
 
 print()
 
