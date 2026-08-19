@@ -34,9 +34,8 @@ LEGACY_RE      := ^[[:space:]]*($(shell printf '%s' "$(LEGACY_VARS)" | tr ' ' '|
 EMAIL_ENABLED_VALUE := $(shell printf '%s' "$(call ENV_GET,EMAIL_ENABLED)" | tr '[:upper:]' '[:lower:]')
 EMAIL_DISABLED := $(if $(filter $(EMAIL_ENABLED_VALUE),false off no 0),1,0)
 
-# The same value is read by the backend and, through the config file, by Grafana —
-# and they understand different spellings. Only the ones both agree on are allowed;
-# 'ok' and 'Y' would switch email on for the cloud and leave Grafana alerts silent.
+# Read by the backend and by Grafana, whose boolean dictionaries differ: 'ok' and
+# 'Y' mean on for the cloud and off for Grafana. Only shared spellings are allowed.
 EMAIL_ENABLED_RAW := $(call ENV_GET,EMAIL_ENABLED)
 EMAIL_BOOL_OK := true True TRUE yes Yes YES on On ON 1 y \
                  false False FALSE no No NO off Off OFF 0

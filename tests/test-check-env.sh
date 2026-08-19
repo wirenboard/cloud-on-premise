@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# EMAIL_ENABLED is read twice: by the backend, and by Grafana through its config
-# file. They accept different spellings, so check-env may only pass the ones both
-# read the same way — 'ok' and 'Y' mean "on" to the cloud and "off" to Grafana.
+# check-env may only pass EMAIL_ENABLED spellings the backend and Grafana read the
+# same way — 'ok' and 'Y' mean "on" to the cloud and "off" to Grafana.
 #
 #     bash tests/test-check-env.sh
 set -uo pipefail
