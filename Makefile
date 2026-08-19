@@ -405,23 +405,18 @@ generate-env:
 # up much later, as metrics that quietly stopped arriving.
 .PHONY: check-metrics-schema
 check-metrics-schema:
-	@cid=""; for i in $$(seq 1 60); do \
-		cid="$$(VERSION=$(VERSION) docker compose ps -aq timescale-init 2>/dev/null | head -1)"; \
-		[ -n "$$cid" ] || { sleep 2; continue; }; \
-		state="$$(docker inspect --format '{{.State.Status}}' "$$cid" 2>/dev/null)"; \
-		[ "$$state" = "running" ] || break; \
-		sleep 2; \
-	done; \
+	@cid="$$(VERSION=$(VERSION) docker compose ps -aq timescale-init 2>/dev/null | head -1)"; \
 	[ -n "$$cid" ] || exit 0; \
-	code="$$(docker inspect --format '{{.State.ExitCode}}' "$$cid" 2>/dev/null || echo 0)"; \
-	if [ "$$code" != "0" ]; then \
-		printf "$(RED)ERROR: the metrics schema was not applied (timescale-init exited $$code).$(NC)\n"; \
+	code="$$(timeout 600 docker wait "$$cid" 2>/dev/null)" || code=timeout; \
+	if [ "$$code" = "0" ]; then \
+		printf "$(GREEN)Metrics schema applied.$(NC)\n"; \
+	else \
+		printf "$(RED)ERROR: the metrics schema was not applied (timescale-init: $$code).$(NC)\n"; \
 		printf "$(YELLOW)The stack is up, but the metrics store did not get this release's schema —$(NC)\n"; \
 		printf "$(YELLOW)metrics may stop arriving without any other sign. See what happened:$(NC)\n"; \
 		printf "$(YELLOW)  docker compose logs timescale-init$(NC)\n"; \
 		exit 1; \
-	fi; \
-	printf "$(GREEN)Metrics schema applied.$(NC)\n"
+	fi
 
 #------------------------------------------------------------------------------
 # [ COMPOSITE TARGETS ] -------------------------------------------------------
