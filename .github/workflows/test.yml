@@ -20,7 +20,10 @@ jobs:
       # The doctor's dump/apply tests skip themselves without it, and a green run
       # would then mean less than it looks.
       - name: Install PyYAML
-        run: python3 -m pip install --quiet --break-system-packages pyyaml
+        run: |
+          python3 -m pip install --quiet pyyaml \
+            || python3 -m pip install --quiet --break-system-packages pyyaml
+          python3 -c 'import yaml'
 
       - name: Run fixture tests
         run: make test
