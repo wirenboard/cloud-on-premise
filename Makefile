@@ -273,7 +273,7 @@ endif
 		printf "$(YELLOW)Spellings like 'ok' or 'Y' switch email on for the cloud while Grafana alerts stay silent. Use True or False.$(NC)\n"; \
 		exit 1; \
 	fi
-	@r="$$(bash scripts/env.sh getraw METRICS_RETENTION_DAYS | tr -d '\"')"; \
+	@r="$$(bash scripts/env.sh getraw METRICS_RETENTION_DAYS $(ENV_FILE) | tr -d '\"')"; \
 	r="$${r#"$${r%%[![:space:]]*}"}"; r="$${r%"$${r##*[![:space:]]}"}"; \
 	if [ -n "$$r" ] && ! { printf '%s' "$$r" | grep -qE '^[0-9]+$$' && [ "$$r" -ge 1 ] && [ "$$r" -le 3650 ]; }; then \
 		printf "$(RED)ERROR: METRICS_RETENTION_DAYS='%s' — the metrics store takes a whole number of days from 1 to 3650.$(NC)\n" "$$r"; \
@@ -286,7 +286,7 @@ endif
 	fi
 	@bad=0; \
 	for var in $(URL_CRED_VARS); do \
-		val="$$(bash scripts/env.sh getraw "$$var" | tr -d '\"')"; \
+		val="$$(bash scripts/env.sh getraw "$$var" $(ENV_FILE) | tr -d '\"')"; \
 		[ -n "$$val" ] || continue; \
 		why=""; \
 		printf '%s' "$$val" | grep -q '[]/?#[]' && why="one of ] / ? # ["; \
@@ -304,7 +304,7 @@ endif
 		if ! grep -Eq '^[[:space:]]*'$${var}'=' $(ENV_FILE); then \
 			printf "$(RED)ERROR: Required variable '%s' is missing or commented out in %s.$(NC)\n" "$${var}" "$(ENV_FILE)"; \
 			result=1; \
-		elif [ -z "$$(bash scripts/env.sh get "$$var")" ] \
+		elif [ -z "$$(bash scripts/env.sh get "$$var" $(ENV_FILE))" ] \
 		     && ! printf '%s\n' $(ALLOW_EMPTY_VARS) | grep -qx "$${var}"; then \
 			printf "$(RED)ERROR: Required variable '%s' is empty in %s — set a value.$(NC)\n" "$${var}" "$(ENV_FILE)"; \
 			result=1; \
@@ -360,7 +360,7 @@ generate-django-secret:
 .PHONY: generate-absolute-server-regex
 generate-absolute-server-regex:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating ABSOLUTE_SERVER_REGEX ------"
-	@ABSOLUTE_SERVER=$$(bash scripts/env.sh get ABSOLUTE_SERVER); \
+	@ABSOLUTE_SERVER=$$(bash scripts/env.sh get ABSOLUTE_SERVER $(ENV_FILE)); \
 	if [ -z "$$ABSOLUTE_SERVER" ]; then \
 		printf "\n$(RED)ERROR: ABSOLUTE_SERVER variable is missing.$(NC)\n"; exit 1; \
 	fi; \
