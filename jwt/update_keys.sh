@@ -30,6 +30,28 @@ PUBLIC_KEY_FILE="jwt/public.pem"
 GENERATE_PRIVATE=false
 GENERATE_PUBLIC=false
 
+# An installation that came from a release archive keeps its keys only in .env: the
+# pem files are not in the archive. Restore them from there before deciding to
+# generate, or a new pair would replace working keys and invalidate every token
+# already issued to a controller.
+# Read straight from the file: the export loop above runs behind a pipe, so its
+# variables never reach this shell.
+restore_from_env() { # variable name, target file, extra openssl flag
+    [ -s "$2" ] && return 1
+    local value
+    value="$(grep -E "^[[:space:]]*$1=" .env | tail -1 | cut -d= -f2- | sed 's/^"//; s/"$//')"
+    [ -n "$value" ] || return 1
+    printf '%b\n' "$value" > "$2"
+    if openssl rsa -in "$2" ${3:-} -noout &>/dev/null; then
+        printf "${GREEN}Restored $2 from .env${NC}\n"
+    else
+        rm -f "$2"; return 1
+    fi
+}
+mkdir -p jwt
+restore_from_env PRIVATE_KEY "$PRIVATE_KEY_FILE" || true
+restore_from_env PUBLIC_KEY  "$PUBLIC_KEY_FILE" -pubin || true
+
 printf "${GRAY}%s${NC}\n" "------ Checking private key presence ------"
 if [[ -f "$PRIVATE_KEY_FILE" && -s "$PRIVATE_KEY_FILE" ]]; then
     printf "${GREEN}Private key found: $PRIVATE_KEY_FILE${NC}\n"
