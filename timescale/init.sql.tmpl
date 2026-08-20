@@ -391,29 +391,36 @@ DECLARE
   v_ht_name      text;
   v_chunk_schema text;
   v_chunk_name   text;
-  v_is_compressed boolean;
+  v_range_start  timestamptz;
+  v_range_end    timestamptz;
+  v_max_retention_days int;
   v_deleted_rows  bigint;
   v_total_deleted bigint := 0;
+  v_chunk_has_rows boolean;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM auth.host_org_map WHERE retention_days IS NOT NULL LIMIT 1) THEN
     RAISE NOTICE 'run_host_retention: no hosts with retention_days set, nothing to do';
     RETURN;
   END IF;
 
+  SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0;
+
+  SELECT max(retention_days)
+    INTO v_max_retention_days
+  FROM auth.host_org_map
+  WHERE retention_days IS NOT NULL;
+
   FOR v_ht_name IN
     SELECT 'mqtt_metrics'::text
   LOOP
-    FOR v_chunk_schema, v_chunk_name, v_is_compressed IN
-      SELECT
-        c.chunk_schema,
-        c.chunk_name,
-        c.is_compressed
+    -- Closed chunks that the safety-net policy has not dropped yet and that still
+    -- hold rows for a host whose retention has expired.
+    FOR v_chunk_schema, v_chunk_name, v_range_start, v_range_end IN
+      SELECT c.chunk_schema, c.chunk_name, c.range_start, c.range_end
       FROM timescaledb_information.chunks c
       WHERE c.hypertable_name   = v_ht_name
         AND c.hypertable_schema = 'public'
         AND c.range_end         < now()
-        -- Must cover the longest per-host retention plus a chunk, or chunks age out of
-        -- the window before they first qualify and are never cleaned per-host.
         AND c.range_end         >= now() - INTERVAL '__RETENTION_SAFETY_DAYS__ days'
         AND EXISTS (
           SELECT 1
@@ -423,31 +430,48 @@ BEGIN
         )
       ORDER BY c.range_start
     LOOP
-      IF v_is_compressed THEN
-        PERFORM decompress_chunk(format('%I.%I', v_chunk_schema, v_chunk_name)::regclass);
+      -- Older than the longest retention anyone has: no row in it can still be
+      -- valid, so the chunk goes whole and no DELETE is needed.
+      IF v_range_end < now() - (v_max_retention_days || ' days')::interval THEN
+        EXECUTE format('DROP TABLE %I.%I', v_chunk_schema, v_chunk_name);
+        RAISE NOTICE 'run_host_retention: %.% (ht: %) -> dropped whole chunk (older than max retention)',
+          v_chunk_schema, v_chunk_name, v_ht_name;
+        CONTINUE;
       END IF;
 
+      -- Addressed to the hypertable, not to the chunk table: the compression-aware
+      -- DML hook only engages through the hypertable, and a DELETE straight on a
+      -- compressed chunk would report zero rows because the data sits in the
+      -- companion compressed table. The time predicates keep it to this chunk.
       EXECUTE format(
         $q$
-          DELETE FROM %I.%I t
+          DELETE FROM public.%I t
           USING auth.host_org_map org
           WHERE org.retention_days IS NOT NULL
             AND t.host = org.host
             AND t.time < now() - (org.retention_days || ' days')::interval
+            AND t.time >= %L
+            AND t.time <  %L
         $q$,
-        v_chunk_schema, v_chunk_name
+        v_ht_name, v_range_start, v_range_end
       );
 
       GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
       v_total_deleted := v_total_deleted + v_deleted_rows;
 
-      RAISE NOTICE 'run_host_retention: %.% (ht: %) → deleted % rows',
+      RAISE NOTICE 'run_host_retention: %.% (ht: %) -> deleted % rows',
         v_chunk_schema, v_chunk_name, v_ht_name, v_deleted_rows;
 
-      IF v_is_compressed THEN
-        PERFORM compress_chunk(format('%I.%I', v_chunk_schema, v_chunk_name)::regclass);
+      -- Emptied by that DELETE: give the space back now instead of waiting for the
+      -- safety-net policy to reach this chunk.
+      EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I.%I LIMIT 1)', v_chunk_schema, v_chunk_name)
+        INTO v_chunk_has_rows;
+      IF NOT v_chunk_has_rows THEN
+        EXECUTE format('DROP TABLE %I.%I', v_chunk_schema, v_chunk_name);
+        RAISE NOTICE 'run_host_retention: %.% (ht: %) -> dropped empty chunk (post-DELETE)',
+          v_chunk_schema, v_chunk_name, v_ht_name;
+        CONTINUE;
       END IF;
-
     END LOOP;
   END LOOP;
 
