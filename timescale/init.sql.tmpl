@@ -58,6 +58,12 @@ END$$;
 ALTER ROLE ts_exporter NOLOGIN;
 ALTER ROLE ts_backup   NOLOGIN;
 
+-- Passwords follow .env on every apply. A store whose volume predates the current
+-- .env keeps the roles it was created with, and telegraf and Grafana just stop
+-- being able to log in — with nothing in any log to say why.
+ALTER ROLE "__TELEGRAF_USER__" WITH PASSWORD '__TELEGRAF_PASSWORD__';
+ALTER ROLE "__GRAFANA_USER__"  WITH PASSWORD '__GRAFANA_PASSWORD__';
+
 -- Org role management
 CREATE OR REPLACE PROCEDURE auth.ensure_org_role(org_id uuid)
 LANGUAGE plpgsql AS $$
@@ -558,3 +564,8 @@ BEGIN
     EXECUTE format('ANALYZE public.%I', v_ht_name);
   END LOOP;
 END$$;
+
+-- Without this the body of ensure_measurement — indexes, both readable views, the
+-- compression and retention policies — is never re-applied to a store that already
+-- exists, and only the top-level statements above would reach it.
+CALL _apply_ensure_measurement_all();

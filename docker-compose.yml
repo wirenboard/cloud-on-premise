@@ -129,7 +129,9 @@ services:
       - ./timescale/10-apply-init.sh:/docker-entrypoint-initdb.d/10-apply-init.sh:ro
       - ./timescale/init.sql.tmpl:/timescale/init.sql.tmpl:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-timescale} -d $${POSTGRES_DB:-metrics}"]
+      # Over TCP on purpose: during initdb the temporary server listens on the unix
+      # socket only, and a socket probe would report healthy while init is still running.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER:-timescale} -d $${POSTGRES_DB:-metrics}"]
       interval: 10s
       timeout: 3s
       start_period: 30s
