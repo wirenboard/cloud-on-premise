@@ -134,7 +134,6 @@ your-domain.com
 *.your-domain.com
 *.http.your-domain.com
 *.ssh.your-domain.com
-apps.your-domain.com
 *.apps.your-domain.com
 ```
 
@@ -371,8 +370,8 @@ authorization. Up to 20 services can be published per controller.
 What the cloud operator must provide:
 
 - a wildcard DNS record `*.apps.your-domain.com` (see [1. DNS Records](#1-dns-records));
-- a certificate with the `apps.your-domain.com` and `*.apps.your-domain.com`
-  SANs (see [4. TLS Certificates](#4-tls-certificates)). Wildcards are issued
+- a certificate with the `*.apps.your-domain.com` SAN
+  (see [4. TLS Certificates](#4-tls-certificates)). Wildcards are issued
   only via the DNS-01 challenge (HTTP-01 cannot issue wildcards) — the same
   mechanism used for the rest of the cloud certificate.
 
@@ -499,8 +498,8 @@ Run all commands from the repo root.
 | `make check-certs`       | Check certificate availability and validity                  |
 | `make generate-env`      | Generate missing tokens/secrets                              |
 | `make generate-jwt`      | Generate or update JWT keys                                  |
-| `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                          |
-| `generate-django-secret` | Generate Django SECRET_KEY                                   |
+| `make generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                     |
+| `make generate-django-secret` | Generate Django SECRET_KEY                              |
 | `make run`               | Full launch cycle (generate-env, cert check, build and start containers) |
 | `make run-no-cert-check` | Same without the TLS certificate check (not recommended)     |
 | `make stop`              | Stop containers                                              |
@@ -581,11 +580,10 @@ sudo certbot certonly --manual --preferred-challenges dns \
   -d "*.$DOMAIN_NAME" \
   -d "*.ssh.$DOMAIN_NAME" \
   -d "*.http.$DOMAIN_NAME" \
-  -d "apps.$DOMAIN_NAME" \
   -d "*.apps.$DOMAIN_NAME"
 ```
 
-> All six `-d` lines are mandatory: without `*.apps.$DOMAIN_NAME` the certificate fails `make check-certs`.
+> All five `-d` lines are mandatory: without `*.apps.$DOMAIN_NAME` the certificate fails `make check-certs`.
 
 Then create the records on your DNS server, one at a time, from what Certbot prints:
 
@@ -646,8 +644,6 @@ Type: TXT
 Name: _acme-challenge.apps.your-domain-name.com.
 Value: some_token_4
 ```
-
-> For `apps.$DOMAIN_NAME` and `*.apps.$DOMAIN_NAME` Certbot asks for **two** TXT records under the same name — add both.
 
 Check:
 

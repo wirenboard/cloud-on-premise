@@ -134,7 +134,6 @@ your-domain.com
 *.your-domain.com
 *.http.your-domain.com
 *.ssh.your-domain.com
-apps.your-domain.com
 *.apps.your-domain.com
 ```
 
@@ -380,7 +379,7 @@ wb-cloud-agent add-provider your-onpremise-name https://your-domain.com/ https:/
 Что требуется от оператора облака:
 
 - wildcard DNS-запись `*.apps.your-domain.com` (см. [1. DNS-записи](#1-dns-записи));
-- сертификат с SAN `apps.your-domain.com` и `*.apps.your-domain.com`
+- сертификат с SAN `*.apps.your-domain.com`
   (см. [4. Сертификаты TLS](#4-сертификаты-tls)). Wildcard выдаётся только через
   DNS-01 challenge (HTTP-01 wildcard не поддерживает) — это тот же механизм,
   которым получается остальной сертификат облака.
@@ -510,8 +509,8 @@ EMAIL_ENABLED=False
 | `make check-certs`        | Проверить наличие и валидность сертификатов                                    |
 | `make generate-env`       | Сгенерировать недостающие токены и секреты, заполнить переменные в `.env`      |
 | `make generate-jwt`       | Сгенерировать или обновить ключи для JWT                                       |
-| `generate-tunnel-token`   | Сгенерировать токен для SSH и HTTP туннелей                                    |
-| `generate-django-secret`  | Сгенерировать секретный ключ Django                                            |
+| `make generate-tunnel-token`  | Сгенерировать токен для SSH и HTTP туннелей                                |
+| `make generate-django-secret` | Сгенерировать секретный ключ Django                                        |
 | `make run`                | Запустить полный цикл развертывания: generate-env, проверка сертификатов, запуск контейнеров |
 | `make run-no-cert-check`  | То же без проверки TLS-сертификатов (не рекомендуется)                          |
 | `make stop`               | Остановить контейнеры                                                          |
@@ -595,11 +594,10 @@ sudo certbot certonly --manual --preferred-challenges dns \
   -d "*.$DOMAIN_NAME" \
   -d "*.ssh.$DOMAIN_NAME" \
   -d "*.http.$DOMAIN_NAME" \
-  -d "apps.$DOMAIN_NAME" \
   -d "*.apps.$DOMAIN_NAME"
 ```
 
-> Все шесть строк `-d` обязательны: без `*.apps.$DOMAIN_NAME` не пройдёт `make check-certs`.
+> Все пять строк `-d` обязательны: без `*.apps.$DOMAIN_NAME` не пройдёт `make check-certs`.
 
 И последовательно создайте записи на вашем DNS-сервере на основе того что выдаст Certbot:
 
@@ -659,8 +657,6 @@ Type: TXT
 Name: _acme-challenge.apps.your-domain-name.com.
 Value: some_token_4
 ```
-
-> Для `apps.$DOMAIN_NAME` и `*.apps.$DOMAIN_NAME` Certbot попросит **две** TXT-записи с одинаковым именем — добавьте обе.
 
 Проверьте:
 
