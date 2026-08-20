@@ -3,7 +3,7 @@
 A major release: a large sync with the current cloud plus incompatible changes to user
 accounts. **No user data is deleted** — it is migrated in place.
 
-A short list of changes is in [`CHANGELOG_EN.md`](CHANGELOG_EN.md). This document has the
+A short list of changes is in [`CHANGELOG_EN.md`](../CHANGELOG_EN.md). This document has the
 details and the upgrade procedure. The release includes everything from 1.3.0–1.5.0
 (optional email, rebranding, the tunnel authorizer security fix).
 
@@ -104,7 +104,7 @@ You only need to upgrade **if** you are currently running version 1.x — the ve
   standard feature of 2.0, so `*.apps.your-domain.com` belongs to the mandatory domain set. If
   your 1.x certificate does not cover it, `make upgrade` stops at the certificate check before
   the backup: reissue the certificate (see
-  [TLS Certificates](README_EN.md#4-tls-certificates)) and add the `*.apps` DNS record.
+  [TLS Certificates](../README_EN.md#4-tls-certificates)) and add the `*.apps` DNS record.
 - **There is room for the backup.** The backup (`pg_dump` + `influx backup`) is written to
   `./backups` — make sure there is disk space for a copy of the database.
 - **The 1.x stack is running.** Do not stop the containers before upgrading — `make upgrade`
@@ -126,8 +126,8 @@ You only need to upgrade **if** you are currently running version 1.x — the ve
 - **The server can carry 2.0.** Compared to 1.5.0 it adds TimescaleDB, Telegraf, Grafana,
   separate metrics and email workers, and a second backend for webhooks — it needs more memory.
   The pre-flight check only looks at disk, so check the
-  [system requirements](README_EN.md#minimum-system-requirements) and
-  [background task performance](README_EN.md#background-task-performance) in advance.
+  [system requirements](../README_EN.md#minimum-system-requirements) and
+  [background task performance](../README_EN.md#background-task-performance) in advance.
 - **If there are no conflicts** (everyone already has a valid unique email = login), the
   migration goes through **without a single manual action**.
 
