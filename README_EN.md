@@ -359,7 +359,7 @@ Follow the link, log in to the cloud, and select the organization you want to ad
 
 Your controller is now successfully linked to the cloud.
 
-> ⚠️ Sending controller metrics to the On-Premise cloud is supported only on `wb-cloud-agent` versions up to and including `1.6.14`. On newer agent versions, controller metrics will not be sent to the On-Premise cloud.
+> ⚠️ A controller sends metrics starting from `wb-cloud-agent` `1.7.0`. Controllers on an older agent never receive the collector configuration, so no metrics arrive from them — update the agent.
 
 ### Controller Web Services
 
