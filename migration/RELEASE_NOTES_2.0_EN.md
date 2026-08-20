@@ -193,18 +193,13 @@ written into the metrics store at the moment it is created, that is, during the 
 it can only be lowered: raising it means recreating the store and losing the history. If the
 default of 30 days does not suit you, uncomment and set the variable before `make upgrade`.
 
-**Clean up the 1.x leftovers.** The `influx` and `worker-influx` services do not exist in 2.0,
-so the upgrade does not stop them: the worker on the old image keeps running against the new
-schema, and InfluxDB keeps taking memory and disk. Once you are satisfied that 2.0 works, shut
-them down:
+**The upgrade clears the 1.x leftovers itself.** The `influx` and `worker-influx` containers are
+removed after the backup — their services do not exist in 2.0, and the worker on the old image
+would otherwise keep writing against the new schema. The `influxData` docker volume stays where
+it is: the historical metrics are not going anywhere.
 
-```bash
-VERSION=$(cat VERSION) docker compose up -d --remove-orphans
-```
-
-The `influxData` docker volume stays where it is — the historical metrics are not going
-anywhere. If you enabled `GEOIP_ENABLED=True`, download the database: unlike `make run`, the
-upgrade does not do it — `make update-geoip`.
+If you enabled `GEOIP_ENABLED=True`, download the database: unlike `make run`, the upgrade does
+not do it — `make update-geoip`.
 
 ### Resolving user conflicts
 

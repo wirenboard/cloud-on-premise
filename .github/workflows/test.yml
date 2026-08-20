@@ -17,5 +17,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # The doctor's dump/apply tests skip themselves without it, and a green run
+      # would then mean less than it looks.
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet --break-system-packages pyyaml
+
       - name: Run fixture tests
         run: make test

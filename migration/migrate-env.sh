@@ -93,7 +93,10 @@ while IFS= read -r line; do
             # silently stop the mail.
             case "$(old_value EMAIL_PROTOCOL | tr '[:upper:]' '[:lower:]')" in
                 *ssl*) printf 'EMAIL_USE_TLS=False\nEMAIL_USE_SSL=True\n' >> "$tmp" ;;
-                smtp)  printf 'EMAIL_USE_TLS=False\n' >> "$tmp" ;;
+                # Grafana sends through the same server and demands STARTTLS by
+                # default: without this its alerts go nowhere while the cloud's own
+                # mail keeps working.
+                smtp)  printf 'EMAIL_USE_TLS=False\nEMAIL_STARTTLS_POLICY=NoStartTLS\n' >> "$tmp" ;;
                 *)     printf 'EMAIL_USE_TLS=True\n' >> "$tmp" ;;
             esac
             renamed="$renamed|EMAIL_PROTOCOL -> EMAIL_USE_TLS/EMAIL_USE_SSL"

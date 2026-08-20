@@ -409,6 +409,10 @@ check-metrics-schema:
 	code="$$(timeout 600 docker wait "$$cid" 2>/dev/null)" || code=timeout; \
 	if [ "$$code" = "0" ]; then \
 		printf "$(GREEN)Metrics schema applied.$(NC)\n"; \
+	elif [ "$$code" = "timeout" ]; then \
+		printf "$(YELLOW)The metrics schema is still being applied — building an index on a$(NC)\n"; \
+		printf "$(YELLOW)populated store takes a while. Leave the stack alone and watch:$(NC)\n"; \
+		printf "$(YELLOW)  docker compose logs -f timescale-init$(NC)\n"; \
 	else \
 		printf "$(RED)ERROR: the metrics schema was not applied (timescale-init: $$code).$(NC)\n"; \
 		printf "$(YELLOW)The stack is up, but the metrics store did not get this release's schema —$(NC)\n"; \

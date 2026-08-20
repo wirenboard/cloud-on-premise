@@ -25,8 +25,17 @@ compose() { VERSION="$VERSION" docker compose "$@"; }
 
 # Everything that is not the application itself: these stay up through the migration.
 DATA_SERVICES_RE='^(postgres|timescale|redis|minio|minio-client)$'
+# Asked by project label, not by `compose ps --services`: that lists only services of
+# the current file, and the 1.x leftovers are orphans to it — exactly the containers
+# whose presence means the installation is still serving.
 running_app_services() {
-    compose ps --services --filter status=running 2>/dev/null | grep -vE "$DATA_SERVICES_RE" || true
+    local proj
+    proj="$(compose ps -aq 2>/dev/null | head -1 \
+            | xargs -r docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null)"
+    [ -n "$proj" ] || { compose ps --services --filter status=running 2>/dev/null | grep -vE "$DATA_SERVICES_RE" || true; return; }
+    docker ps --filter "label=com.docker.compose.project=$proj" \
+              --format '{{ .Label "com.docker.compose.service" }}' 2>/dev/null \
+        | grep -vE "$DATA_SERVICES_RE" || true
 }
 
 # The same signals the Makefile guard reads: 1 while .env is still a 1.x one.
@@ -341,6 +350,7 @@ upgrade() {
         "from organizations.tasks import update_lagging_metrics_configs; update_lagging_metrics_configs.delay()" \
         >/dev/null 2>&1 || true
 
+    make check-metrics-schema || true
     rm -f "$UPGRADE_MARKER"
     say "Upgrade to $VERSION complete." "$GREEN"
 }

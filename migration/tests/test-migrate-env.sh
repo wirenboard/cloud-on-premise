@@ -130,6 +130,13 @@ for proto_case in "smtp+tls:True:" "smtp+ssl:False:True" "smtp:False:"; do
     sed -i.bak "s|^EMAIL_PROTOCOL=.*|EMAIL_PROTOCOL=$proto|" .env
     bash migration/migrate-env.sh >/dev/null 2>&1
     check "$proto -> EMAIL_USE_TLS=$want_tls" "$([ "$(val .env EMAIL_USE_TLS)" = "$want_tls" ]; echo $?)"
+    if [ "$proto" = "smtp" ]; then
+        check "smtp -> EMAIL_STARTTLS_POLICY=NoStartTLS" \
+          "$([ "$(val .env EMAIL_STARTTLS_POLICY)" = "NoStartTLS" ]; echo $?)"
+    else
+        check "$proto leaves the Grafana policy at its default" \
+          "$([ -z "$(val .env EMAIL_STARTTLS_POLICY)" ]; echo $?)"
+    fi
     [ -n "$want_ssl" ] && check "$proto -> EMAIL_USE_SSL=$want_ssl" "$([ "$(val .env EMAIL_USE_SSL)" = "$want_ssl" ]; echo $?)"
 done
 
