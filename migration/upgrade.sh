@@ -147,7 +147,9 @@ fix_users() {
 # volume that predates the passwords in .env can never be logged into again.
 metrics_volume_name() {
     local proj
-    proj="$(compose config --format json 2>/dev/null | sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' | head -1)"
+    # Anchored: an unanchored greedy match would take the last "name" on the line
+    # if compose ever prints the document on one.
+    proj="$(compose config --format json 2>/dev/null | sed -n 's/^[[:space:]]*"name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
     [ -n "$proj" ] || proj="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
     printf '%s_timescaleData' "$proj"
 }

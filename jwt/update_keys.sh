@@ -15,11 +15,6 @@ if [[ ! -f .env ]]; then
     exit 1
 fi
 
-# Export only VAR=VAL lines (no spaces or comments)
-set -o allexport
-grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env | while read -r line; do export "$line"; done
-set +o allexport
-
 printf "\n${WHITE}%s${NC}\n" "=====================[ GENERATING JWT KEYPAIR ]====================="
 
 #----- [ FILES ] ------------------------------------------------------------
@@ -34,8 +29,6 @@ GENERATE_PUBLIC=false
 # pem files are not in the archive. Restore them from there before deciding to
 # generate, or a new pair would replace working keys and invalidate every token
 # already issued to a controller.
-# Read straight from the file: the export loop above runs behind a pipe, so its
-# variables never reach this shell.
 restore_from_env() { # variable name, target file, extra openssl flag
     [ -s "$2" ] && return 1
     local value

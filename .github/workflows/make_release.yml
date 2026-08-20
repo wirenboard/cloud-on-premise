@@ -129,6 +129,7 @@ jobs:
             LICENSE
             README.md
             README_EN.md
+            doc/**
             Makefile
             .env.example
             docker-compose.yml
