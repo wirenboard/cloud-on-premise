@@ -20,6 +20,14 @@ Documentation for setting up and deploying Wiren Board Cloud in an On-Premise en
 - RAM: 8GB
 - HDD: 40GB
 
+> The minimum configuration is enough for a few dozen controllers: the stack itself takes about 4 GB
+> and the rest goes to the database cache. Closer to a hundred controllers the metrics get noticeably
+> hungrier — plan for the recommended configuration, and for disk space that matches how long metrics
+> are kept (`METRICS_RETENTION_DAYS`, 30 days by default).
+>
+> Background task parallelism defaults to a hundred controllers and is tunable — see
+> [Background task performance](#background-task-performance).
+
 
 > ⚠️ Your CPU or VM hypervisor must support the `x86-64-v2` instruction set. When using a VM, the `host-passthrough` option (or `CPU=host`) may be required.
 
@@ -35,9 +43,9 @@ In On-Premise:
 
 #### Metrics
 
-Currently, only the free version for up to 100 controllers is available, and it can be used for personal and commercial purposes. In this version, sending anonymized metrics to our server is required; you can see exactly what is sent in the instance backend under “On-Premise” → “Metrics”.
+Currently, only the free version for up to 100 controllers is available, and it can be used for personal and commercial purposes. In this version, sending anonymized metrics to our server is required; you can see exactly what is sent in the instance backend in the admin panel, section “On_Premise” → “Metrics”.
 
-If your instance cannot connect to our metrics collection server [metrics.wirenboard.cloud](https://on-premise-metrics.wirenboard.cloud), the cloud will continue to work, but you will not be able to add controllers.
+If your instance cannot connect to our metrics collection server [on-premise-metrics.wirenboard.cloud](https://on-premise-metrics.wirenboard.cloud), the cloud will continue to work, but you will not be able to add controllers.
 
 Paid plans that allow you to disable metric sending and add more controllers are planned.
 
@@ -61,13 +69,14 @@ your-domain.com
 *.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
+*.apps.your-domain.com
 ```
 
 These cover the required subdomains:
 
 ```text
 metrics.your-domain.com
-influx.your-domain.com
+metrics-ingest.your-domain.com
 tunnel.your-domain.com
 app.your-domain.com
 agent.your-domain.com
@@ -75,6 +84,8 @@ ssh.your-domain.com
 http.your-domain.com
 *.ssh.your-domain.com
 *.http.your-domain.com
+apps.your-domain.com
+*.apps.your-domain.com
 ```
 
 ### 2. Ports
@@ -110,7 +121,7 @@ Certificates must be issued by a trusted CA:
 
 If you already have a certificate for this hostname, check the SANs (Subject Alternative Names):
 
-The certificate must be issued for the same value as `ABSOLUTE_SERVER`, including the subdomain. For example, if the cloud runs on `cloud.example.com`, the certificate must cover `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, and `*.ssh.cloud.example.com`.
+The certificate must be issued for the same value as `ABSOLUTE_SERVER`, including the subdomain. For example, if the cloud runs on `cloud.example.com`, the certificate must cover `cloud.example.com`, `*.cloud.example.com`, `*.http.cloud.example.com`, `*.ssh.cloud.example.com`, and `*.apps.cloud.example.com`.
 
 ```bash
 openssl x509 -in "path/to/your/certs/fullchain.pem" -noout -text | grep -A1 "Subject Alternative Name"
@@ -123,11 +134,39 @@ your-domain.com
 *.your-domain.com
 *.http.your-domain.com
 *.ssh.your-domain.com
+*.apps.your-domain.com
 ```
 
 Otherwise, you must obtain a new certificate.
 
+> ⚠️ `make check-certs` validates this list and refuses to start the cloud if a domain is missing. In particular, a certificate without `*.apps.your-domain.com` fails the check.
+
 Place `fullchain.pem` and `privkey.pem` in the `./tls` directory or set the `TLS_CERTS_PATH` environment variable.
+
+#### Certificate renewal
+
+Let's Encrypt certificates are valid for 90 days. Traefik reads the certificate files at startup and
+**does not re-read them on its own**, so the container has to be restarted after every renewal —
+otherwise the cloud keeps serving the expired certificate even though the new one is already on disk.
+
+Only Traefik has to re-read the certificate, the rest of the stack can keep serving — that is what
+`make reload-certs` does. If the certificate is issued through certbot, put it into its hook and
+renewal stays fully automatic:
+
+```bash
+sudo certbot renew --deploy-hook "cd /path/to/cloud-on-premise && make reload-certs"
+```
+
+Renewing by hand once:
+
+```bash
+sudo certbot renew
+make reload-certs
+```
+
+> The command checks the new certificate first (`make check-certs`) and only then restarts Traefik —
+> if the renewal went wrong, the cloud keeps running on the old certificate.
+
 
 To get a certificate using Certbot, see: [Manual Wildcard Certificate Setup Example](#-manual-wildcard-certificate-setup-example)
 
@@ -146,7 +185,7 @@ Working setup:
 3. In your internal DNS, create A records pointing the cloud's full hostname and all subdomains (see [1. DNS Records](#1-dns-records)) to the server's local IP.
 4. Set `ABSOLUTE_SERVER=cloud.example.com`.
 
-> 💡 The `*.ssh.your-domain.com` and `*.http.your-domain.com` entries require wildcard DNS records. Consumer router DNS does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
+> 💡 The `*.ssh.your-domain.com`, `*.http.your-domain.com`, and `*.apps.your-domain.com` entries require wildcard DNS records. Consumer router DNS does not support them — use dnsmasq, Pi-hole, AdGuard Home, or a full DNS server instead.
 
 Controllers must resolve the same hostname via the same internal DNS as the rest of the network.
 
@@ -198,94 +237,42 @@ If the variables are not set, the Wiren Board defaults are used. Restart the fro
 
 ## 🚀 Application Deployment
 
-> You need `docker compose v1.21.0` or higher to run the application.
+> To run the application you will need Docker Compose v2 (check: `docker compose version`).
 
 ### 1. Configure Environment Variables
 
-Copy the sample environment file:
+Copy the environment file and fill it in:
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in the required variables as in the example below.
-The `EMAIL_*` variables can be left unset if email sending is disabled — see [Working Without Email](#working-without-email).
+Every variable is documented by a comment in `.env.example` itself — we do not repeat those
+here, so that the description cannot drift away from the file. Before the first launch it is
+enough to know the following:
 
-`ABSOLUTE_SERVER` must match the full public hostname of the cloud. If the cloud will be available at `https://cloud.example.com`, set `ABSOLUTE_SERVER=cloud.example.com`.
+- `ABSOLUTE_SERVER` — the full external hostname of the cloud: for `https://cloud.example.com`
+  that is `cloud.example.com`. Every subdomain is derived from it, and it must match the
+  certificate.
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD` — the first cloud administrator. The email is also the
+  login.
+- The `EMAIL_*` variables can be left unset if email sending is disabled — see
+  [Working Without Email](#working-without-email).
+- `METRICS_RETENTION_DAYS` — how long metrics are kept. Set it **before the first launch**: it
+  can be lowered afterwards but not raised, otherwise the metrics store has to be recreated.
+- Secrets and passwords — `SECRET_KEY`, `TUNNEL_AUTH_TOKEN`, the JWT keys,
+  `ABSOLUTE_SERVER_REGEX`, the metrics store passwords — are not written by hand:
+  `make generate-env` creates them, and it runs as part of `make run`. They are not in
+  `.env.example`, and before the first launch `make check-env` reports them as missing — that
+  is expected.
 
-```dotenv
-ABSOLUTE_SERVER=my-domain-name.com
+> ⚠️ The metrics store passwords are baked into it when it is created. Changing them in `.env`
+> after the first launch achieves nothing: the store keeps the old ones and the connection
+> breaks.
 
-# Email sending (True/False). When False, no emails are sent; invitations and
-# password resets are handled via the admin panel — see "Working Without Email".
-EMAIL_ENABLED=True
+> After any change to `.env`, restart the stack: `make restart`.
 
-# Email setup
-# Set smtp+ssl if using SSL
-EMAIL_PROTOCOL=smtp+tls
-EMAIL_LOGIN=mymail@mail.com
-EMAIL_PASSWORD=password
-EMAIL_SERVER=smtp.mail.com
-EMAIL_PORT=587
-EMAIL_NOTIFICATIONS_FROM=mymail@mail.com
-
-# Admin credentials
-ADMIN_EMAIL=admin@mail.com
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=password
-
-# InfluxDB admin
-INFLUXDB_USERNAME=influx_admin
-INFLUXDB_PASSWORD=influx_password
-
-# Tunnel Dashboard admin and port configuration
-TUNNEL_DASHBOARD_USER=tunnel_admin
-TUNNEL_DASHBOARD_PASSWORD=tunnel_password
-TUNNEL_DASHBOARD_PORT=7501
-
-# Tunnel port configuration – change if the port is already in use
-TUNNEL_PORT=7107
-
-# Postgres admin
-POSTGRES_DB=db_name
-POSTGRES_USER=postgres_user
-POSTGRES_PASSWORD=postgres_password
-
-#--------------------------------------------------------------------------
-# Optional ----------------------------------------------------------------
-#--------------------------------------------------------------------------
-
-# Create MinIO admin
-#MINIO_ROOT_USER=minio_admin
-#MINIO_ROOT_PASSWORD=minio_password
-
-# Set Docker network name if required. Default is "wb-net"
-#DOCKER_NET_NAME=my-docker-network
-
-# Set the path to the directory with TLS certificates if required. Default is "./tls"
-#TLS_CERTS_PATH=path/to/my/certs/
-
-# Set the external port for Traefik
-#TRAEFIK_EXTERNAL_PORT="127.0.0.1:8443"
-
-# Override the organization invitation email subject and body.
-# Leave commented to keep the built-in RU/EN translation (selected by the
-# inviter's language).
-# Use \n in INVITE_EMAIL_BODY for line breaks; the invitation link is always
-# appended at the end of the body.
-#INVITE_EMAIL_SUBJECT="You have been invited to a Wiren Board Cloud organization"
-#INVITE_EMAIL_BODY="Hello!\nYou have been invited to our organization.\nClick the link to register:"
-
-```
-
-> ⚠️ **The `EMAIL_URL` variable is generated automatically.**
-> It is assembled from `EMAIL_PROTOCOL`, `EMAIL_LOGIN`, `EMAIL_PASSWORD`, `EMAIL_SERVER`, `EMAIL_PORT`, etc.
-> After changing any of these variables, you **must** run `make generate-email-url` or `make run` before starting the stack.
-> This rebuilds `EMAIL_URL` and applies the new settings.
-> Running `docker compose up` without a prior `make run` or `make generate-email-url` keeps the old value, and email delivery will fail.
-
-> 💡 Email sending can be disabled entirely — see [Working Without Email](#working-without-email).
 
 ### 2. Automatic Initialization and Launch
 
@@ -310,7 +297,8 @@ make run
 ### User Registration
 
 User self-registration is disabled in the On-Premise cloud.
-Only one admin user will be available initially, using credentials from `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
+Only one admin user will be available initially, using credentials from `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+Since release 2.0.0 the email is the login, so the administrator signs in with the `ADMIN_EMAIL` value.
 
 > ⚠️ You may change the password or create another admin user. However, the user specified in `.env` will be recreated on each restart if deleted.
 
@@ -319,7 +307,7 @@ The admin must create the first organization manually via the [admin panel](#adm
 ### Admin Panel
 
 The admin panel (Django admin) is available at `https://app.your-domain.com/admin/`.
-Log in with the admin credentials from the `ADMIN_USERNAME` and `ADMIN_PASSWORD` environment variables.
+Log in with the admin credentials from the `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables.
 
 It is used by the administrator to create the first organization, invite and manage users, and manage system objects.
 
@@ -370,29 +358,108 @@ Follow the link, log in to the cloud, and select the organization you want to ad
 
 Your controller is now successfully linked to the cloud.
 
-> ⚠️ Sending controller metrics to the On-Premise cloud is supported only on `wb-cloud-agent` versions up to and including `1.6.14`. On newer agent versions, controller metrics will not be sent to the On-Premise cloud.
+> ⚠️ A controller sends metrics starting from `wb-cloud-agent` `1.7.0`. Controllers on an older agent never receive the collector configuration, so no metrics arrive from them — update the agent.
+
+### Controller Web Services
+
+The cloud publishes the web interfaces of services running on a controller
+(e.g. Node-RED) through the cloud tunnel. Each service gets an address of the
+form `<serial>-<port>.apps.your-domain.com`, reachable only after cloud
+authorization. Up to 20 services can be published per controller.
+
+What the cloud operator must provide:
+
+- a wildcard DNS record `*.apps.your-domain.com` (see [1. DNS Records](#1-dns-records));
+- a certificate with the `*.apps.your-domain.com` SAN
+  (see [4. TLS Certificates](#4-tls-certificates)). Wildcards are issued
+  only via the DNS-01 challenge (HTTP-01 cannot issue wildcards) — the same
+  mechanism used for the rest of the cloud certificate.
+
+`*.apps.your-domain.com` is part of the mandatory certificate domain set:
+without it `make check-certs` — and therefore `make run` — fails.
+
+### Session Geolocation (GeoIP)
+
+The cloud can show the country and city by IP address in the user's active
+sessions list. To enable it, uncomment in `.env`:
+
+```dotenv
+GEOIP_ENABLED=True
+```
+
+On `make run` (specifically during `make generate-env`) the DB-IP "IP to City
+Lite" database (CC BY 4.0 license) is downloaded into `./geoip`
+automatically: ~62 MB over the network, ~124 MB unpacked.
+
+DB-IP publishes a new database every month, while the automatic download only fetches a missing
+one. Refresh it with `make update-geoip` — the old database is replaced only after a complete
+download, so a failed refresh breaks nothing.
+
+If the server has no internet access, the script prints the fallback: download
+the "IP to City Lite" database in MMDB format from
+[db-ip.com/db/download/ip-to-city-lite](https://db-ip.com/db/download/ip-to-city-lite)
+on any machine with internet access, put the unpacked file at
+`./geoip/dbip-city-lite.mmdb`, and run `make restart`.
+
+Geolocation itself works fully offline: the cloud makes no outbound requests.
+DB-IP updates the database monthly — update at will (just replace the file).
+
+Without the database everything works, the location in the sessions list simply
+stays empty. Private addresses (LAN/VPN) are not geolocated — this is by design.
 
 ---
 
 ## 🎛 Environment Variables
 
-You can override some environment variables manually in `.env`. If a variable is already set, it won’t be generated again.
+The full list of variables, each with its description, is in [`.env.example`](.env.example). Any
+generated variable can also be set by hand: if a value is already present in `.env`, generation
+skips it.
 
-Example:
+If you want to use your own private and public JWT keys, place `private.pem` and `public.pem` in
+the `jwt` directory in the project root — otherwise they are generated automatically.
 
-```dotenv
-# Token for opening tunnels
-TUNNEL_AUTH_TOKEN=GLgTbKtCiwF8J4tI439NJba0pbXfW0a39E7jZOOr0qO67xonhhfaNIWiH7FzPP
+### Background task performance
 
-# Token for Influx access
-INFLUXDB_TOKEN=PvxahJmIuieFy1ieODoQ3JpKEVSCDSkRUQZjjePSlajJV6w1Sl2iAQcpY8f2z4s
+The cloud spreads background work across four queues, each with its own worker and its own
+concurrency setting.
 
-# Secret key for Django
-SECRET_KEY=40h0EtROD1krOPzZ/PSiCgnZgbOc+x0omKJrpzH9JDDbwXBTf4
+| Variable | Default | What the queue runs | When to raise it |
+|---|---|---|---|
+| `WORKER_CONCURRENCY` | 4 | Main queue: tunnel and connection upkeep, the anonymized metrics sent to the vendor, organization upkeep | Many controllers connecting and disconnecting at once |
+| `METRICS_WORKER_CONCURRENCY` | 3 | Metrics storage: TimescaleDB roles and retention policies, licensed retention, the periodic check for lagging collector settings | The controller and organization count grows |
+| `GRAFANA_WORKER_CONCURRENCY` | 3 | Grafana and collector setup: dashboards, users, handing controllers their metrics collector config | Metrics from new controllers appear late, dashboards are slow to appear |
+| `EMAIL_WORKER_CONCURRENCY` | 2 | Cloud email: invitations, address confirmation, password resets | Bulk invitations |
 
+> Metric alert emails are sent by Grafana itself; this queue has nothing to do with them.
+
+**The defaults are sized for a hundred controllers** — the cap of the free version. A normal
+installation does not need them raised: memory and disk for the metrics run out first.
+
+Every unit of concurrency is a separate process, roughly **85 MB**. The arithmetic is simple: `+1`
+on any variable is another ~85 MB.
+
+| Profile | Values | Worker memory |
+|---|---|---|
+| Minimal: a few controllers, saving memory | 2 / 1 / 1 / 1 | ~0.5 GB |
+| **Default: up to 100 controllers** | **4 / 3 / 3 / 2** | **~1.3 GB** |
+| Large installation: many organizations, bulk mailings | 8 / 8 / 8 / 4 | ~2.5 GB |
+
+There is no upper limit beyond the server's memory.
+
+**How to tell you need more.** The symptom is not a slow interface but a late result: a dashboard
+that took a while to appear, metrics from a new controller that did not show up within a minute, an
+email that went out late. The objective measure is the queue length — if it stays above zero, work
+is piling up:
+
+```bash
+docker compose exec redis redis-cli llen metrics_queue
 ```
 
-For JWT, place `private.pem` and `public.pem` in the `jwt` directory; otherwise, they will be generated automatically.
+The queues are `default_queue`, `metrics_queue`, `grafana_queue`, `email_queue`. Apply changes to
+`.env` with `make restart`.
+
+> The figures come from the measured per-process memory cost; actual throughput depends on your
+> workload, so trust your own queue lengths first.
 
 ### Working Without Email
 
@@ -405,7 +472,7 @@ EMAIL_ENABLED=False
 With `EMAIL_ENABLED=False`:
 
 - emails are silently not sent — no errors are raised;
-- the `EMAIL_*` variables can be left unset: `make run` and `make check-env` do not require them, and `EMAIL_URL` generation is skipped;
+- the `EMAIL_*` variables can be left unset: `make run` and `make check-env` do not require them;
 - DNS records for email (section [3. DNS Records for Email](#3-dns-records-for-email)) are not needed;
 - **inviting a user to an organization** (two steps, since no email is sent):
   1. in the frontend, the organization owner or admin invites the user by email (in the organization members section);
@@ -414,7 +481,7 @@ With `EMAIL_ENABLED=False`:
   > You cannot create an invitation directly from the admin panel — it only shows the link of already existing invitations. The invitation itself is created in the frontend (step 1).
 - **resetting a user's password:** in the [admin panel](#admin-panel) open the **Users** section, select the user with a checkbox, choose the **“Generate password reset link”** action from the **Action** dropdown list, and click “Go”. The link appears in a green message at the top of the page — copy it and pass it to the user. Users without a usable password (e.g. signed in via social login) are skipped.
 
-> ⚠️ By default (when `EMAIL_ENABLED` is unset), email sending is enabled.
+> ⚠️ Since release 2.0.0 the `EMAIL_ENABLED` variable is mandatory: the stack does not start without an explicit `True`/`False`.
 
 ---
 
@@ -431,12 +498,18 @@ Run all commands from the repo root.
 | `make check-certs`       | Check certificate availability and validity                  |
 | `make generate-env`      | Generate missing tokens/secrets                              |
 | `make generate-jwt`      | Generate or update JWT keys                                  |
-| `generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                          |
-| `generate-influx-token`  | Generate Influx token                                        |
-| `generate-django-secret` | Generate Django SECRET_KEY                                   |
-| `generate-email-url`     | Generate/update email URL                                    |
-| `make run`               | Full launch cycle (generate-env, build and start containers) |
-| `make update`            | Stop containers, update images, rebuild and restart          |
+| `make generate-tunnel-token`  | Generate token for SSH/HTTP tunnels                     |
+| `make generate-django-secret` | Generate Django SECRET_KEY                              |
+| `make run`               | Full launch cycle (generate-env, cert check, build and start containers) |
+| `make run-no-cert-check` | Same without the TLS certificate check (not recommended)     |
+| `make stop`              | Stop containers                                              |
+| `make restart`           | Restart containers (with the cert check)                     |
+| `make update`            | Stop containers, update images, rebuild and restart. It also prunes unused images and **every stopped container on the host** — mind that if the server is shared |
+| `make reload-certs`      | Apply a renewed certificate: validate it and restart Traefik only |
+| `make update-geoip`      | Refresh the session geolocation database |
+| `make upgrade`           | 1.x → 2.x upgrade: checks while the cloud runs, then backup, stop, migrate, start |
+| `make fix-users MODE=…`  | Run migration_doctor (`scan` / `auto` / `resolve` / `dump` / `apply`) |
+| `make backup`            | Back up PostgreSQL (+ InfluxDB if running) into `./backups`  |
 
 ### Usage Examples
 
@@ -453,6 +526,31 @@ make check-env
 # Command help
 make help
 ```
+
+---
+
+## ⬆️ Upgrading from 1.x to 2.0
+
+Release **2.0** is incompatible with 1.x, but **no user data is deleted** — it is migrated in
+place. The key change: **the email becomes the login** — it is mandatory, unique, and must match
+the account name. The new schema requires this but does not repair the data itself, so the
+database has to be put in order before the migration — that is what `make upgrade` does.
+
+The upgrade runs as a single command:
+
+```bash
+git pull
+make upgrade
+```
+
+It runs its checks while the cloud keeps serving and changes nothing until all of them pass,
+then asks for confirmation and only after that begins the downtime.
+
+> 📖 Migration conditions, resolving account conflicts, the expected downtime and the rollback
+> procedure are in [`RELEASE_NOTES_2.0_EN.md`](migration/RELEASE_NOTES_2.0_EN.md). Read it **before**
+> starting the upgrade: it also covers what to decide in advance (the metrics retention period,
+> for one).
+
 
 ---
 
@@ -481,12 +579,83 @@ sudo certbot certonly --manual --preferred-challenges dns \
   -d $DOMAIN_NAME \
   -d "*.$DOMAIN_NAME" \
   -d "*.ssh.$DOMAIN_NAME" \
-  -d "*.http.$DOMAIN_NAME"
+  -d "*.http.$DOMAIN_NAME" \
+  -d "*.apps.$DOMAIN_NAME"
 ```
 
-Add DNS TXT records as prompted by Certbot. Use `dig` to verify.
+> All five `-d` lines are mandatory: without `*.apps.$DOMAIN_NAME` the certificate fails `make check-certs`.
 
-Certificates are saved to:
+Then create the records on your DNS server, one at a time, from what Certbot prints:
+
+### 🔹 First record from Certbot
+
+```
+Type: TXT
+Name: _acme-challenge.your-domain-name.com.
+Value: some_token_1
+```
+
+Add the record on your DNS server.
+
+Without closing the terminal, check in another window that the record is live:
+
+```bash
+dig TXT _acme-challenge.your-domain-name.com +short
+```
+
+Once it resolves, press **Enter** (Continue) in the first window.
+
+### 🔹 Second record (`http`), same as the first
+
+```
+Type: TXT
+Name: _acme-challenge.http.your-domain-name.com.
+Value: some_token_2
+```
+
+Check:
+
+```bash
+dig TXT _acme-challenge.http.your-domain-name.com +short
+```
+
+Once it resolves, press **Enter** (Continue).
+
+### 🔹 Third record (`ssh`), same as the previous ones
+
+```
+Type: TXT
+Name: _acme-challenge.ssh.your-domain-name.com.
+Value: some_token_3
+```
+
+Check:
+
+```bash
+dig TXT _acme-challenge.ssh.your-domain-name.com +short
+```
+
+Once it resolves, press **Enter** (Continue).
+
+### 🔹 Fourth record (`apps`), same as the previous ones
+
+```
+Type: TXT
+Name: _acme-challenge.apps.your-domain-name.com.
+Value: some_token_4
+```
+
+Check:
+
+```bash
+dig TXT _acme-challenge.apps.your-domain-name.com +short
+```
+
+Once they resolve, press **Enter** (Continue).
+
+### ✅ Result
+
+Certbot saves the certificate to:
 
 ```
 /etc/letsencrypt/live/your-domain.com/fullchain.pem
@@ -606,7 +775,7 @@ tcp:
   routers:
     wbc-https:
       entryPoints: ["websecure"]
-      rule: "HostSNIRegexp(`^(your-domain\\.com|[^.]+\\.your-domain\\.com|[^.]+\\.(http|ssh)\\.your-domain\\.com)$`)"
+      rule: "HostSNIRegexp(`^(your-domain\\.com|[^.]+\\.your-domain\\.com|[^.]+\\.(http|ssh|apps)\\.your-domain\\.com)$`)"
       tls:
         passthrough: true          # ⚠️ do not terminate TLS — required for controller mTLS
       service: wbc-https
@@ -648,7 +817,7 @@ where `<cloud-host>` is the address of the on-premise cloud server, and `your-do
 > `yaml: found unknown escape character`, the file provider drops the whole file,
 > and Traefik starts serving its default certificate instead of passing TLS through.
 
-> The rule matches the same hosts your cloud's wildcard certificate covers (see the "TLS Certificates" section): `your-domain.com` itself, any first-level subdomain (`app.`, `agent.`, `ssh.`, `http.`, etc.), and per-controller `<id>.http.`/`<id>.ssh.`. Substitute your own `ABSOLUTE_SERVER` domain for `your-domain.com`.
+> The rule matches the same hosts your cloud's wildcard certificate covers (see the "TLS Certificates" section): `your-domain.com` itself, any first-level subdomain (`app.`, `agent.`, `ssh.`, `http.`, etc.), per-controller `<id>.http.`/`<id>.ssh.`, and `<serial>-<port>.apps.`. Substitute your own `ABSOLUTE_SERVER` domain for `your-domain.com`.
 
 > If you only need to expose controller traffic through the external proxy, keeping the cloud web interface unreachable from outside, narrow the regexp down to `agent.your-domain.com` and the per-controller `<id>.http.`/`<id>.ssh.` hosts.
 

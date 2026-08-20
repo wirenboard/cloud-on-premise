@@ -1,0 +1,29 @@
+name: Tests
+
+# Fixtures only: no containers, no database, seconds to run. They guard the
+# parts an operator meets before anything starts — .env validation, the config
+# migration and the 1.x guard — so they run on every change, not by hand.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'onprem-release/**'
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # The doctor's dump/apply tests skip themselves without it, and a green run
+      # would then mean less than it looks.
+      - name: Install PyYAML
+        run: |
+          python3 -m pip install --quiet pyyaml \
+            || python3 -m pip install --quiet --break-system-packages pyyaml
+          python3 -c 'import yaml'
+
+      - name: Run fixture tests
+        run: make test

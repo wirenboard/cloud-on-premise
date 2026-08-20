@@ -1,0 +1,595 @@
+-- TimescaleDB bootstrap for single-node on-premise.
+-- Rendered from cloud-infrastructure roles/deploy_stack/templates/timescale-init.sql.j2
+-- at cd394bae. Update the revision when re-syncing: it is the base for the next diff.
+--
+-- Deliberate differences from that base, so the next diff is not mistaken for drift:
+-- the HA cluster is collapsed to one node, Jinja variables to constants and
+-- __PLACEHOLDERS__, and nothing here logs in as the exporter or backup roles.
+--
+-- __TELEGRAF_USER__ / __TELEGRAF_PASSWORD__ / __GRAFANA_USER__ / __GRAFANA_PASSWORD__
+-- are substituted from the environment by 10-apply-init.sh.
+--
+-- Numeric tuning values are taken from upstream group_vars/all/vars.yml:
+--   chunk_interval_days=2, compression_after_days=7,
+--   retention: __RETENTION_DAYS__ days (METRICS_RETENTION_DAYS), with a
+--   safety-net drop_after of __RETENTION_SAFETY_DAYS__ days,
+--   host_retention_job_hour_utc=3, job_interval_days=1,
+--   views_reader: 15s/30s/5s/32MB, all_reader: 30s/60s/10s/32MB.
+-- The exporter/backup/replicator roles are created for SQL parity but are
+-- unused on-premise (no Prometheus exporter / pgbackrest / Patroni replica).
+
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+CREATE SCHEMA IF NOT EXISTS auth;
+
+DO $$
+BEGIN
+  -- Telegraf read-write
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__TELEGRAF_USER__') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '__TELEGRAF_USER__', '__TELEGRAF_PASSWORD__');
+  END IF;
+
+  -- Grafana (read-only via a VIEW + role)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__GRAFANA_USER__') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '__GRAFANA_USER__', '__GRAFANA_PASSWORD__');
+  END IF;
+
+  -- Exporter user (unused on-premise, kept for SQL parity)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ts_exporter') THEN
+    CREATE ROLE ts_exporter NOLOGIN;
+  END IF;
+
+  -- Backup user (unused on-premise, kept for SQL parity)
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ts_backup') THEN
+    CREATE ROLE ts_backup NOLOGIN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='views_reader') THEN
+    CREATE ROLE views_reader NOLOGIN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='all_reader') THEN
+    CREATE ROLE all_reader NOLOGIN;
+  END IF;
+END$$;
+
+-- Nothing here connects as these two: no exporter, no pgbackrest. Earlier versions
+-- of this file gave them a login with a password published in the repository.
+ALTER ROLE ts_exporter NOLOGIN;
+ALTER ROLE ts_backup   NOLOGIN;
+
+-- Passwords follow .env on every apply. A store whose volume predates the current
+-- .env keeps the roles it was created with, and telegraf and Grafana just stop
+-- being able to log in — with nothing in any log to say why.
+ALTER ROLE "__TELEGRAF_USER__" WITH PASSWORD '__TELEGRAF_PASSWORD__';
+ALTER ROLE "__GRAFANA_USER__"  WITH PASSWORD '__GRAFANA_PASSWORD__';
+
+-- Org role management
+CREATE OR REPLACE PROCEDURE auth.ensure_org_role(org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=rname) THEN
+    EXECUTE format('CREATE ROLE %I NOLOGIN', rname);
+  END IF;
+END$$;
+
+CREATE OR REPLACE PROCEDURE auth.grant_org_role(db_user name, org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  CALL auth.ensure_org_role(org_id);
+  EXECUTE format('GRANT %I TO %I', rname, db_user);
+END$$;
+
+CREATE OR REPLACE PROCEDURE auth.revoke_org_role(db_user name, org_id uuid)
+LANGUAGE plpgsql AS $$
+DECLARE rname text := 'org_' || replace(org_id::text, '-', '_');
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname=rname) THEN
+    EXECUTE format('REVOKE %I FROM %I', rname, db_user);
+  END IF;
+END$$;
+
+-- Controller-to-organization binding (host -> org) + per-host metrics retention.
+CREATE TABLE IF NOT EXISTS auth.host_org_map (
+  host            text        PRIMARY KEY,
+  organization_id uuid        NOT NULL,
+  retention_days  int         NOT NULL DEFAULT __RETENTION_DAYS__ CHECK (retention_days BETWEEN 1 AND 3650),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'auth'
+      AND table_name   = 'host_org_map'
+      AND column_name  = 'retention_days'
+  ) THEN
+    ALTER TABLE auth.host_org_map ADD COLUMN retention_days int NOT NULL DEFAULT __RETENTION_DAYS__ CHECK (retention_days BETWEEN 1 AND 3650);
+  END IF;
+END$$;
+
+-- Carries a ceiling changed by a release to installations that already exist —
+-- this file is applied again on every start. The inline constraint has a generated
+-- name, hence the lookup.
+DO $$
+DECLARE
+  v_conname text;
+BEGIN
+  FOR v_conname IN
+    SELECT con.conname
+    FROM pg_constraint con
+    JOIN pg_class rel     ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE nsp.nspname = 'auth'
+      AND rel.relname = 'host_org_map'
+      AND con.contype = 'c'
+      AND pg_get_constraintdef(con.oid) ILIKE '%retention_days%'
+  LOOP
+    EXECUTE format('ALTER TABLE auth.host_org_map DROP CONSTRAINT %I', v_conname);
+  END LOOP;
+
+  ALTER TABLE auth.host_org_map
+    ADD CONSTRAINT host_org_map_retention_days_check
+    CHECK (retention_days BETWEEN 1 AND 3650);
+END$$;
+
+-- Admin predicate
+CREATE OR REPLACE FUNCTION auth.is_admin()
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+  SELECT pg_has_role(session_user, 'pg_read_all_data', 'member') OR pg_has_role(session_user, 'all_reader', 'member');
+$$;
+
+-- Available orgs, derived from membership in org_<uuid_with_underscores> roles
+CREATE OR REPLACE FUNCTION auth.allowed_orgs_from_roles()
+RETURNS SETOF uuid
+LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+  SELECT replace(substring(r.rolname from 5), '_', '-')::uuid
+  FROM pg_roles r
+  WHERE r.rolname LIKE 'org_%'
+    AND pg_has_role(session_user, r.rolname, 'member');
+$$;
+
+-- VIEW that lists controllers quickly, filtered by RLS
+CREATE OR REPLACE VIEW public.org_controllers AS
+SELECT h.host, h.organization_id
+FROM auth.host_org_map h
+WHERE auth.is_admin()
+   OR h.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+ORDER BY h.host;
+
+-- Fast catalogue of the MQTT topics seen per host.
+CREATE TABLE IF NOT EXISTS public.mqtt_metrics_topics (
+  host            text        NOT NULL,
+  topic           text        NOT NULL,
+  first_seen      timestamptz NOT NULL,
+  PRIMARY KEY (host, topic)
+);
+
+CREATE OR REPLACE VIEW public.mqtt_metrics_topics_readable AS
+SELECT org.organization_id, t.host, t.topic, t.first_seen
+FROM public.mqtt_metrics_topics t
+JOIN auth.host_org_map org ON org.host = t.host
+WHERE auth.is_admin()
+   OR org.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+ORDER BY t.host, t.topic;
+
+-- Checks host against the org map and stamps organization_id onto the row.
+CREATE OR REPLACE FUNCTION public.populate_mqtt_metrics_dimensions()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  v_expected_org uuid;
+BEGIN
+  IF NEW.host IS NULL OR NEW.host = '' THEN
+    RAISE LOG 'empty host in %, row skipped', TG_TABLE_NAME;
+    RETURN NULL;
+  END IF;
+
+  IF NEW.topic IS NULL OR NEW.topic = '' THEN
+    RAISE LOG 'empty topic in % for host %, row skipped', TG_TABLE_NAME, NEW.host;
+    RETURN NULL;
+  END IF;
+
+  SELECT organization_id
+    INTO v_expected_org
+  FROM auth.host_org_map
+  WHERE host = NEW.host;
+
+  IF v_expected_org IS NULL THEN
+    RAISE LOG 'unknown host in host_org_map: %, row skipped (table: %)', NEW.host, TG_TABLE_NAME;
+    RETURN NULL;
+  END IF;
+
+  NEW.organization_id := v_expected_org;
+
+  INSERT INTO public.mqtt_metrics_topics(host, topic, first_seen)
+  VALUES (NEW.host, NEW.topic, NEW.time)
+  ON CONFLICT (host, topic) DO NOTHING;
+
+  RETURN NEW;
+END
+$$;
+
+-- Idempotent, measurement-agnostic preparation procedure.
+CREATE OR REPLACE PROCEDURE ensure_measurement(meas text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  measurement regclass;
+  trigger_name text := format('populate_%s_dimensions', meas);
+  v_readable_view_name text := format('%s_readable', meas);
+  v_numeric_readable_view_name text := format('%s_numeric_readable', meas);
+  v_index record;
+  v_readable_sql text;
+  v_numeric_readable_sql text;
+BEGIN
+  PERFORM set_config('search_path', 'public', true);
+
+  IF meas <> 'mqtt_metrics' THEN
+    RAISE LOG 'unsupported metrics measurement %, only mqtt_metrics is created', meas;
+    RETURN;
+  END IF;
+
+  EXECUTE format(
+    $ddl$
+      CREATE TABLE IF NOT EXISTS public.%I (
+        time            timestamptz NOT NULL,
+        organization_id uuid,
+        host            text,
+        topic           text,
+        value           text
+      )
+    $ddl$,
+    meas
+  );
+
+  measurement := format('public.%I', meas)::regclass;
+
+  PERFORM create_hypertable(
+    measurement,
+    'time',
+    chunk_time_interval => INTERVAL '2 days',
+    if_not_exists       => TRUE
+  );
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = trigger_name AND tgrelid = measurement) THEN
+    EXECUTE format(
+      'CREATE TRIGGER %I BEFORE INSERT ON public.%I FOR EACH ROW EXECUTE FUNCTION public.populate_mqtt_metrics_dimensions()',
+      trigger_name,
+      meas
+    );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM timescaledb_information.hypertables
+    WHERE hypertable_name = meas
+      AND hypertable_schema = 'public'
+      AND compression_enabled = TRUE
+  ) THEN
+    EXECUTE format(
+      $sql$
+        ALTER TABLE public.%I SET (
+          timescaledb.compress,
+          timescaledb.compress_orderby = 'time DESC',
+          timescaledb.compress_segmentby = 'organization_id,host'
+        )
+      $sql$,
+      meas
+    );
+  END IF;
+
+  PERFORM add_compression_policy(measurement, INTERVAL '7 days', if_not_exists => TRUE);
+
+  PERFORM add_retention_policy(measurement, INTERVAL '__RETENTION_SAFETY_DAYS__ days', if_not_exists => TRUE);
+
+  PERFORM alter_job(job_id, config => coalesce(config, '{}'::jsonb) || jsonb_build_object('drop_after', '__RETENTION_SAFETY_DAYS__ days'))
+  FROM timescaledb_information.jobs
+  WHERE proc_name = 'policy_retention'
+    AND hypertable_name = meas;
+
+  FOR v_index IN
+    SELECT meas || '_' || v.suffix AS indexname, v.columns, v.where_clause
+    FROM (VALUES
+    ('org_time_desc_idx',            '(organization_id, time DESC)',              ''),
+    ('org_host_time_desc_idx',       '(organization_id, host, time DESC)',        ''),
+    ('host_time_desc_idx',           '(host, time DESC)',                         ''),
+    ('topic_time_desc_idx',          '(topic, time DESC)',                        ''),
+    ('host_topic_time_desc_idx',     '(host, topic, time DESC)',                  ''),
+    ('org_host_topic_time_desc_idx', '(organization_id, host, topic, time DESC)', '')
+    ) AS v(suffix, columns, where_clause)
+  LOOP
+    -- A new index here builds under the lock of the single transaction this file
+    -- runs in, holding up ingestion on a populated store. The cloud avoids that by
+    -- pre-creating indexes per chunk, outside any transaction, before it applies.
+    EXECUTE format(
+      'CREATE INDEX IF NOT EXISTS %I ON public.%I %s %s',
+      v_index.indexname,
+      meas,
+      v_index.columns,
+      v_index.where_clause
+    );
+  END LOOP;
+
+  EXECUTE format('ALTER TABLE public.%I ALTER COLUMN organization_id SET STATISTICS 1000', meas);
+  EXECUTE format('ALTER TABLE public.%I ALTER COLUMN host SET STATISTICS 1000', meas);
+  EXECUTE format('ALTER TABLE public.%I ALTER COLUMN topic SET STATISTICS 1000', meas);
+
+  v_readable_sql := format(
+    $view$
+      SELECT
+        m.time,
+        m.organization_id,
+        m.host,
+        m.topic,
+        m.value,
+        CASE
+          WHEN m.value ~ '^[+-]?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))([eE][+-]?[0-9]+)?$'
+            THEN m.value::double precision
+          ELSE NULL
+        END AS value_numeric
+      FROM public.%I m
+      WHERE auth.is_admin()
+        OR m.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+    $view$,
+    meas
+  );
+
+  EXECUTE format('CREATE OR REPLACE VIEW public.%I AS %s', v_readable_view_name, v_readable_sql);
+
+  v_numeric_readable_sql := format(
+    $view$
+      SELECT
+        m.time,
+        m.organization_id,
+        m.host,
+        m.topic,
+        m.value::double precision AS value
+      FROM public.%I m
+      WHERE (auth.is_admin() OR m.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles()))
+        AND m.value ~ '^[+-]?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))([eE][+-]?[0-9]+)?$'
+    $view$,
+    meas
+  );
+
+  EXECUTE format('CREATE OR REPLACE VIEW public.%I AS %s', v_numeric_readable_view_name, v_numeric_readable_sql);
+
+  EXECUTE format('GRANT SELECT ON TABLE public.%I TO all_reader', meas);
+  EXECUTE format('GRANT SELECT ON public.%I TO views_reader, all_reader', v_readable_view_name);
+  EXECUTE format('GRANT SELECT ON public.%I TO views_reader, all_reader', v_numeric_readable_view_name);
+
+  IF (SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename = meas) IS DISTINCT FROM '__TELEGRAF_USER__' THEN
+    EXECUTE format('ALTER TABLE public.%I OWNER TO %I', meas, '__TELEGRAF_USER__');
+  END IF;
+
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.%I FROM views_reader, all_reader', meas);
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON TABLE public.%I FROM views_reader, all_reader', v_readable_view_name);
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON TABLE public.%I FROM views_reader, all_reader', v_numeric_readable_view_name);
+END;
+$$;
+
+-- Per-host retention job. The two arguments are what the TimescaleDB scheduler
+-- passes to a user-defined action; without them every run dies on lookup.
+-- An older installation keeps the argument-less one next to this: never called
+-- again, and dropping it is refused while the job points at it.
+CREATE OR REPLACE PROCEDURE auth.run_host_retention(job_id INTEGER, config JSONB)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  v_ht_name      text;
+  v_chunk_schema text;
+  v_chunk_name   text;
+  v_range_start  timestamptz;
+  v_range_end    timestamptz;
+  v_max_retention_days int;
+  v_deleted_rows  bigint;
+  v_total_deleted bigint := 0;
+  v_chunk_has_rows boolean;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM auth.host_org_map WHERE retention_days IS NOT NULL LIMIT 1) THEN
+    RAISE NOTICE 'run_host_retention: no hosts with retention_days set, nothing to do';
+    RETURN;
+  END IF;
+
+  SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0;
+
+  SELECT max(retention_days)
+    INTO v_max_retention_days
+  FROM auth.host_org_map
+  WHERE retention_days IS NOT NULL;
+
+  FOR v_ht_name IN
+    SELECT 'mqtt_metrics'::text
+  LOOP
+    -- Closed chunks that the safety-net policy has not dropped yet and that still
+    -- hold rows for a host whose retention has expired.
+    FOR v_chunk_schema, v_chunk_name, v_range_start, v_range_end IN
+      SELECT c.chunk_schema, c.chunk_name, c.range_start, c.range_end
+      FROM timescaledb_information.chunks c
+      WHERE c.hypertable_name   = v_ht_name
+        AND c.hypertable_schema = 'public'
+        AND c.range_end         < now()
+        AND c.range_end         >= now() - INTERVAL '__RETENTION_SAFETY_DAYS__ days'
+        AND EXISTS (
+          SELECT 1
+          FROM auth.host_org_map org
+          WHERE org.retention_days IS NOT NULL
+            AND c.range_start < now() - (org.retention_days || ' days')::interval
+        )
+      ORDER BY c.range_start
+    LOOP
+      -- Older than the longest retention anyone has: no row in it can still be
+      -- valid, so the chunk goes whole and no DELETE is needed.
+      IF v_range_end < now() - (v_max_retention_days || ' days')::interval THEN
+        EXECUTE format('DROP TABLE %I.%I', v_chunk_schema, v_chunk_name);
+        RAISE NOTICE 'run_host_retention: %.% (ht: %) -> dropped whole chunk (older than max retention)',
+          v_chunk_schema, v_chunk_name, v_ht_name;
+        CONTINUE;
+      END IF;
+
+      -- Addressed to the hypertable, not to the chunk table: the compression-aware
+      -- DML hook only engages through the hypertable, and a DELETE straight on a
+      -- compressed chunk would report zero rows because the data sits in the
+      -- companion compressed table. The time predicates keep it to this chunk.
+      EXECUTE format(
+        $q$
+          DELETE FROM public.%I t
+          USING auth.host_org_map org
+          WHERE org.retention_days IS NOT NULL
+            AND t.host = org.host
+            AND t.time < now() - (org.retention_days || ' days')::interval
+            AND t.time >= %L
+            AND t.time <  %L
+        $q$,
+        v_ht_name, v_range_start, v_range_end
+      );
+
+      GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
+      v_total_deleted := v_total_deleted + v_deleted_rows;
+
+      RAISE NOTICE 'run_host_retention: %.% (ht: %) -> deleted % rows',
+        v_chunk_schema, v_chunk_name, v_ht_name, v_deleted_rows;
+
+      -- Emptied by that DELETE: give the space back now instead of waiting for the
+      -- safety-net policy to reach this chunk.
+      EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I.%I LIMIT 1)', v_chunk_schema, v_chunk_name)
+        INTO v_chunk_has_rows;
+      IF NOT v_chunk_has_rows THEN
+        EXECUTE format('DROP TABLE %I.%I', v_chunk_schema, v_chunk_name);
+        RAISE NOTICE 'run_host_retention: %.% (ht: %) -> dropped empty chunk (post-DELETE)',
+          v_chunk_schema, v_chunk_name, v_ht_name;
+        CONTINUE;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  RAISE NOTICE 'run_host_retention: finished, total deleted rows across all tables: %', v_total_deleted;
+END;
+$$;
+
+-- Nightly per-host retention job (03:00 UTC, every 24 hours).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM timescaledb_information.jobs
+    WHERE proc_schema = 'auth' AND proc_name = 'run_host_retention'
+  ) THEN
+    PERFORM add_job(
+      'auth.run_host_retention',
+      INTERVAL '1 days',
+      initial_start  => date_trunc('day', now() AT TIME ZONE 'UTC') + INTERVAL '27 hours',
+      fixed_schedule => TRUE,
+      timezone       => 'UTC'
+    );
+  END IF;
+END$$;
+
+-- System roles for service users (exporter/backup unused on-premise).
+GRANT pg_read_all_settings TO "ts_backup";
+GRANT pg_monitor TO "ts_exporter";
+
+-- Let the grafana user read every table and view
+GRANT all_reader TO "__GRAFANA_USER__";
+
+-- Let it read the controller-list VIEW
+GRANT SELECT ON public.org_controllers TO views_reader, all_reader;
+GRANT SELECT ON public.mqtt_metrics_topics_readable TO views_reader, all_reader;
+GRANT SELECT ON public.mqtt_metrics_topics TO all_reader;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.mqtt_metrics_topics FROM views_reader, all_reader;
+
+REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+
+-- Readers must not execute our internal functions and procedures
+REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
+REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_reader;
+
+-- Deny PUBLIC access to pg_stat_statements
+REVOKE SELECT ON public.pg_stat_statements FROM PUBLIC;
+REVOKE SELECT ON public.pg_stat_statements_info FROM PUBLIC;
+DO $$
+BEGIN
+  EXECUTE format('GRANT SELECT ON public.pg_stat_statements TO %I', 'ts_exporter');
+  EXECUTE format('GRANT SELECT ON public.pg_stat_statements_info TO %I', 'ts_exporter');
+END$$;
+
+-- Limits for the reader roles.
+ALTER ROLE views_reader SET statement_timeout = '15s';
+ALTER ROLE views_reader SET idle_in_transaction_session_timeout = '30s';
+ALTER ROLE views_reader SET lock_timeout = '5s';
+ALTER ROLE views_reader SET work_mem = '32MB';
+ALTER ROLE all_reader SET statement_timeout = '30s';
+ALTER ROLE all_reader SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE all_reader SET lock_timeout = '10s';
+ALTER ROLE all_reader SET work_mem = '32MB';
+
+DO $$
+DECLARE
+  v_role name;
+  v_service_roles name[] := ARRAY[
+    '__TELEGRAF_USER__'::name,
+    '__GRAFANA_USER__'::name,
+    'ts_exporter'::name,
+    'ts_backup'::name
+  ];
+BEGIN
+  FOR v_role IN
+    SELECT r.rolname
+    FROM pg_roles r
+    WHERE r.rolcanlogin
+      AND pg_has_role(r.rolname, 'views_reader', 'member')
+      AND NOT (r.rolname = ANY(v_service_roles))
+  LOOP
+    EXECUTE format('ALTER ROLE %I SET statement_timeout = %L', v_role, '15s');
+    EXECUTE format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', v_role, '30s');
+    EXECUTE format('ALTER ROLE %I SET lock_timeout = %L', v_role, '5s');
+    EXECUTE format('ALTER ROLE %I SET work_mem = %L', v_role, '32MB');
+  END LOOP;
+
+  FOR v_role IN
+    SELECT r.rolname
+    FROM pg_roles r
+    WHERE r.rolcanlogin
+      AND pg_has_role(r.rolname, 'all_reader', 'member')
+      AND NOT (r.rolname = ANY(v_service_roles))
+  LOOP
+    EXECUTE format('ALTER ROLE %I SET statement_timeout = %L', v_role, '30s');
+    EXECUTE format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', v_role, '60s');
+    EXECUTE format('ALTER ROLE %I SET lock_timeout = %L', v_role, '10s');
+    EXECUTE format('ALTER ROLE %I SET work_mem = %L', v_role, '32MB');
+  END LOOP;
+END$$;
+
+-- Apply ensure_measurement to hypertables that already exist.
+CREATE OR REPLACE PROCEDURE _apply_ensure_measurement_all()
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_ht_name text;
+BEGIN
+  FOR v_ht_name IN
+    SELECT hypertable_name
+    FROM timescaledb_information.hypertables
+    WHERE hypertable_schema = 'public'
+    ORDER BY hypertable_name
+  LOOP
+    RAISE NOTICE 'Processing hypertable: %', v_ht_name;
+    CALL ensure_measurement(v_ht_name);
+    EXECUTE format('ANALYZE public.%I', v_ht_name);
+  END LOOP;
+END$$;
+
+-- Without this the body of ensure_measurement — indexes, both readable views, the
+-- compression and retention policies — is never re-applied to a store that already
+-- exists, and only the top-level statements above would reach it.
+CALL _apply_ensure_measurement_all();

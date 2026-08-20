@@ -124,14 +124,24 @@ jobs:
             VERSION
             CHANGELOG.md
             CHANGELOG_EN.md
+            migration/RELEASE_NOTES_2.0.md
+            migration/RELEASE_NOTES_2.0_EN.md
             LICENSE
             README.md
             README_EN.md
+            doc/**
             Makefile
             .env.example
             docker-compose.yml
             traefik/**
             jwt/**
+            scripts/**
+            timescale/**
+            telegraf/**
+            grafana/**
+            migration/upgrade.sh
+            migration/migrate-env.sh
+            migration/migration_doctor.py
 
       - name: Done
         run: echo "✅ Release completed for version ${{ needs.read-version.outputs.version }}"

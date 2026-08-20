@@ -8,8 +8,17 @@ gen
 jwt/*.pem
 tls/*.pem
 
-# env
+# env — .bak-* copies hold the same secrets and are left behind by `make upgrade`
 .env
+.env.bak-*
+
+# python bytecode from running the migration doctor locally
+__pycache__/
+*.pyc
+
+# migration_doctor working file + DB/Influx backups created by `make upgrade`
+migration/conflicts.yaml
+backups/
 
 branding/*.svg
 branding/*.ico
@@ -28,3 +37,12 @@ branding/*.png
 # Claude Code
 CLAUDE.md
 .mcp.json
+
+# GeoIP database (operator-provided, see README)
+geoip/*.mmdb
+
+# Local review working notes (never tracked)
+REVIEW-*.md
+REPLIES-*.md
+CHECKLIST-*.md
+.pr30-body-full-backup.md

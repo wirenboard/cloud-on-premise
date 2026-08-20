@@ -1,6 +1,9 @@
 [entryPoints]
   [entryPoints.websecure]
     address = ":443"
+    # Traefik v3 defaults to 60s and cuts off large uploads through tunnels.
+    [entryPoints.websecure.transport.respondingTimeouts]
+      readTimeout = "3600s"
 
 [providers.docker]
   endpoint = "unix:///var/run/docker.sock"

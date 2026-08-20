@@ -15,11 +15,6 @@ if [[ ! -f .env ]]; then
     exit 1
 fi
 
-# Export only VAR=VAL lines (no spaces or comments)
-set -o allexport
-grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env | while read -r line; do export "$line"; done
-set +o allexport
-
 printf "\n${WHITE}%s${NC}\n" "=====================[ GENERATING JWT KEYPAIR ]====================="
 
 #----- [ FILES ] ------------------------------------------------------------
@@ -29,6 +24,26 @@ PUBLIC_KEY_FILE="jwt/public.pem"
 # Generation flags
 GENERATE_PRIVATE=false
 GENERATE_PUBLIC=false
+
+# An installation that came from a release archive keeps its keys only in .env: the
+# pem files are not in the archive. Restore them from there before deciding to
+# generate, or a new pair would replace working keys and invalidate every token
+# already issued to a controller.
+restore_from_env() { # variable name, target file, extra openssl flag
+    [ -s "$2" ] && return 1
+    local value
+    value="$(grep -E "^[[:space:]]*$1=" .env | tail -1 | cut -d= -f2- | sed 's/^"//; s/"$//')"
+    [ -n "$value" ] || return 1
+    printf '%b\n' "$value" > "$2"
+    if openssl rsa -in "$2" ${3:-} -noout &>/dev/null; then
+        printf "${GREEN}Restored $2 from .env${NC}\n"
+    else
+        rm -f "$2"; return 1
+    fi
+}
+mkdir -p jwt
+restore_from_env PRIVATE_KEY "$PRIVATE_KEY_FILE" || true
+restore_from_env PUBLIC_KEY  "$PUBLIC_KEY_FILE" -pubin || true
 
 printf "${GRAY}%s${NC}\n" "------ Checking private key presence ------"
 if [[ -f "$PRIVATE_KEY_FILE" && -s "$PRIVATE_KEY_FILE" ]]; then

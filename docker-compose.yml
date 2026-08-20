@@ -3,26 +3,50 @@ x-traefik-common: &traefik-common
   traefik.docker.network: ${DOCKER_NET_NAME:-wb_net}
 
 x-backend-common-env: &backend-common-env
-  EMAIL_URL: ${EMAIL_URL:-}
+  # No colon: an empty value must reach check-env, not kill every compose command.
+  EMAIL_ENABLED: "${EMAIL_ENABLED?set EMAIL_ENABLED to True or False in .env}"
+  EMAIL_HOST: ${EMAIL_HOST:-}
+  EMAIL_PORT: ${EMAIL_PORT:-587}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+  EMAIL_USE_SSL: ${EMAIL_USE_SSL:-False}
   EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-}
-  EMAIL_ENABLED: "${EMAIL_ENABLED:-True}"
+  EMAIL_TIMEOUT: "10"
   INVITE_EMAIL_SUBJECT: ${INVITE_EMAIL_SUBJECT:-}
   INVITE_EMAIL_BODY: ${INVITE_EMAIL_BODY:-}
+  CACHALOT_ENABLED: "false"
   CELERY_BROKER_URL: "redis://redis:6379/0"
   CELERY_RESULT_BACKEND: "redis://redis:6379/0"
   CACHE_URL: "redis://redis:6379/1"
   SECRET_KEY: ${SECRET_KEY}
   JWT_PRIVATE_KEY: ${PRIVATE_KEY}
   JWT_PUBLIC_KEY: ${PUBLIC_KEY}
-  INFLUX_DB_URL: "http://influx:8086"
-  INFLUX_DB_TOKEN: ${INFLUXDB_TOKEN}
-  INFLUX_GRAFANA_URL: "https://metrics.${ABSOLUTE_SERVER}"
-  INFLUX_GRAFANA_ADMIN_MANAGEMENT_URL: "https://${INFLUXDB_USERNAME}:${INFLUXDB_PASSWORD}@metrics.${ABSOLUTE_SERVER}"
+  DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db}"
+  # Single-node: reads go to the same instance, and the backend already defaults
+  # the replica URL to the primary one.
+  TIMESCALE_PRIMARY_DB_URL: "postgresql://${TIMESCALE_USER:-timescale}:${TIMESCALE_PASSWORD:-timescale_password}@timescale:5432/${TIMESCALE_DB:-metrics}?application_name=django_backend&connect_timeout=5&sslmode=disable&target_session_attrs=read-write"
+  TIMESCALE_MQTT_METRICS_MEASUREMENT_NAME: "mqtt_metrics"
+  TIMESCALE_MQTT_METRICS_READABLE_VIEW_NAME: "mqtt_metrics_readable"
+  TIMESCALE_DEFAULT_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
+  TIMESCALE_MAX_HOST_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
+  TIMESCALE_VIEWS_READER_STATEMENT_TIMEOUT: "15s"
+  TIMESCALE_VIEWS_READER_IDLE_IN_TRANSACTION_SESSION_TIMEOUT: "30s"
+  TIMESCALE_VIEWS_READER_LOCK_TIMEOUT: "5s"
+  TIMESCALE_VIEWS_READER_WORK_MEM_MB: "32"
+  METRICS_AGENT_URL: "https://metrics-ingest.${ABSOLUTE_SERVER}/metrics"
+  # Keep in sync with the Traefik rate-limit labels on the telegraf service.
+  METRICS_COLLECTOR_RATELIMIT_AVERAGE: "6"
+  METRICS_COLLECTOR_RATELIMIT_PERIOD_S: "60"
+  METRICS_COLLECTOR_MAX_REQUEST_BYTES: "204800"
+  GRAFANA_USER_URL: "https://metrics.${ABSOLUTE_SERVER}"
+  GRAFANA_URL: "https://metrics.${ABSOLUTE_SERVER}"
+  GRAFANA_ADMIN_MANAGEMENT_URL: "http://${GRAFANA_ADMIN_USER:-grafana_admin}:${GRAFANA_ADMIN_PASSWORD:-grafana_password}@clients-grafana:3000"
+  GRAFANA_UPSTREAM_URL: "http://clients-grafana:3000"
+  MAX_NEW_CONTROLLER_CONNECTIONS_PER_DAY: "160"
   TUNNEL_AGENT_PORT: ${TUNNEL_PORT:-7107}
   TUNNEL_AGENT_GLOBAL_TOKEN: ${TUNNEL_AUTH_TOKEN}
-  DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db}"
   ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
-  TELEGRAF_AGENT_URL: "https://influx.${ABSOLUTE_SERVER}"
   BACKEND_APP_URL: "https://app.${ABSOLUTE_SERVER}"
   BACKEND_AGENT_URL: "https://agent.${ABSOLUTE_SERVER}"
   TUNNEL_AGENT_URL: "https://tunnel.${ABSOLUTE_SERVER}"
@@ -30,8 +54,10 @@ x-backend-common-env: &backend-common-env
   TUNNEL_REDIRECT_SSH_MAIN_URL: "https://ssh.${ABSOLUTE_SERVER}"
   TUNNEL_REDIRECT_HTTP_MAIN_URL: "https://http.${ABSOLUTE_SERVER}"
   TUNNEL_UPSTREAM: "tunnel"
+  GEOIP_CITY_DB_PATH: "/data/geoip/dbip-city-lite.mmdb"
+  # 2.0: email is the login, so the admin username must equal ADMIN_EMAIL.
   ADMIN_EMAIL: ${ADMIN_EMAIL}
-  ADMIN_USERNAME: ${ADMIN_USERNAME}
+  ADMIN_USERNAME: ${ADMIN_EMAIL}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD}
   AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
   AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
@@ -39,17 +65,30 @@ x-backend-common-env: &backend-common-env
   AWS_STORAGE_BUCKET_NAME: "media"
   AWS_S3_REGION_NAME: "eu-west-1"
 
+x-backend-healthcheck: &backend-healthcheck
+  test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/"]
+  interval: 10s
+  timeout: 3s
+  # Django needs a while to answer on a cold start, and everything starts at once.
+  start_period: 90s
+  retries: 3
+
+# Container logs are capped so a chatty service cannot fill the disk of a
+# machine sized to the documented minimum.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17-alpine
+    logging: *default-logging
     restart: always
     command: >
-      --autovacuum=off 
-      --fsync=off 
-      --synchronous_commit=off 
-      --full_page_writes=off 
-      --work_mem=5MB 
-      --max-connections=100 
+      --work_mem=5MB
+      --max-connections=300
       --max_wal_senders=0
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -63,42 +102,115 @@ services:
     volumes:
       - postgresData:/var/lib/postgresql/data
 
-  influx:
-    image: influxdb:2.7
+  timescale:
+    # timescaledb-ha image, but run as a plain single PostgreSQL instance
+    # (no Patroni / etcd / HAProxy — those are upstream HA-only concerns).
+    image: timescale/timescaledb-ha:pg17.5-ts2.21.3
+    logging: *default-logging
     restart: always
     environment:
-      DOCKER_INFLUXDB_INIT_MODE: "setup"
-      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME}
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD}
-      DOCKER_INFLUXDB_INIT_ORG: "admin-org"
-      DOCKER_INFLUXDB_INIT_BUCKET: "admin-bucket"
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN}
-    labels:
-      <<: *traefik-common
-      traefik.http.routers.influx.rule: "Host(`influx.${ABSOLUTE_SERVER}`)"
-      traefik.http.routers.influx.entrypoints: "websecure"
-      traefik.http.routers.influx.service: "influx"
-      traefik.http.routers.influx.tls: "true"
-      traefik.http.services.influx.loadbalancer.server.port: "8086"
+      # The three passwords are generated into .env by 'make generate-env' and are
+      # required by check-env: the literals below are only a bare-compose fallback.
+      POSTGRES_USER: ${TIMESCALE_USER:-timescale}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-timescale_password}
+      POSTGRES_DB: ${TIMESCALE_DB:-metrics}
+      # Roles/passwords consumed by the rendered init.sql (see timescale/ dir).
+      TELEGRAF_TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER:-telegraf}
+      TELEGRAF_TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD:-telegraf_password}
+      # Read-only role Grafana uses to query the TimescaleDB metrics *datasource*
+      # (not Grafana's internal config DB — that is SQLite).
+      GRAFANA_TIMESCALE_USER: ${GRAFANA_TIMESCALE_USER:-grafana}
+      GRAFANA_TIMESCALE_PASSWORD: ${GRAFANA_TIMESCALE_PASSWORD:-grafana_timescale_password}
+      METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
+      TZ: UTC
     volumes:
-      - influxData:/var/lib/influxdb2
+      - timescaleData:/home/postgres/pgdata
+      # init.sql.tmpl is rendered + applied by 10-apply-init.sh on first init.
+      - ./timescale/10-apply-init.sh:/docker-entrypoint-initdb.d/10-apply-init.sh:ro
+      - ./timescale/init.sql.tmpl:/timescale/init.sql.tmpl:ro
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8086/health" ]
+      # Over TCP on purpose: during initdb the temporary server listens on the unix
+      # socket only, and a socket probe would report healthy while init is still running.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER:-timescale} -d $${POSTGRES_DB:-metrics}"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 6
+
+  # The entrypoint applies init.sql only on a fresh volume, so without this a schema
+  # change never reaches an existing installation. Idempotent, one transaction.
+  timescale-init:
+    image: timescale/timescaledb-ha:pg17.5-ts2.21.3
+    logging: *default-logging
+    restart: "no"
+    environment:
+      # psql picks these up itself; POSTGRES_* are what the script substitutes.
+      PGHOST: timescale
+      PGPASSWORD: ${TIMESCALE_PASSWORD:-timescale_password}
+      POSTGRES_USER: ${TIMESCALE_USER:-timescale}
+      POSTGRES_DB: ${TIMESCALE_DB:-metrics}
+      TELEGRAF_TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER:-telegraf}
+      TELEGRAF_TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD:-telegraf_password}
+      GRAFANA_TIMESCALE_USER: ${GRAFANA_TIMESCALE_USER:-grafana}
+      GRAFANA_TIMESCALE_PASSWORD: ${GRAFANA_TIMESCALE_PASSWORD:-grafana_timescale_password}
+      METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
+      TZ: UTC
+    entrypoint: ["/bin/bash", "/timescale/10-apply-init.sh"]
+    volumes:
+      - ./timescale/10-apply-init.sh:/timescale/10-apply-init.sh:ro
+      - ./timescale/init.sql.tmpl:/timescale/init.sql.tmpl:ro
+    depends_on:
+      timescale:
+        condition: service_healthy
+
+  redis:
+    image: redis:7.4.8-alpine
+    logging: *default-logging
+    restart: always
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
 
-  redis:
-    image: redis:6-alpine
+  telegraf:
+    # Ingests controller metrics (Influx line protocol over HTTPS) and writes
+    # them into TimescaleDB. Exposed via Traefik with mTLS + rate limiting.
+    image: telegraf:1.35.4
+    logging: *default-logging
     restart: always
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+    environment:
+      TELEGRAF_TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER:-telegraf}
+      TELEGRAF_TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD:-telegraf_password}
+      TIMESCALE_DB: ${TIMESCALE_DB:-metrics}
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    labels:
+      <<: *traefik-common
+      traefik.http.routers.telegraf.rule: "Host(`metrics-ingest.${ABSOLUTE_SERVER}`) && PathPrefix(`/metrics`)"
+      traefik.http.routers.telegraf.entrypoints: "websecure"
+      traefik.http.routers.telegraf.service: "telegraf"
+      traefik.http.routers.telegraf.tls: "true"
+      traefik.http.routers.telegraf.tls.options: "check-ca@file"
+      traefik.http.services.telegraf.loadbalancer.server.port: "8081"
+      # Strip any incoming client-cert header, then re-inject from the verified cert.
+      traefik.http.middlewares.telegraf_strip_cert.headers.customrequestheaders.X-Forwarded-Tls-Client-Cert-Info: ""
+      traefik.http.middlewares.telegraf_check_ca.passtlsclientcert.info.serialnumber: "true"
+      traefik.http.middlewares.telegraf_check_ca.passtlsclientcert.info.subject.commonName: "true"
+      traefik.http.middlewares.telegraf_check_ca.passtlsclientcert.pem: "false"
+      traefik.http.middlewares.telegraf_throttle.ratelimit.sourcecriterion.requestheadername: "X-Forwarded-Tls-Client-Cert-Info"
+      traefik.http.middlewares.telegraf_throttle.ratelimit.average: "6"
+      traefik.http.middlewares.telegraf_throttle.ratelimit.period: "60s"
+      traefik.http.middlewares.telegraf_size_limit.buffering.maxrequestbodybytes: "204800"
+      traefik.http.routers.telegraf.middlewares: "telegraf_strip_cert,telegraf_check_ca,telegraf_throttle,telegraf_size_limit"
+    depends_on:
+      timescale:
+        condition: service_healthy
 
   traefik:
     image: traefik:3.6.2
+    logging: *default-logging
     restart: always
     ports:
       - "${TRAEFIK_EXTERNAL_PORT:-443}:443"
@@ -113,9 +225,10 @@ services:
 
   tunnel:
     image: ghcr.io/wirenboard/on-premise/wbc-tunnel:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
-      FRP_WEBHOOK_ADDRESS: "backend:8000"
+      FRP_WEBHOOK_ADDRESS: "tunnel-webhooks-backend:8000"
       FRP_AUTH_TOKEN: ${TUNNEL_AUTH_TOKEN}
       FRP_TUNNELING_PORT: 7107
       FRP_DASHBOARD_PORT: 7501
@@ -129,26 +242,38 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      backend:
+      tunnel-webhooks-backend:
         condition: service_healthy
 
   tunnel_auth:
     image: ghcr.io/wirenboard/on-premise/wbc-tunnel-auth:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
       TUNNEL_UPSTREAM: "tunnel"
       WEBSSH_UPSTREAM: "webssh:8888"
       BACKEND_APP_UPSTREAM: "backend:8000"
       CLOUD_ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
+      # CLOUD_ABSOLUTE_SERVER_NAME_REGEX is auto-derived from CLOUD_ABSOLUTE_URL by
+      # the authorizer when left unset; we still pass ours for an exact match.
       CLOUD_ABSOLUTE_SERVER_NAME_REGEX: ${ABSOLUTE_SERVER_REGEX}
-      BACKEND_APP_PUBLIC_KEY: ${PUBLIC_KEY}
+      # The backend JWT public key is now a mounted keyfile (the authorizer reads
+      # it from this path), replacing the old PEM-in-an-env-var approach.
+      BACKEND_APP_PUBLIC_KEY_PATH: "/backend_app_public_key.pem"
+      SERVICE_PROTOCOLS_REGEX: "ssh|http"
+      TUNNEL_APPS_DOMAIN: "apps.${ABSOLUTE_SERVER}"
+    volumes:
+      - ./jwt/public.pem:/backend_app_public_key.pem:ro
     labels:
       <<: *traefik-common
       traefik.http.routers.tunnel_auth.tls.domains[0].main: "ssh.${ABSOLUTE_SERVER}"
       traefik.http.routers.tunnel_auth.tls.domains[0].sans: "*.ssh.${ABSOLUTE_SERVER}"
       traefik.http.routers.tunnel_auth.tls.domains[1].main: "http.${ABSOLUTE_SERVER}"
       traefik.http.routers.tunnel_auth.tls.domains[1].sans: "*.http.${ABSOLUTE_SERVER}"
-      traefik.http.routers.tunnel_auth.rule: "HostRegexp(`(?P<sub>[a-zA-Z0-9]{5,25}).ssh.${ABSOLUTE_SERVER}`) || Host(`ssh.${ABSOLUTE_SERVER}`) || HostRegexp(`(?P<sub>[a-zA-Z0-9]{5,25}).http.${ABSOLUTE_SERVER}`) || Host(`http.${ABSOLUTE_SERVER}`)"
+      traefik.http.routers.tunnel_auth.tls.domains[2].main: "apps.${ABSOLUTE_SERVER}"
+      traefik.http.routers.tunnel_auth.tls.domains[2].sans: "*.apps.${ABSOLUTE_SERVER}"
+      # Anchored + dot-escaped like upstream: v3 HostRegexp is a bare substring match.
+      traefik.http.routers.tunnel_auth.rule: 'HostRegexp(`^(?P<sub>[a-zA-Z0-9]{5,25})\.ssh\.${ABSOLUTE_SERVER_REGEX}$$`) || Host(`ssh.${ABSOLUTE_SERVER}`) || HostRegexp(`^(?P<sub>[a-zA-Z0-9]{5,25})\.http\.${ABSOLUTE_SERVER_REGEX}$$`) || Host(`http.${ABSOLUTE_SERVER}`) || HostRegexp(`^(?P<sub>[a-zA-Z0-9]{5,25}-[0-9]{1,5})\.apps\.${ABSOLUTE_SERVER_REGEX}$$`) || Host(`apps.${ABSOLUTE_SERVER}`)'
       traefik.http.routers.tunnel_auth.entrypoints: "websecure"
       traefik.http.routers.tunnel_auth.tls: "true"
       traefik.http.routers.tunnel_auth.service: "tunnel_auth"
@@ -161,9 +286,11 @@ services:
 
   webssh:
     image: ghcr.io/wirenboard/on-premise/wbc-webssh:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
-      SERVICE_NAME: "${SERVICE_NAME:-Wiren Board}"
+      REDIS_URL: "redis://redis:6379/1"
+      SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
     volumes:
@@ -174,10 +301,11 @@ services:
 
   frontend:
     image: ghcr.io/wirenboard/on-premise/wbc-frontend:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
       BACKEND_APP_URL: "http://backend:8000/"
-      # "-" (не ":-") у ссылок/подписей: пустое значение НЕ подменяется дефолтом — пустая строка скрывает ссылку в UI
+      # "-" not ":-" for links and captions: an empty value must stay empty, that is how the UI hides the link
       FOOTER_LINKS: '[{"url": "${FOOTER_SITE_URL-https://wirenboard.com/}", "caption": "mainSiteLink"}]'
       FOOTER_TRANSLATIONS_RU: '{"mainSiteLink":"${FOOTER_SITE_LABEL_RU-${FOOTER_SITE_LABEL_EN:-Сайт компании Wiren Board}}"}'
       FOOTER_TRANSLATIONS_EN: '{"mainSiteLink":"${FOOTER_SITE_LABEL_EN-${FOOTER_SITE_LABEL_RU:-Wiren Board website}}"}'
@@ -187,6 +315,12 @@ services:
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
     volumes:
       - ./branding:/branding:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/__health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      start_period: 45s
+      retries: 6
     labels:
       <<: *traefik-common
       traefik.http.routers.frontend.rule: "Host(`${ABSOLUTE_SERVER}`)"
@@ -200,9 +334,12 @@ services:
 
   backend:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
       <<: *backend-common-env
+    volumes:
+      - ./geoip:/data/geoip:ro
     labels:
       <<: *traefik-common
       traefik.http.routers.backend.rule: "(Host(`${ABSOLUTE_SERVER}`) && PathPrefix(`/static/`)) || (Host(`app.${ABSOLUTE_SERVER}`) && (PathPrefix(`/admin/`) || PathPrefix(`/static/`) || PathPrefix(`/silk/`)))"
@@ -210,11 +347,13 @@ services:
       traefik.http.routers.backend.service: "backend"
       traefik.http.routers.backend.tls: "true"
       traefik.http.services.backend.loadbalancer.server.port: "8000"
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/" ]
-      interval: 10s
-      timeout: 3s
-      retries: 3
+      # Grafana auth proxy endpoint (backend authorises clients-grafana access).
+      traefik.http.routers.backend_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && PathPrefix(`/grafana-auth`)"
+      traefik.http.routers.backend_grafana.entrypoints: "websecure"
+      traefik.http.routers.backend_grafana.service: "backend"
+      traefik.http.routers.backend_grafana.tls: "true"
+      traefik.http.routers.backend_grafana.priority: "99"
+    healthcheck: *backend-healthcheck
     depends_on:
       redis:
         condition: service_healthy
@@ -222,10 +361,30 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      timescale:
+        condition: service_healthy
 
+  # Dedicated backend instance that serves the FRP tunnel webhooks.
+  tunnel-webhooks-backend:
+    image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
+    logging: *default-logging
+    restart: always
+    environment:
+      <<: *backend-common-env
+    healthcheck: *backend-healthcheck
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      # Shares the image, and the image migrates on start: on an empty database two
+      # of those at once collide and the loser crash-loops.
+      backend:
+        condition: service_healthy
 
   agent_backend:
     image: ghcr.io/wirenboard/on-premise/wbc-agent-backend:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
       <<: *backend-common-env
@@ -248,26 +407,29 @@ services:
 
   worker:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
       <<: *backend-common-env
       QUEUE: default_queue
-      CONCURRENCY: 4
-      SOFT_TIME_LIMIT: 300
+      CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      SOFT_TIME_LIMIT: 120
     depends_on:
       redis:
         condition: service_healthy
       backend:
         condition: service_healthy
 
-  worker-influx:
+  worker-metrics:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
       <<: *backend-common-env
-      QUEUE: influx_queue
-      CONCURRENCY: 4
+      QUEUE: metrics_queue
+      CONCURRENCY: ${METRICS_WORKER_CONCURRENCY:-3}
       SOFT_TIME_LIMIT: 300
+      CELERYD_PREFETCH_MULTIPLIER: 2
     depends_on:
       redis:
         condition: service_healthy
@@ -276,12 +438,30 @@ services:
 
   worker-grafana:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
       <<: *backend-common-env
+      GRAFANA_DEFAULT_DASHBOARD_UPDATE_PARALLELISM: 12
       QUEUE: grafana_queue
-      CONCURRENCY: 1
-      SOFT_TIME_LIMIT: 10
+      CONCURRENCY: ${GRAFANA_WORKER_CONCURRENCY:-3}
+      SOFT_TIME_LIMIT: 300
+      CELERYD_PREFETCH_MULTIPLIER: 2
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  worker-email:
+    image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
+    logging: *default-logging
+    restart: always
+    environment:
+      <<: *backend-common-env
+      QUEUE: email_queue
+      CONCURRENCY: ${EMAIL_WORKER_CONCURRENCY:-2}
+      SOFT_TIME_LIMIT: 120
     depends_on:
       redis:
         condition: service_healthy
@@ -290,15 +470,62 @@ services:
 
   scheduler:
     image: ghcr.io/wirenboard/on-premise/wbc-scheduler:${VERSION}
+    logging: *default-logging
     restart: always
     environment:
       <<: *backend-common-env
+      GRAFANA_DEFAULT_DASHBOARD_UPDATE_PARALLELISM: 12
     depends_on:
       backend:
         condition: service_healthy
 
+  clients-grafana:
+    image: grafana/grafana:12.2.2
+    logging: *default-logging
+    restart: always
+    environment:
+      GF_PATHS_CONFIG: /clients-grafana.ini
+      ABSOLUTE_SERVER: ${ABSOLUTE_SERVER}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-grafana_admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana_password}
+      SERVICE_NAME: ${SERVICE_NAME:-Wiren Board Cloud}
+      # Alert emails go through the same SMTP as the cloud itself. Grafana
+      # validates the sender even with SMTP off, so these keep a valid shape.
+      EMAIL_ENABLED: ${EMAIL_ENABLED}
+      EMAIL_HOST: ${EMAIL_HOST:-localhost}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_NOTIFICATIONS_FROM: ${EMAIL_NOTIFICATIONS_FROM:-noreply@${ABSOLUTE_SERVER}}
+      EMAIL_STARTTLS_POLICY: ${EMAIL_STARTTLS_POLICY:-MandatoryStartTLS}
+    volumes:
+      - clientsGrafanaData:/var/lib/grafana
+      - ./grafana/clients-grafana.ini:/clients-grafana.ini:ro
+    labels:
+      <<: *traefik-common
+      # Closed as in the cloud: a password changed inside Grafana diverges from the
+      # copy the backend keeps, and the user loses the metrics for good.
+      traefik.http.routers.clients_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathPrefix(`/user/password`) && !PathPrefix(`/api/user/password`)"
+      traefik.http.routers.clients_grafana.entrypoints: "websecure"
+      traefik.http.routers.clients_grafana.service: "clients_grafana"
+      traefik.http.routers.clients_grafana.tls: "true"
+      traefik.http.routers.clients_grafana.priority: "98"
+      traefik.http.services.clients_grafana.loadbalancer.server.port: "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      start_period: 40s
+      retries: 6
+    depends_on:
+      # Grafana's internal config DB is now SQLite (on the clientsGrafanaData
+      # volume); it only needs TimescaleDB up as its metrics datasource.
+      timescale:
+        condition: service_healthy
+
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    logging: *default-logging
     volumes:
       - minioData:/data
     restart: always
@@ -307,29 +534,31 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_pass}
     command: server /data
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 3s
       retries: 5
 
   minio-client:
-    image: minio/mc:latest
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    logging: *default-logging
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio_login} ${MINIO_ROOT_PASSWORD:-minio_pass};
-      /usr/bin/mc rb --force local/media/;
-      /usr/bin/mc mb --quiet local/media/;
-      /usr/bin/mc policy set public local/media/;
+      /usr/bin/mc mb --quiet --ignore-existing local/media/;
+      /usr/bin/mc anonymous set public local/media/;
       "
     depends_on:
       minio:
         condition: service_healthy
+
 
 networks:
   default:
     name: ${DOCKER_NET_NAME:-wb_net}
 
 volumes:
-  influxData: {}
+  timescaleData: {}
   postgresData: {}
   minioData: {}
+  clientsGrafanaData: {}
