@@ -312,6 +312,7 @@ services:
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       SERVICE_STATUS_URL: "${SERVICE_STATUS_URL:-}"
       SERVICE_DOCS_URL: "${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud}"
+      SERVICE_DOCS_PAGE_URL: "${SERVICE_DOCS_PAGE_URL-https://wiki.wirenboard.com/wiki/Special:MyLanguage/Wiren_Board_Cloud}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
     volumes:
       - ./branding:/branding:ro

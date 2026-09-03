@@ -225,6 +225,7 @@ Besides the assets, you can override the product name, links, and color shown in
 SERVICE_NAME       — product name: UI texts and the browser tab title (default: "Wiren Board Cloud")
 SERVICE_STATUS_URL — your service status page link (not set or empty — the status link is hidden)
 SERVICE_DOCS_URL   — documentation link (not set — Wiren Board wiki; empty — the docs link is hidden)
+SERVICE_DOCS_PAGE_URL — documentation page the book icons in the web UI point into (not set — Wiren Board wiki; empty — the icons are hidden)
 PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
 FOOTER_SITE_URL    — company site link in the footer (not set — wirenboard.com; empty — the link is hidden)
 FOOTER_SITE_LABEL_RU — caption of that link for Russian (default: "Сайт компании Wiren Board")
