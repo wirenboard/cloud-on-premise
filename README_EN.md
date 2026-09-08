@@ -195,7 +195,7 @@ Controllers must resolve the same hostname via the same internal DNS as the rest
 
 This step is optional.
 
-The frontend and the web console read branding assets from the local `branding/` directory, which is mounted into the `frontend` and `webssh` containers.
+The frontend and web console read branding assets from the local `branding/` directory, which is mounted into the `frontend` and `webssh` containers. The backend writes to the same directory through the admin, and Compose sets the required permissions at startup.
 If you do not add your own files there, the application will continue using the default Wiren Board logo and icons.
 
 To replace the logo and icons, place your files in that directory with the exact names listed below. File requirements:
@@ -225,6 +225,7 @@ Besides the assets, you can override the product name, links, and color shown in
 SERVICE_NAME       — product name: UI texts and the browser tab title (default: "Wiren Board Cloud")
 SERVICE_STATUS_URL — your service status page link (not set or empty — the status link is hidden)
 SERVICE_DOCS_URL   — documentation link (not set — Wiren Board wiki; empty — the docs link is hidden)
+SERVICE_DOCS_PAGE_URL — documentation page the book icons in the web UI point into (not set — Wiren Board wiki; empty — the icons are hidden)
 PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
 FOOTER_SITE_URL    — company site link in the footer (not set — wirenboard.com; empty — the link is hidden)
 FOOTER_SITE_LABEL_RU — caption of that link for Russian (default: "Сайт компании Wiren Board")
