@@ -195,7 +195,7 @@ Controllers must resolve the same hostname via the same internal DNS as the rest
 
 This step is optional.
 
-The frontend and the web console read branding assets from the local `branding/` directory, which is mounted into the `frontend` and `webssh` containers.
+The frontend and web console read branding assets from the local `branding/` directory, which is mounted into the `frontend` and `webssh` containers. The backend writes to the same directory through the admin, and Compose sets the required permissions at startup.
 If you do not add your own files there, the application will continue using the default Wiren Board logo and icons.
 
 To replace the logo and icons, place your files in that directory with the exact names listed below. File requirements:

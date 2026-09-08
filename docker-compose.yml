@@ -333,6 +333,14 @@ services:
       backend:
         condition: service_healthy
 
+  branding-init:
+    image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec", "mkdir -p /branding && chown nobody:nogroup /branding && chmod 755 /branding"]
+    volumes:
+      - ./branding:/branding
+
   backend:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
     logging: *default-logging
@@ -341,6 +349,7 @@ services:
       <<: *backend-common-env
     volumes:
       - ./geoip:/data/geoip:ro
+      - ./branding:/branding
     labels:
       <<: *traefik-common
       traefik.http.routers.backend.rule: "(Host(`${ABSOLUTE_SERVER}`) && PathPrefix(`/static/`)) || (Host(`app.${ABSOLUTE_SERVER}`) && (PathPrefix(`/admin/`) || PathPrefix(`/static/`) || PathPrefix(`/silk/`)))"
@@ -364,6 +373,8 @@ services:
         condition: service_healthy
       timescale:
         condition: service_healthy
+      branding-init:
+        condition: service_completed_successfully
 
   # Dedicated backend instance that serves the FRP tunnel webhooks.
   tunnel-webhooks-backend:
