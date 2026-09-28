@@ -293,7 +293,6 @@ services:
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
-      CARTO_API_KEY: "${CARTO_API_KEY:-}"
     volumes:
       - ./branding:/branding:ro
     depends_on:
@@ -313,7 +312,9 @@ services:
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       SERVICE_STATUS_URL: "${SERVICE_STATUS_URL:-}"
       SERVICE_DOCS_URL: "${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud}"
+      SERVICE_DOCS_URL_EN: "${SERVICE_DOCS_URL_EN-${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud/en}}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
+      CARTO_API_KEY: "${CARTO_API_KEY:-}"
     volumes:
       - ./branding:/branding:ro
     healthcheck:
