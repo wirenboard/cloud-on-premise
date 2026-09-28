@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- MinIO images now come from the `ghcr.io/wirenboard/on-premise` mirror: they were removed from Docker Hub, so a fresh install could not start and `make update` stopped the cloud and then failed on the pull.
+- `make update` now pulls the images before stopping the containers: if the pull fails, the cloud keeps running on the previous version.
 - Controller map: the CARTO basemap loads again. CARTO now requires an API key; set it with the new `CARTO_API_KEY` variable in `.env` (see "Controller map" in the README).
 
 ## [2.0.0] - 2026-08-20
