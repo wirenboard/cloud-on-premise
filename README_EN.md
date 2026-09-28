@@ -241,7 +241,7 @@ The map background is served by CARTO and requires an API key. Get one at https:
 CARTO_API_KEY="..."
 ```
 
-Without a key the web UI shows "Map is unavailable" instead of the map. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Recreate the frontend after changing `.env`: `docker compose up -d frontend`.
+Without a key the web UI hides the map. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Recreate the frontend after changing `.env`: `docker compose up -d frontend`.
 
 ---
 
