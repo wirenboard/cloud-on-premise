@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.0.1] - 2026-09-28
+
+### Fixed
+
+- Controller map: the CARTO basemap loads again. CARTO now requires an API key; set it with the new `CARTO_API_KEY` variable in `.env` (see "Controller map" in the README).
+
 ## [2.0.0] - 2026-08-20
 
 > Breaking release. See [`RELEASE_NOTES_2.0_EN.md`](migration/RELEASE_NOTES_2.0_EN.md) for the
