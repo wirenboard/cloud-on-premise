@@ -235,13 +235,13 @@ If the variables are not set, the Wiren Board defaults are used. Restart the fro
 
 ### Controller map
 
-The map background is served by CARTO and requires an API key. Sign up at https://carto.com/, get a key and put it into `.env`:
+The map background is served by CARTO and requires an API key. Get one at https://carto.com/basemaps/apikey and put it into `.env`:
 
 ```
 CARTO_API_KEY="..."
 ```
 
-Without a key the controllers are shown on a blank background. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Recreate the frontend after changing `.env`: `docker compose up -d frontend`.
+Without a key the web UI shows "Map is unavailable" instead of the map. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Recreate the frontend after changing `.env`: `docker compose up -d frontend`.
 
 ---
 
