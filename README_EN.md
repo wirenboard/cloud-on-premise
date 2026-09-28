@@ -241,7 +241,7 @@ The map background is served by CARTO and requires an API key. Sign up at https:
 CARTO_API_KEY="..."
 ```
 
-Without a key the controllers are shown on a blank background. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Restart the frontend after changing `.env`.
+Without a key the controllers are shown on a blank background. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Recreate the frontend after changing `.env`: `docker compose up -d frontend`.
 
 ---
 
