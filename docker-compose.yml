@@ -293,6 +293,7 @@ services:
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
+      CARTO_API_KEY: "${CARTO_API_KEY:-}"
     volumes:
       - ./branding:/branding:ro
     depends_on:
