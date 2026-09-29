@@ -213,10 +213,10 @@ Sizes are not validated automatically: a file with wrong proportions is served a
 
 You can also replace only some of these files.
 
-If the project is already running, restart the frontend and the web console after replacing the files:
+If the project is already running, restart the stack after replacing the files:
 
 ```shell
-docker compose restart frontend webssh
+make restart
 ```
 
 Besides the assets, you can override the product name, links, and color shown in the web UI and the web console. Uncomment and fill in these variables in `.env`:
