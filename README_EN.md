@@ -236,7 +236,7 @@ If the variables are not set, the Wiren Board defaults are used. Restart the fro
 
 ### Controller map
 
-The map background is served by CARTO and requires an API key. Get one at https://carto.com/basemaps/apikey and put it into `.env`:
+The map background is served by the CARTO service and requires an API key. Get one at https://carto.com/basemaps/apikey and put it into `.env`:
 
 ```
 CARTO_API_KEY="..."

@@ -238,7 +238,7 @@ FOOTER_SITE_LABEL_EN — подпись этой ссылки для англи�
 
 ### Карта контроллеров
 
-Подложка карты загружается с CARTO и требует API-ключ. Получите ключ на https://carto.com/basemaps/apikey и укажите его в `.env`:
+Подложка карты загружается с сервиса CARTO и требует API-ключ. Получите ключ на https://carto.com/basemaps/apikey и укажите его в `.env`:
 
 ```
 CARTO_API_KEY="..."

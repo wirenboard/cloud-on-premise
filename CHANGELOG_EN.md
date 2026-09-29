@@ -13,7 +13,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - MinIO and mc images were removed from Docker Hub, so they now come from the `ghcr.io/wirenboard/on-premise` mirror.
-- CARTO maps now require an API key. It can be set with the `CARTO_API_KEY` variable in `.env`; see "Controller map" in the README for how to get one.
+- Maps from the CARTO service now require an API key. It can be set with the `CARTO_API_KEY` variable in `.env`; see "Controller map" in the README for how to get one.
 
 ### Added
 
