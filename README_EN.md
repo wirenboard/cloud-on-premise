@@ -242,7 +242,7 @@ The map background is served by the CARTO service and requires an API key. Get o
 CARTO_API_KEY="..."
 ```
 
-Without a key the map shows blank tiles with an "API KEY REQUIRED" label instead of the basemap. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Recreate the frontend after changing `.env`: `docker compose up -d frontend`.
+Without a key the map shows blank tiles with an "API KEY REQUIRED" label instead of the basemap. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Restart the stack after changing `.env`: `make restart`.
 
 ---
 
