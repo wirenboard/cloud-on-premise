@@ -233,16 +233,6 @@ FOOTER_SITE_LABEL_EN — caption of that link for English (default: "Wiren Board
 
 If the variables are not set, the Wiren Board defaults are used. Restart the frontend and the web console after changing `.env`.
 
-### Controller map
-
-The map background is served by CARTO and requires an API key. Get one at https://carto.com/basemaps/apikey and put it into `.env`:
-
-```
-CARTO_API_KEY="..."
-```
-
-Without a key the web UI hides the map. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Recreate the frontend after changing `.env`: `docker compose up -d frontend`.
-
 ---
 
 ## 🚀 Application Deployment
