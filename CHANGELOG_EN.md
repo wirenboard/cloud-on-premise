@@ -6,14 +6,14 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-- `make update` pulls the images before stopping the containers: if the pull fails, the cloud keeps running.
-- The cloud version in the web UI and the admin no longer carries the `-testing` suffix.
-- Connecting to a controller through the tunnel no longer breaks off when the tunnel temporarily throttles requests.
+- `make update` no longer stops the cloud when the images fail to download.
+- The cloud version in the web UI and the admin could be shown with a `-testing` suffix.
+- Connecting to a controller through the tunnel broke off when the tunnel temporarily throttled requests.
 
 ### Changed
 
-- MinIO and mc images are pulled from `ghcr.io/wirenboard/on-premise`: they were removed from Docker Hub.
-- The CARTO map key is set with the `CARTO_API_KEY` variable in `.env`: CARTO now requires an API key. See "Controller map" in the README for how to get one.
+- MinIO and mc images were removed from Docker Hub, so they now come from the `ghcr.io/wirenboard/on-premise` mirror.
+- CARTO maps now require an API key. It can be set with the `CARTO_API_KEY` variable in `.env`; see "Controller map" in the README for how to get one.
 
 ### Added
 
