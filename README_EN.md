@@ -213,10 +213,10 @@ Sizes are not validated automatically: a file with wrong proportions is served a
 
 You can also replace only some of these files.
 
-If the project is already running, restart the frontend and the web console after replacing the files:
+If the project is already running, restart the stack after replacing the files:
 
 ```shell
-docker compose restart frontend webssh
+make restart
 ```
 
 Besides the assets, you can override the product name, links, and color shown in the web UI and the web console. Uncomment and fill in these variables in `.env`:
@@ -225,13 +225,24 @@ Besides the assets, you can override the product name, links, and color shown in
 SERVICE_NAME       — product name: UI texts and the browser tab title (default: "Wiren Board Cloud")
 SERVICE_STATUS_URL — your service status page link (not set or empty — the status link is hidden)
 SERVICE_DOCS_URL   — documentation link (not set — Wiren Board wiki; empty — the docs link is hidden)
+SERVICE_DOCS_URL_EN — documentation link for the English interface (not set — SERVICE_DOCS_URL is used, and if that is not set either — the English Wiren Board wiki)
 PRIMARY_COLOR      — primary button color as hex (e.g. #e2500a); when not set, the default color is used
 FOOTER_SITE_URL    — company site link in the footer (not set — wirenboard.com; empty — the link is hidden)
 FOOTER_SITE_LABEL_RU — caption of that link for Russian (default: "Сайт компании Wiren Board")
 FOOTER_SITE_LABEL_EN — caption of that link for English (default: "Wiren Board website"); when only one label is set, it is used for both languages
 ```
 
-If the variables are not set, the Wiren Board defaults are used. Restart the frontend and the web console after changing `.env`.
+If the variables are not set, the Wiren Board defaults are used. Restart the stack after changing `.env`: `make restart`.
+
+### Controller map
+
+The map background is served by the CARTO service and requires an API key. Get one at https://carto.com/basemaps/apikey and put it into `.env`:
+
+```
+CARTO_API_KEY="..."
+```
+
+Without a key the map shows blank tiles with an "API KEY REQUIRED" label instead of the basemap. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Restart the stack after changing `.env`: `make restart`.
 
 ---
 

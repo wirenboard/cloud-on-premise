@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.0.1] - 2026-09-30
+
+### Fixed
+
+- `make update` no longer stops the cloud when the images fail to download.
+- The cloud version in the web UI and the admin could be shown with a `-testing` suffix.
+- Connecting to a controller through the tunnel broke off when the tunnel temporarily throttled requests.
+
+### Changed
+
+- MinIO and mc images were removed from Docker Hub, so they now come from the `ghcr.io/wirenboard/on-premise` mirror.
+- Maps from the CARTO service now require an API key. It can be set with the `CARTO_API_KEY` variable in `.env`; see "Controller map" in the README for how to get one.
+
+### Added
+
+- The "Documentation" link in the footer opens the page in the interface language. The English link is set with the `SERVICE_DOCS_URL_EN` variable.
+
 ## [2.0.0] - 2026-08-20
 
 > Breaking release. See [`RELEASE_NOTES_2.0_EN.md`](migration/RELEASE_NOTES_2.0_EN.md) for the

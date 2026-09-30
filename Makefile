@@ -451,10 +451,10 @@ update:
 	@${MAKE} check-not-1x
 	@${MAKE} generate-env
 	@${MAKE} check-certs
+	@VERSION=$(VERSION) docker compose pull
 	@VERSION=$(VERSION) docker compose down
 	docker image prune -f
 	docker container prune -f
-	@VERSION=$(VERSION) docker compose pull
 	@VERSION=$(VERSION) docker compose up -d --build
 	@${MAKE} check-metrics-schema
 
