@@ -528,7 +528,8 @@ Run all commands from the repo root.
 # First launch (environment initialization and container startup)
 make run
 
-# Update the project to the latest state
+# Update the project to the latest state: git pull fetches the new version, make update pulls its images
+git pull
 make update
 
 # Validate environment variables
