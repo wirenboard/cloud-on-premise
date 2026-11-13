@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Released version, X.Y.Z
+        description: Released version, X.Y.Z (run from main)
         type: string
         required: true
 
@@ -124,7 +124,7 @@ jobs:
               --form-string "projectTags=cloud,onpremise,$service,amd64" \
               --form "bom=@sbom/$image.cdx.json" \
               --output /dev/null \
-              "$DT_URL" || failed=1
+              "$DT_URL" || { echo "::error::Upload of $image failed"; failed=1; }
           done
           exit "$failed"
 
@@ -140,10 +140,13 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CLOUD_DEBUG_CHAT_ID }}
-          TEXT: |-
-            ⚠️ SBOM образов on-premise ${{ inputs.version }} не отправлен в Dependency-Track (${{ github.workflow }}). Релиз не задет.
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VERSION: ${{ inputs.version }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || VERSION="(неверная версия)"
+          TEXT="⚠️ SBOM образов on-premise $VERSION не отправлен в Dependency-Track ($WORKFLOW). Релиз не задет.
+          $RUN_URL"
           curl --fail --silent --show-error --max-time 30 --output /dev/null \
             --data-urlencode "chat_id=$TG_CHAT_ID" \
             --data-urlencode "text=$TEXT" \
