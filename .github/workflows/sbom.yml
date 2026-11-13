@@ -73,8 +73,8 @@ jobs:
             image=${entry%%:*}
             trivy image --image-src remote --format cyclonedx --output "sbom/$image.cdx.json" \
               "$REGISTRY_PATH/$image:$VERSION"
-            jq -e '.components | length > 0' "sbom/$image.cdx.json" > /dev/null \
-              || { echo "::error::SBOM of $image has no components"; exit 1; }
+            jq -e '[.components[]? | select(.type != "operating-system")] | length > 0' "sbom/$image.cdx.json" > /dev/null \
+              || { echo "::error::SBOM of $image has no packages"; exit 1; }
           done
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
