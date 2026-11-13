@@ -1,0 +1,151 @@
+name: Send SBOM to Dependency-Track
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+    secrets:
+      DEPENDENCY_TRACK_CLIENT_CERT:
+        required: true
+      DEPENDENCY_TRACK_CLIENT_KEY:
+        required: true
+      DEPENDENCY_TRACK_API_KEY:
+        required: true
+      TG_BOT_TOKEN:
+        required: true
+      TG_CLOUD_DEBUG_CHAT_ID:
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released version, X.Y.Z
+        type: string
+        required: true
+
+concurrency:
+  group: sbom-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  IMAGES: >-
+    wbc-backend:backend
+    wbc-worker:backend
+    wbc-agent-backend:backend
+    wbc-scheduler:backend
+    wbc-frontend:frontend
+    wbc-tunnel:tunnel
+    wbc-tunnel-auth:tunnel
+    wbc-webssh:webssh
+
+jobs:
+  sbom:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version (expected X.Y.Z)"
+            exit 1
+          fi
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.76.2
+
+      - name: Generate SBOM
+        env:
+          VERSION: ${{ inputs.version }}
+          REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/on-premise
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ github.token }}
+        run: |
+          mkdir sbom
+          for entry in $IMAGES; do
+            image=${entry%%:*}
+            trivy image --image-src remote --format cyclonedx --output "sbom/$image.cdx.json" \
+              "$REGISTRY_PATH/$image:$VERSION"
+            jq -e '.components | length > 0' "sbom/$image.cdx.json" > /dev/null \
+              || { echo "::error::SBOM of $image has no components"; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom/
+          if-no-files-found: error
+          retention-days: 14
+
+  upload:
+    needs: sbom
+    runs-on: ubuntu-24.04
+    environment: dependency-track
+    timeout-minutes: 60
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+          path: sbom
+
+      - name: Upload to Dependency-Track
+        env:
+          VERSION: ${{ inputs.version }}
+          DT_URL: https://security-check.hq.wirenboard.com/api/v1/bom
+          DT_CLIENT_CERT: ${{ secrets.DEPENDENCY_TRACK_CLIENT_CERT }}
+          DT_CLIENT_KEY: ${{ secrets.DEPENDENCY_TRACK_CLIENT_KEY }}
+          DT_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+        run: |
+          umask 077
+          creds=$(mktemp -d)
+          printf '%s\n' "$DT_CLIENT_CERT" > "$creds/cert.pem"
+          printf '%s\n' "$DT_CLIENT_KEY" > "$creds/key.pem"
+          failed=0
+          for entry in $IMAGES; do
+            image=${entry%%:*}
+            service=${entry#*:}
+            curl --fail --silent --show-error \
+              --connect-timeout 10 --max-time 120 --retry 2 --retry-max-time 240 \
+              --cert "$creds/cert.pem" --key "$creds/key.pem" \
+              --header "X-Api-Key: $DT_API_KEY" \
+              --form autoCreate=true \
+              --form-string "parentName=WB Cloud On-premise" \
+              --form isLatest=true \
+              --form-string "projectName=$image-onpremise" \
+              --form-string "projectVersion=$VERSION" \
+              --form-string "projectTags=cloud,onpremise,$service,amd64" \
+              --form "bom=@sbom/$image.cdx.json" \
+              --output /dev/null \
+              "$DT_URL" || failed=1
+          done
+          exit "$failed"
+
+  notify_failure:
+    needs: [sbom, upload]
+    if: always() && (needs.sbom.result != 'success' || needs.upload.result != 'success')
+    runs-on: ubuntu-24.04
+    environment: dependency-track
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Send Telegram notify
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CLOUD_DEBUG_CHAT_ID }}
+          TEXT: |-
+            ⚠️ SBOM образов on-premise ${{ inputs.version }} не отправлен в Dependency-Track (${{ github.workflow }}). Релиз не задет.
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl --fail --silent --show-error --max-time 30 --output /dev/null \
+            --data-urlencode "chat_id=$TG_CHAT_ID" \
+            --data-urlencode "text=$TEXT" \
+            --data disable_web_page_preview=true \
+            "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage"

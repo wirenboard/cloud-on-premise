@@ -89,6 +89,21 @@ jobs:
             echo "::warning::${{ matrix.repo }} has no onprem-release/${VERSION} branch — skipping sha tag for ${IMAGE}"
           fi
 
+  sbom:
+    needs: [read-version, retag-and-push]
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/sbom.yml
+    with:
+      version: ${{ needs.read-version.outputs.version }}
+    secrets:
+      DEPENDENCY_TRACK_CLIENT_CERT: ${{ secrets.DEPENDENCY_TRACK_CLIENT_CERT }}
+      DEPENDENCY_TRACK_CLIENT_KEY: ${{ secrets.DEPENDENCY_TRACK_CLIENT_KEY }}
+      DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_CLOUD_DEBUG_CHAT_ID: ${{ secrets.TG_CLOUD_DEBUG_CHAT_ID }}
+
   create-release:
     needs: [read-version, retag-and-push]
     runs-on: ubuntu-latest
