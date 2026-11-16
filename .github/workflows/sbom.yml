@@ -43,9 +43,7 @@ jobs:
   sbom:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: read
+    permissions: {}
     outputs:
       ok: ${{ steps.artifact.outcome == 'success' }}
     steps:
@@ -76,8 +74,6 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/on-premise
-          TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ github.token }}
         run: |
           mkdir sbom
           for entry in $IMAGES; do

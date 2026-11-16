@@ -91,9 +91,7 @@ jobs:
 
   sbom:
     needs: [read-version, retag-and-push]
-    permissions:
-      contents: read
-      packages: read
+    permissions: {}
     uses: ./.github/workflows/sbom.yml
     with:
       version: ${{ needs.read-version.outputs.version }}
