@@ -6,6 +6,9 @@ on:
       version:
         type: string
         required: true
+      latest:
+        type: boolean
+        default: true
     secrets:
       DEPENDENCY_TRACK_CLIENT_CERT:
         required: true
@@ -23,6 +26,10 @@ on:
         description: Released version, X.Y.Z (run from main)
         type: string
         required: true
+      latest:
+        description: Mark this version as latest in Dependency-Track
+        type: boolean
+        default: false
 
 concurrency:
   group: sbom-${{ inputs.version }}
@@ -118,6 +125,7 @@ jobs:
         timeout-minutes: 55
         env:
           VERSION: ${{ inputs.version }}
+          LATEST: ${{ inputs.latest }}
           DT_URL: https://security-check.hq.wirenboard.com/api/v1/bom
           DT_CLIENT_CERT: ${{ secrets.DEPENDENCY_TRACK_CLIENT_CERT }}
           DT_CLIENT_KEY: ${{ secrets.DEPENDENCY_TRACK_CLIENT_KEY }}
@@ -137,7 +145,7 @@ jobs:
               --header "X-Api-Key: $DT_API_KEY" \
               --form autoCreate=true \
               --form-string "parentName=WB Cloud On-premise" \
-              --form isLatest=true \
+              --form "isLatest=$LATEST" \
               --form-string "projectName=$image-onpremise" \
               --form-string "projectVersion=$VERSION" \
               --form-string "projectTags=cloud,onpremise,$service,amd64" \
