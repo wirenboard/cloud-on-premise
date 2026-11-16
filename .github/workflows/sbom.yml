@@ -27,7 +27,7 @@ on:
         type: string
         required: true
       latest:
-        description: Mark this version as latest in Dependency-Track
+        description: Mark as latest in Dependency-Track; set for the newest release, including retries, as it applies only when the version is created
         type: boolean
         default: false
 
