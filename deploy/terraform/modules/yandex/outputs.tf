@@ -5,3 +5,8 @@ output "dns_records" {
   value       = [for h in local.hosts : "${h}${var.domain}"]
 }
 output "security_group_id" { value = yandex_vpc_security_group.this.id }
+output "user_data" {
+  description = "Отрендеренный cloud-init (содержит пароль администратора) — для отладки и проверки во вложенной ВМ"
+  value       = module.user_data.user_data
+  sensitive   = true
+}
