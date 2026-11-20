@@ -9,7 +9,7 @@ variables {
   project_id     = "proj1"
   domain         = "cloud.example.com"
   admin_email    = "a@example.com"
-  admin_password = "x'y z"
+  admin_password = "Kx7-q9.Lm2wR!"
   ssh_public_key = "ssh-ed25519 AAAA test"
   acme_email     = "ops@example.com"
   create_dns     = true
@@ -71,7 +71,7 @@ run "dashboard_without_cidrs_stays_closed" {
 run "user_data_has_variables" {
   command = plan
   assert {
-    condition     = strcontains(openstack_compute_instance_v2.this.user_data, "ABSOLUTE_SERVER='cloud.example.com'") && strcontains(openstack_compute_instance_v2.this.user_data, "SELECTELV2_ACCOUNT_ID") && strcontains(openstack_compute_instance_v2.this.user_data, "selectelv2") && strcontains(openstack_compute_instance_v2.this.user_data, "x'\\''y z")
+    condition     = strcontains(openstack_compute_instance_v2.this.user_data, "ABSOLUTE_SERVER='cloud.example.com'") && strcontains(openstack_compute_instance_v2.this.user_data, "SELECTELV2_ACCOUNT_ID") && strcontains(openstack_compute_instance_v2.this.user_data, "selectelv2") && strcontains(openstack_compute_instance_v2.this.user_data, "ADMIN_PASSWORD='Kx7-q9.Lm2wR!'")
     error_message = "user-data без домена, ключей DNS или с неэкранированным паролем"
   }
 }
@@ -105,4 +105,16 @@ run "provided_cert_without_dns_ok" {
     condition     = length(selectel_domains_rrset_v2.a) == 0 && !strcontains(openstack_compute_instance_v2.this.user_data, "selectelv2")
     error_message = "DNS не создаётся, lego не настраивается"
   }
+}
+
+run "weak_admin_password_rejected" {
+  command = plan
+  variables { admin_password = "change-me" }
+  expect_failures = [var.admin_password]
+}
+
+run "slash_hash_admin_password_rejected" {
+  command = plan
+  variables { admin_password = "Kx7/q9#Lm?2wR" }
+  expect_failures = [var.admin_password]
 }

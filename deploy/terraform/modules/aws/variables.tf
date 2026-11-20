@@ -11,6 +11,10 @@ variable "admin_email" { type = string }
 variable "admin_password" {
   type      = string
   sensitive = true
+  validation {
+    condition     = length(var.admin_password) >= 12 && can(regex("^[A-Za-z0-9!%^*()_+=,.:;@~-]+$", var.admin_password)) && lower(var.admin_password) != "change-me"
+    error_message = "admin_password: не короче 12 символов, только латинские буквы, цифры и !%^*()_+=,.:;@~- (без пробелов, кавычек, $ \\ / ? # [ ] и т. п. — они ломают .env), и не пример change-me."
+  }
 }
 variable "ssh_public_key" {
   description = "Публичный ключ для пользователя ubuntu"

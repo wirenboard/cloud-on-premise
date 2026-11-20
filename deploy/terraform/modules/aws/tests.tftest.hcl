@@ -10,7 +10,7 @@ mock_provider "aws" {
 variables {
   domain         = "cloud.example.com"
   admin_email    = "a@example.com"
-  admin_password = "x'y z"
+  admin_password = "Kx7-q9.Lm2wR!"
   ssh_public_key = "ssh-ed25519 AAAA test"
   acme_email     = "ops@example.com"
   create_dns     = true
@@ -70,7 +70,7 @@ run "dashboard_without_cidrs_stays_closed" {
 run "user_data_has_variables_and_no_aws_keys" {
   command = plan
   assert {
-    condition     = strcontains(aws_instance.this.user_data, "ABSOLUTE_SERVER='cloud.example.com'") && strcontains(aws_instance.this.user_data, "route53") && strcontains(aws_instance.this.user_data, "AWS_REGION") && strcontains(aws_instance.this.user_data, "x'\\''y z")
+    condition     = strcontains(aws_instance.this.user_data, "ABSOLUTE_SERVER='cloud.example.com'") && strcontains(aws_instance.this.user_data, "route53") && strcontains(aws_instance.this.user_data, "AWS_REGION") && strcontains(aws_instance.this.user_data, "ADMIN_PASSWORD='Kx7-q9.Lm2wR!'")
     error_message = "user-data без домена, route53, региона или с неэкранированным паролем"
   }
   assert {
@@ -146,4 +146,16 @@ run "provided_cert_without_dns_ok" {
     condition     = length(aws_route53_record.a) == 0 && length(aws_iam_role_policy.dns) == 0 && !strcontains(aws_instance.this.user_data, "route53")
     error_message = "DNS не создаётся, lego и политика не настраиваются"
   }
+}
+
+run "weak_admin_password_rejected" {
+  command = plan
+  variables { admin_password = "change-me" }
+  expect_failures = [var.admin_password]
+}
+
+run "slash_hash_admin_password_rejected" {
+  command = plan
+  variables { admin_password = "Kx7/q9#Lm?2wR" }
+  expect_failures = [var.admin_password]
 }

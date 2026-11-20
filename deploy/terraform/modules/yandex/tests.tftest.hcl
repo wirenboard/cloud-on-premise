@@ -9,7 +9,7 @@ variables {
   folder_id      = "b1gfolder"
   domain         = "cloud.example.com"
   admin_email    = "a@example.com"
-  admin_password = "x'y z"
+  admin_password = "Kx7-q9.Lm2wR!"
   ssh_public_key = "ssh-ed25519 AAAA test"
   acme_email     = "ops@example.com"
   create_dns     = true
@@ -61,7 +61,7 @@ run "dashboard_without_cidrs_stays_closed" {
 run "user_data_has_variables" {
   command = plan
   assert {
-    condition     = strcontains(yandex_compute_instance.this.metadata["user-data"], "ABSOLUTE_SERVER='cloud.example.com'") && strcontains(yandex_compute_instance.this.metadata["user-data"], "YANDEX_CLOUD_FOLDER_ID") && strcontains(yandex_compute_instance.this.metadata["user-data"], "x'\\''y z")
+    condition     = strcontains(yandex_compute_instance.this.metadata["user-data"], "ABSOLUTE_SERVER='cloud.example.com'") && strcontains(yandex_compute_instance.this.metadata["user-data"], "YANDEX_CLOUD_FOLDER_ID") && strcontains(yandex_compute_instance.this.metadata["user-data"], "ADMIN_PASSWORD='Kx7-q9.Lm2wR!'")
     error_message = "user-data без домена, каталога или с неэкранированным паролем"
   }
 }
@@ -86,4 +86,16 @@ run "provided_cert_without_dns_ok" {
     condition     = length(yandex_dns_recordset.a) == 0
     error_message = "DNS не создаётся"
   }
+}
+
+run "weak_admin_password_rejected" {
+  command = plan
+  variables { admin_password = "change-me" }
+  expect_failures = [var.admin_password]
+}
+
+run "slash_hash_admin_password_rejected" {
+  command = plan
+  variables { admin_password = "Kx7/q9#Lm?2wR" }
+  expect_failures = [var.admin_password]
 }

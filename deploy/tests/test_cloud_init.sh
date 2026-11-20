@@ -31,6 +31,11 @@ echo "ok env-quoting"
 cmp "$tmp/install.sh" "$here/../cloud-init/install-onprem.sh" || fail "скрипт в user-data отличается от файла"
 [ "$(wc -c < "$tmp/user-data.yaml")" -lt 16000 ] || fail "user-data > 16 КБ (лимит AWS)"
 echo "ok size"
+# регрессия Q4.V: пароли Grafana/дашборда — случайные, а не копия ADMIN_PASSWORD (v2.0.1 запрещает в них / ? # [ ])
+grep -q 'GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-$(openssl rand' "$here/../cloud-init/install-onprem.sh" || fail "GRAFANA_ADMIN_PASSWORD не случайный"
+grep -q 'TUNNEL_DASHBOARD_PASSWORD=${TUNNEL_DASHBOARD_PASSWORD:-$(openssl rand' "$here/../cloud-init/install-onprem.sh" || fail "TUNNEL_DASHBOARD_PASSWORD не случайный"
+! grep -q ':-\$ADMIN_PASSWORD' "$here/../cloud-init/install-onprem.sh" || fail "пароль админа копируется в другие"
+echo "ok random-service-passwords"
 shellcheck -s bash "$here/../cloud-init/install-onprem.sh" || fail shellcheck
 echo "ok shellcheck"
 # регрессия Q4.3: автопоиск диска данных не берёт дисковод fd0, cdrom, seed-диск < 1 ГиБ
