@@ -1,0 +1,8 @@
+cloud_id       = "b1g..."
+folder_id      = "b1g..."
+domain         = "cloud.example.com"   # домен должен быть делегирован на ns1.yandexcloud.net / ns2.yandexcloud.net
+admin_email    = "admin@example.com"
+admin_password = "change-me"
+ssh_public_key = "ssh-ed25519 AAAA..."
+admin_cidrs    = ["203.0.113.5/32"]
+acme_email     = "ops@example.com"

@@ -140,6 +140,11 @@ setup_tls() {
       # shellcheck disable=SC1090
       if [ -r "$ACME_CONF" ]; then . "$ACME_CONF"; fi
       set +a
+      if [ "$ACME_DNS_PROVIDER" = yandexcloud ] && [ -z "${YANDEX_CLOUD_IAM_TOKEN:-}" ]; then
+        write_yc_token_helper
+        YANDEX_CLOUD_IAM_TOKEN=$(/usr/local/bin/onprem-yc-token)
+        export YANDEX_CLOUD_IAM_TOKEN
+      fi
       local args=(--accept-tos --email "$ACME_EMAIL" --dns "$ACME_DNS_PROVIDER" --path /etc/onprem/lego)
       if [ -n "${ACME_SERVER_URL:-}" ]; then args+=(--server "$ACME_SERVER_URL"); fi
       for d in "$ABSOLUTE_SERVER" "*.$ABSOLUTE_SERVER" "*.http.$ABSOLUTE_SERVER" "*.ssh.$ABSOLUTE_SERVER" "*.apps.$ABSOLUTE_SERVER"; do
@@ -161,14 +166,30 @@ install_lego() {
   curl -fsSL "https://github.com/go-acme/lego/releases/download/${ver}/lego_${ver}_linux_${arch}.tar.gz" | tar -xz -C /usr/local/bin lego
 }
 
+# IAM-токен сервисного аккаунта ВМ (живёт ~12 ч) из метаданных; нужен lego yandexcloud и при продлении
+write_yc_token_helper() {
+  cat > /usr/local/bin/onprem-yc-token <<'H'
+#!/bin/sh
+curl -fsS -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'
+H
+  chmod 0755 /usr/local/bin/onprem-yc-token
+}
+
 install_renew_timer() {
+  local yc_pre=""
+  if [ "$ACME_DNS_PROVIDER" = yandexcloud ]; then
+    write_yc_token_helper
+    # $$ — systemd превращает в $, чтобы подстановку сделал bash, а не systemd
+    # shellcheck disable=SC2016
+    yc_pre='[ -n "$$YANDEX_CLOUD_IAM_TOKEN" ] || export YANDEX_CLOUD_IAM_TOKEN=$$(/usr/local/bin/onprem-yc-token);'
+  fi
   cat > /etc/systemd/system/onprem-cert-renew.service <<UNIT
 [Unit]
 Description=Renew On-Premise TLS certificate (lego DNS-01)
 [Service]
 Type=oneshot
 EnvironmentFile=-$ACME_CONF
-ExecStart=/bin/bash -c 'lego --accept-tos --email "$ACME_EMAIL" --dns "$ACME_DNS_PROVIDER" --path /etc/onprem/lego $(printf -- "--domains %q " "$ABSOLUTE_SERVER" "*.$ABSOLUTE_SERVER" "*.http.$ABSOLUTE_SERVER" "*.ssh.$ABSOLUTE_SERVER" "*.apps.$ABSOLUTE_SERVER") renew --days 30 && install -m 0644 /etc/onprem/lego/certificates/${ABSOLUTE_SERVER}.crt $INSTALL_DIR/tls/fullchain.pem && install -m 0600 /etc/onprem/lego/certificates/${ABSOLUTE_SERVER}.key $INSTALL_DIR/tls/privkey.pem && make -C $INSTALL_DIR reload-certs'
+ExecStart=/bin/bash -c '$yc_pre lego --accept-tos --email "$ACME_EMAIL" --dns "$ACME_DNS_PROVIDER" --path /etc/onprem/lego $(printf -- "--domains %q " "$ABSOLUTE_SERVER" "*.$ABSOLUTE_SERVER" "*.http.$ABSOLUTE_SERVER" "*.ssh.$ABSOLUTE_SERVER" "*.apps.$ABSOLUTE_SERVER") renew --days 30 && install -m 0644 /etc/onprem/lego/certificates/${ABSOLUTE_SERVER}.crt $INSTALL_DIR/tls/fullchain.pem && install -m 0600 /etc/onprem/lego/certificates/${ABSOLUTE_SERVER}.key $INSTALL_DIR/tls/privkey.pem && make -C $INSTALL_DIR reload-certs'
 UNIT
   cat > /etc/systemd/system/onprem-cert-renew.timer <<UNIT
 [Unit]
