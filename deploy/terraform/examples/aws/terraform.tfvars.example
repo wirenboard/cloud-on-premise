@@ -1,5 +1,7 @@
 region         = "eu-central-1"
-domain         = "cloud.example.com"     # делегируйте на name_servers из вывода после apply
+domain         = "cloud.example.com"
+# зона Route53, уже делегированная на AWS (рекомендуется); без неё — двухшаговый apply, см. deploy/README.md
+hosted_zone_id = ""
 admin_email    = "admin@example.com"
 admin_password = "change-me"
 ssh_public_key = "ssh-ed25519 AAAA..."

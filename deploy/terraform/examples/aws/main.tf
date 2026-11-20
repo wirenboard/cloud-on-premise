@@ -21,6 +21,11 @@ variable "admin_cidrs" {
   default = []
 }
 variable "acme_email" { type = string }
+variable "hosted_zone_id" {
+  description = "ID существующей зоны Route53, уже делегированной на AWS; пусто — модуль создаст новую зону (см. deploy/README.md, AWS)"
+  type        = string
+  default     = ""
+}
 
 # ключи AWS — из окружения (AWS_PROFILE или AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY), в файлы не пишем
 provider "aws" {
@@ -36,6 +41,7 @@ module "onprem" {
   admin_cidrs    = var.admin_cidrs
   acme_email     = var.acme_email
   create_dns     = true
+  hosted_zone_id = var.hosted_zone_id
 }
 
 output "public_ip" { value = module.onprem.public_ip }
