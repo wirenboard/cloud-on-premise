@@ -1,0 +1,38 @@
+# Заготовка листинга AWS Marketplace (AMI-продукт, модель BYOL/на ваш выбор).
+# ВНИМАНИЕ: требования AWS в этом файле написаны по памяти («вывод»): документация AWS Marketplace с этой машины
+# не читалась (github.com/aws-samples/aws-marketplace-reference-code — только примеры кода). Сверить с актуальным
+# «AMI product requirements» в Seller Guide перед подачей.
+product:
+  title: "Wiren Board Cloud On-Premise"
+  product_type: AMI
+  pricing_model: BYOL                     # лицензия вендора; платное использование через Marketplace — не предполагается
+  categories: ["IoT", "Infrastructure Software"]
+  short_description: "Self-hosted Wiren Board controller management cloud: remote access, tunnels, monitoring."
+  long_description: "См. yandex/product.yaml (en); текст идентичен, ссылки заменить на сайт вендора."
+  highlights:
+    - "Remote SSH/HTTP access to Wiren Board controllers behind NAT"
+    - "Monitoring, charts, organisations and users; data stays in your AWS account"
+    - "Pre-pulled release containers: first boot needs no registry pulls for the app images"
+  support: {description: "TODO: vendor support terms and contact", url: "TODO"}
+  eula_url: "TODO: опубликованный текст EULA"
+  refund_policy: "TODO"
+version:
+  version_title: "2.0.1"
+  release_notes: "См. CHANGELOG_EN.md"
+  ami_source: "deploy/packer: source amazon-ebs.onprem (Ubuntu 24.04 x86_64, gp3)"
+  usage_instructions: "См. deploy/README.md; user-data: домен, пароль администратора, режим TLS; IAM-роль на Route53 для lego (deploy/terraform/modules/aws)."
+  architecture: x86_64
+  virtualization: hvm
+  ena_support: true                       # Ubuntu 24.04 AMI — ENA есть (вывод)
+  recommended_instance_type: m6i.xlarge
+  supported_instance_types: ["m6i.large", "m6i.xlarge", "m6i.2xlarge"]   # TODO: проверить, что ≥ x86-64-v2
+  network_ports:
+    - {protocol: tcp, port: 443, source: "0.0.0.0/0", purpose: "web UI and API"}
+    - {protocol: tcp, port: 7107, source: "0.0.0.0/0", purpose: "controller tunnels"}
+    - {protocol: tcp, port: 22, source: "customer admin CIDR", purpose: "SSH"}
+  security_requirements:
+    - "No default/hard-coded passwords, no SSH keys in the AMI"
+    - "SSH password authentication disabled"
+    - "IMDSv2 supported (the module enforces it)"
+    - "No customer data, no cloud credentials in the AMI"
+  cloudformation: "TODO: AWS Marketplace рекомендует шаблон CloudFormation; в репозитории только Terraform — вне рамок Q4"

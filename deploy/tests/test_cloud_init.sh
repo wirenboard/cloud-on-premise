@@ -66,4 +66,13 @@ if command -v packer >/dev/null; then
 fi
 echo "$bake_body" | grep -q '"containerd-snapshotter": false' || fail "bake() не выключает containerd-snapshotter (образы уйдут мимо /var/lib/docker)"
 echo "ok bake-mode"
+# Q4.10: из образа убран конфиг cloud-init сборки с ssh_pwauth (иначе вход по паролю включён, находка yc-image-cleanup -t)
+cl="$here/../packer/cleanup.sh"
+grep -q 'rm -f /etc/ssh/sshd_config.d/50-cloud-init.conf' "$cl" || fail "cleanup.sh не убирает 50-cloud-init.conf (вход по паролю в образе)"
+grep -q 'bash_history' "$cl" && grep -q 'swap' "$cl" || fail "cleanup.sh: нет очистки истории/swap"
+echo "ok image-cleanup"
+for f in yandex/product.yaml aws/product.yaml check-image.sh REQUIREMENTS.md; do [ -s "$here/../marketplace/$f" ] || fail "нет marketplace/$f"; done
+python3 -I -c "import yaml,sys;[yaml.safe_load(open(sys.argv[1]+'/'+f)) for f in ('yandex/product.yaml','aws/product.yaml')]" "$here/../marketplace" || fail "marketplace yaml"
+shellcheck "$here/../marketplace/check-image.sh" || fail "shellcheck check-image.sh"
+echo "ok marketplace"
 echo PASS

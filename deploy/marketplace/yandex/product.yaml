@@ -1,0 +1,57 @@
+# Заготовка карточки продукта Yandex Cloud Marketplace (кабинет партнёра, продукт для Compute Cloud).
+# Поля — по формам из github.com/yandex-cloud/docs (ru/marketplace/operations/create-product.md, _includes/marketplace/product-version-compute.md).
+# Заполняется вручную в кабинете партнёра: файл — источник текстов, не API.
+product:
+  permalink: wirenboard-on-premise       # станет именем семейства образов Compute
+  type: compute                          # образ на базе Linux
+  name: {ru: "Wiren Board Cloud On-Premise", en: "Wiren Board Cloud On-Premise"}
+  access: public                         # «Продукт доступен всем»; запасной вариант — по запросу
+version:
+  logo: assets/logo.svg                  # TODO: SVG логотипа (в репозитории есть branding/, формат проверить)
+  categories: ["Инфраструктура", "Интернет вещей"]   # TODO: точные названия категорий — из списка кабинета
+  tariff: "BYOL — лицензия на стороне вендора"        # TODO: тариф создаётся в кабинете (operations/create-tariff.md)
+  image: "семейство образов wirenboard-on-premise (собирается deploy/packer, источник yandex)"
+  short_description:
+    ru: "Собственное облако управления контроллерами Wiren Board в вашем аккаунте Yandex Cloud."
+    en: "Self-hosted Wiren Board controller management cloud in your Yandex Cloud account."
+  description:
+    ru: >-
+      Сервер удалённого доступа, мониторинга и обновления контроллеров Wiren Board: веб-интерфейс, туннели SSH/HTTP к
+      устройствам, графики, организации и пользователи. Данные остаются в вашем аккаунте. Образ содержит Docker и
+      запечённые образы контейнеров выпуска; домен, пароль администратора и сертификат задаются при первом запуске.
+    en: >-
+      Remote access, monitoring and update server for Wiren Board controllers: web UI, SSH/HTTP tunnels to devices,
+      charts, organisations and users. Data stays in your account. The image ships Docker and pre-pulled release
+      containers; domain, admin password and certificate are set at first boot.
+  tutorial:
+    ru: |
+      1. Создайте ВМ из образа: 4 vCPU, 8 ГБ ОЗУ, загрузочный диск 30 ГБ и отдельный диск данных 100 ГБ (минимум 2 vCPU/6 ГБ/20 ГБ).
+      2. В user-data передайте домен, пароль администратора и режим сертификата (шаблон — deploy/cloud-init, пример — deploy/terraform/examples/yandex).
+      3. Откройте в группе безопасности 443 и 7107 (TCP); 22 — только со своих адресов.
+      4. Создайте DNS-записи A: домен, `*.домен`, `*.ssh.домен`, `*.http.домен`, `*.apps.домен`. Сертификат — только от доверенного ЦС, wildcard.
+      5. Первая загрузка занимает 15–20 минут (перенос образов на диск данных). Войдите на https://<домен>.
+      Внимание: без wildcard-сертификата и DNS контроллеры не подключатся — агент проверяет TLS строго.
+    en: "Same steps in English: see deploy/README.md."
+  support:
+    ru: "TODO: контакт поддержки вендора (почта/страница) — не задан в репозитории"
+    en: "TODO: vendor support contact — not defined in the repository"
+  use_cases: ["Удалённый доступ к контроллерам Wiren Board без белого IP", "Централизованный мониторинг парка контроллеров"]
+  links:
+    - {title_ru: "Документация", title_en: "Documentation", url: "TODO"}
+  terms:                                  # тип «Дополнительные условия обслуживания»
+    - {title_ru: "Лицензионное соглашение Cloud On-Premise", title_en: "Cloud On-Premise EULA", url: "TODO: опубликованный текст EULA (LICENSE: LicenseRef-Wirenboard-CloudOnPremise-EULA)"}
+  third_party_terms:                      # ПО других вендоров в составе
+    - {name: "Grafana (AGPL-3.0)", url: "https://grafana.com/licenses/"}
+    - {name: "MinIO (AGPL-3.0)", url: "https://github.com/minio/minio/blob/master/LICENSE"}
+    - {name: "PostgreSQL/TimescaleDB, Redis, Traefik, Telegraf", url: "TODO: проверить лицензии версий выпуска"}
+  packages:                               # блок «Программное обеспечение»
+    - "Ubuntu 24.04 LTS"
+    - "Docker Engine"
+    - "Wiren Board Cloud On-Premise 2.0.1"
+    - "Grafana 12.2.2, TimescaleDB pg17.5-ts2.21.3, Redis 7.4.8, Traefik 3.6.2, Telegraf 1.35.4, MinIO"
+  resource_spec:
+    cpu_min: 2
+    ram_gb_min: 6
+    boot_disk_gb_min: 30
+    note: "Дополнительно нужен диск данных 40 ГБ+ (рекомендуется 100 ГБ); платформа — x86-64-v2 (Intel Ice Lake и новее / AMD)."
+  image_requirements_check: "deploy/marketplace/check-image.sh + yc-image-cleanup.sh -t (см. REQUIREMENTS.md)"
