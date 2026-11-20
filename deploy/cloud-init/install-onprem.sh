@@ -77,7 +77,8 @@ configure_docker_root() {
   local root=$DATA_MOUNT/docker
   if [ -f /etc/docker/daemon.json ] && grep -q "$root" /etc/docker/daemon.json; then return; fi
   mkdir -p "$root" /etc/docker
-  printf '{ "data-root": "%s", "log-driver": "json-file", "log-opts": { "max-size": "20m", "max-file": "5" } }\n' "$root" \
+  # containerd-snapshotter выключен: иначе образы (≈15 ГБ) уходят в /var/lib/containerd на системный диск, мимо диска данных
+  printf '{ "data-root": "%s", "features": { "containerd-snapshotter": false }, "log-driver": "json-file", "log-opts": { "max-size": "20m", "max-file": "5" } }\n' "$root" \
     > /etc/docker/daemon.json
   systemctl restart docker
   log "docker data-root → $root"
