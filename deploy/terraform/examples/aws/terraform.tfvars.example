@@ -1,0 +1,8 @@
+region         = "eu-central-1"
+domain         = "cloud.example.com"     # делегируйте на name_servers из вывода после apply
+admin_email    = "admin@example.com"
+admin_password = "change-me"
+ssh_public_key = "ssh-ed25519 AAAA..."
+admin_cidrs    = ["203.0.113.5/32"]
+acme_email     = "ops@example.com"
+# ключи AWS: export AWS_PROFILE=... (или AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
