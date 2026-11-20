@@ -20,7 +20,7 @@ write_files:
   - path: /usr/local/sbin/install-onprem.sh
     permissions: "0755"
     owner: root:root
-    encoding: b64
+    encoding: gz+b64
     content: ${install_script_b64}
 %{ if tls_fullchain_b64 != "" ~}
   - path: /etc/onprem/tls/fullchain.pem

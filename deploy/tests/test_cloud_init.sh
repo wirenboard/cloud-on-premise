@@ -16,12 +16,12 @@ cloud-init schema --config-file "$tmp/user-data.yaml" | grep -q 'Valid schema' |
 echo "ok schema"
 
 python3 -I - "$tmp/user-data.yaml" "$tmp" <<'PY'
-import sys, yaml, base64
+import sys, yaml, base64, gzip
 d = yaml.safe_load(open(sys.argv[1])); out = sys.argv[2]
 f = {w["path"]: w for w in d["write_files"]}
 open(out + "/install.env", "w").write(f["/etc/onprem/install.env"]["content"])
 open(out + "/acme.env", "w").write(f["/etc/onprem/acme.env"]["content"])
-open(out + "/install.sh", "wb").write(base64.b64decode(f["/usr/local/sbin/install-onprem.sh"]["content"]))
+open(out + "/install.sh", "wb").write(gzip.decompress(base64.b64decode(f["/usr/local/sbin/install-onprem.sh"]["content"])))
 print("size", len(open(sys.argv[1]).read()))
 PY
 # значения с кавычками, $ и пробелами доходят до shell без искажений

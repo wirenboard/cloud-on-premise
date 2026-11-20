@@ -29,7 +29,7 @@ output "user_data" {
   value = templatefile("${path.module}/../../../cloud-init/user-data.yaml.tpl", {
     install_env        = local.sq
     acme_env           = local.acme_sq
-    install_script_b64 = base64encode(file("${path.module}/../../../cloud-init/install-onprem.sh"))
+    install_script_b64 = base64gzip(file("${path.module}/../../../cloud-init/install-onprem.sh"))
     tls_fullchain_b64  = var.tls_fullchain_pem == "" ? "" : base64encode(var.tls_fullchain_pem)
     tls_privkey_b64    = var.tls_privkey_pem == "" ? "" : base64encode(var.tls_privkey_pem)
   })
