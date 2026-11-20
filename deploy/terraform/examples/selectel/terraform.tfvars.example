@@ -1,0 +1,17 @@
+selectel_domain_name = "123456"   # номер аккаунта
+selectel_username    = "svc-user"
+selectel_password    = "..."
+project_id     = "0123456789abcdef..."   # ID проекта Selectel
+domain         = "cloud.example.com"     # делегируйте на a.ns.selectel.ru ... d.ns.selectel.ru
+admin_email    = "admin@example.com"
+admin_password = "change-me"
+ssh_public_key = "ssh-ed25519 AAAA..."
+admin_cidrs    = ["203.0.113.5/32"]
+acme_email     = "ops@example.com"
+# сервисный пользователь Selectel (роль работы с DNS) для lego selectelv2
+acme_dns_credentials = {
+  SELECTELV2_USERNAME   = "svc-user"
+  SELECTELV2_PASSWORD   = "..."
+  SELECTELV2_ACCOUNT_ID = "123456"
+  SELECTELV2_PROJECT_ID = "0123456789abcdef..."
+}
