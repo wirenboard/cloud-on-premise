@@ -33,4 +33,10 @@ cmp "$tmp/install.sh" "$here/../cloud-init/install-onprem.sh" || fail "скри�
 echo "ok size"
 shellcheck -s bash "$here/../cloud-init/install-onprem.sh" || fail shellcheck
 echo "ok shellcheck"
+# регрессия Q4.3: автопоиск диска данных не берёт дисковод fd0, cdrom, seed-диск < 1 ГиБ
+filt=$(grep -o "awk '\$2==\"disk\"[^']*'" "$here/../cloud-init/install-onprem.sh" | head -1 | sed "s/^awk '//; s/'\$//")
+[ -n "$filt" ] || fail "фильтр дисков не найден в install-onprem.sh"
+got=$(printf 'fd0 disk 1 4096\nsr0 rom 1 1073741312\nvda disk 0 32212254720\nvdb disk 0 26843545600\nvdc disk 0 395264\nloop0 disk 0 99999999999\n' | awk "$filt" | tr '\n' ' ')
+[ "$got" = "vda vdb " ] || fail "фильтр дисков вернул: $got"
+echo "ok disk-filter"
 echo PASS

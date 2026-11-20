@@ -40,7 +40,7 @@ setup_data_disk() {
          [ "$(blkid -s LABEL -o value "/dev/$d" 2>/dev/null || true)" = onprem-data ]; then
         dev=/dev/$d; break
       fi
-    done < <(lsblk -dno NAME,TYPE | awk '$2=="disk"{print $1}')
+    done < <(lsblk -dbno NAME,TYPE,RM,SIZE | awk '$2=="disk" && $3==0 && $1!~/^(fd|loop|ram|sr)/ && $4>=1073741824{print $1}')
   fi
   if [ -z "$dev" ] || [ ! -b "$(readlink -f "$dev")" ]; then
     log "отдельного диска данных нет — данные остаются на корневом диске"
