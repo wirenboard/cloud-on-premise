@@ -39,4 +39,14 @@ filt=$(grep -o "awk '\$2==\"disk\"[^']*'" "$here/../cloud-init/install-onprem.sh
 got=$(printf 'fd0 disk 1 4096\nsr0 rom 1 1073741312\nvda disk 0 32212254720\nvdb disk 0 26843545600\nvdc disk 0 395264\nloop0 disk 0 99999999999\n' | awk "$filt" | tr '\n' ' ')
 [ "$got" = "vda vdb " ] || fail "фильтр дисков вернул: $got"
 echo "ok disk-filter"
+# регрессия Q4.8: юнит автозапуска вызывает compose через обёртку, которая берёт VERSION из файла (без неё — «invalid reference format»)
+grep -q '^ExecStart=/usr/local/bin/onprem-compose up -d$' "$here/../cloud-init/install-onprem.sh" || fail "юнит не использует onprem-compose"
+mkdir -p "$tmp/inst"; printf 'v9.9.9\n' > "$tmp/inst/VERSION"
+body=$(sed -n '/<<WRAP$/,/^WRAP$/p' "$here/../cloud-init/install-onprem.sh" | sed '1d;$d')
+INSTALL_DIR="$tmp/inst" eval "cat <<WRAP
+$body
+WRAP" | sed "s#/usr/bin/docker#$tmp/fakedocker#" > "$tmp/wrap.sh"
+printf '#!/bin/sh\necho "VERSION=$VERSION args=$*"\n' > "$tmp/fakedocker"; chmod +x "$tmp/fakedocker"
+[ "$(sh "$tmp/wrap.sh" up -d)" = "VERSION=v9.9.9 args=compose up -d" ] || fail "обёртка не передаёт VERSION"
+echo "ok compose-wrapper"
 echo PASS

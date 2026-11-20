@@ -207,6 +207,15 @@ UNIT
 
 # ---------- 6. запуск и автозапуск ----------
 start_stack() {
+  # docker compose читает VERSION из окружения (Makefile задаёт его из файла VERSION) — юнит без этого падает после перезагрузки
+  cat > /usr/local/bin/onprem-compose <<WRAP
+#!/bin/sh
+cd "$INSTALL_DIR" || exit 1
+VERSION=\$(tr -d '[:space:]' < VERSION)
+export VERSION
+exec /usr/bin/docker compose "\$@"
+WRAP
+  chmod 0755 /usr/local/bin/onprem-compose
   cat > /etc/systemd/system/onprem.service <<UNIT
 [Unit]
 Description=Wiren Board On-Premise (docker compose)
@@ -216,8 +225,8 @@ After=docker.service network-online.target $(systemd-escape -p --suffix=mount "$
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose stop
+ExecStart=/usr/local/bin/onprem-compose up -d
+ExecStop=/usr/local/bin/onprem-compose stop
 TimeoutStartSec=900
 [Install]
 WantedBy=multi-user.target
