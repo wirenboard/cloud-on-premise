@@ -12,13 +12,20 @@ exec > >(tee -a "$LOG") 2>&1
 log() { printf '[onprem %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { log "ОШИБКА: $*"; exit 1; }
 
-[ -r "$CONF" ] || die "нет $CONF"
-set -a
-# shellcheck disable=SC1090
-. "$CONF"
-set +a
-
-: "${ABSOLUTE_SERVER:?}" "${ADMIN_EMAIL:?}" "${ADMIN_PASSWORD:?}"
+# ONPREM_BAKE=1 — сборка образа (Packer): только Docker, код выпуска и образы контейнеров, без домена и паролей.
+# Домен, пароли и сертификат образ не содержит: их при первой загрузке приносит тот же user-data, и скрипт доделывает остальное.
+BAKE=${ONPREM_BAKE:-0}
+BAKE_DIR=${ONPREM_BAKE_DIR:-/opt/onprem-release}
+if [ "$BAKE" = 1 ]; then
+  : "${ONPREM_VERSION:?}"
+else
+  [ -r "$CONF" ] || die "нет $CONF"
+  set -a
+  # shellcheck disable=SC1090
+  . "$CONF"
+  set +a
+  : "${ABSOLUTE_SERVER:?}" "${ADMIN_EMAIL:?}" "${ADMIN_PASSWORD:?}"
+fi
 : "${ONPREM_VERSION:?}" "${ONPREM_REPO_URL:=https://github.com/wirenboard/cloud-on-premise.git}"
 : "${DATA_DEVICE:=auto}" "${DATA_MOUNT:=/data}" "${INSTALL_DIR:=/data/cloud-on-premise}"
 : "${TLS_MODE:=letsencrypt-dns}" "${EMAIL_ENABLED:=False}"
@@ -77,6 +84,13 @@ configure_docker_root() {
   local root=$DATA_MOUNT/docker
   if [ -f /etc/docker/daemon.json ] && grep -q "$root" /etc/docker/daemon.json; then return; fi
   mkdir -p "$root" /etc/docker
+  # образ собран с предзагруженными образами контейнеров в /var/lib/docker — переносим на диск данных, а не качаем заново
+  if [ -f /var/lib/onprem-baked ] && [ "$root" != /var/lib/docker ] && [ -d /var/lib/docker/image ] && [ -z "$(ls -A "$root")" ]; then
+    log "переношу образы из образа ВМ на диск данных"
+    systemctl stop docker docker.socket
+    cp -a /var/lib/docker/. "$root"/
+    rm -rf /var/lib/docker/*
+  fi
   # containerd-snapshotter выключен: иначе образы (≈15 ГБ) уходят в /var/lib/containerd на системный диск, мимо диска данных
   printf '{ "data-root": "%s", "features": { "containerd-snapshotter": false }, "log-driver": "json-file", "log-opts": { "max-size": "20m", "max-file": "5" } }\n' "$root" \
     > /etc/docker/daemon.json
@@ -88,6 +102,9 @@ configure_docker_root() {
 fetch_release() {
   if [ -d "$INSTALL_DIR/.git" ]; then
     log "репозиторий уже клонирован"
+  elif [ -d "$BAKE_DIR/.git" ] && [ "$(git -C "$BAKE_DIR" describe --tags --always 2>/dev/null)" = "$ONPREM_VERSION" ]; then
+    log "беру запечённый в образ выпуск из $BAKE_DIR"
+    mkdir -p "$(dirname "$INSTALL_DIR")"; cp -a "$BAKE_DIR" "$INSTALL_DIR"
   else
     git clone --quiet "$ONPREM_REPO_URL" "$INSTALL_DIR"
   fi
@@ -244,7 +261,27 @@ UNIT
   make run
 }
 
+bake() {
+  # в образ: docker (data-root по умолчанию), lego, код выпуска, образы контейнеров; ничего секретного
+  DATA_MOUNT=/var/lib/docker-unused
+  install_docker
+  # образы должны лечь в /var/lib/docker (overlay2), а не в containerd: иначе при первой загрузке их не перенести на диск данных
+  mkdir -p /etc/docker
+  printf '{ "features": { "containerd-snapshotter": false } }\n' > /etc/docker/daemon.json
+  systemctl restart docker
+  install_lego
+  rm -rf "$BAKE_DIR"; git clone --quiet "$ONPREM_REPO_URL" "$BAKE_DIR"
+  git -C "$BAKE_DIR" -c advice.detachedHead=false checkout --quiet "$ONPREM_VERSION"
+  # compose читает .env; для pull нужны только VERSION и ненулевые переменные — берём .env.example
+  ( cd "$BAKE_DIR" && VERSION=$(tr -d '[:space:]' < VERSION) && export VERSION && \
+    cp .env.example /tmp/bake.env && docker compose --env-file /tmp/bake.env pull --quiet && rm -f /tmp/bake.env )
+  if [ -z "$(ls -A /var/lib/docker/overlay2 2>/dev/null)" ]; then die "образы контейнеров не в /var/lib/docker/overlay2"; fi
+  touch /var/lib/onprem-baked
+  log "образ подготовлен: $(git -C "$BAKE_DIR" describe --tags --always), образов: $(docker images -q | wc -l)"
+}
+
 main() {
+  if [ "$BAKE" = 1 ]; then bake; return; fi
   setup_data_disk
   install_docker
   configure_docker_root

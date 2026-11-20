@@ -53,4 +53,17 @@ echo "ok compose-wrapper"
 # регрессия Q4.8: образы Docker не уходят мимо диска данных (containerd-snapshotter выключен, data-root на диске данных)
 grep -q '"features": { "containerd-snapshotter": false }' "$here/../cloud-init/install-onprem.sh" || fail "containerd-snapshotter не выключен"
 echo "ok docker-root"
+# Q4.9: режим образа — без конфига и секретов, образы переносятся на диск данных, запечённый выпуск используется
+inst="$here/../cloud-init/install-onprem.sh"
+grep -q 'BAKE=${ONPREM_BAKE:-0}' "$inst" || fail "нет режима ONPREM_BAKE"
+grep -q 'cp -a /var/lib/docker/. "$root"/' "$inst" || fail "нет переноса образов на диск данных"
+grep -q 'cp -a "$BAKE_DIR" "$INSTALL_DIR"' "$inst" || fail "нет использования запечённого выпуска"
+bake_body=$(sed -n '/^bake() {/,/^}/p' "$inst")
+echo "$bake_body" | grep -qiE 'password|ABSOLUTE_SERVER|ACME' && fail "bake() трогает секреты/домен"
+if command -v packer >/dev/null; then
+  ( cd "$here/../packer" && packer validate -syntax-only . >/dev/null ) || fail "packer validate"
+  echo "ok packer-syntax"
+fi
+echo "$bake_body" | grep -q '"containerd-snapshotter": false' || fail "bake() не выключает containerd-snapshotter (образы уйдут мимо /var/lib/docker)"
+echo "ok bake-mode"
 echo PASS
