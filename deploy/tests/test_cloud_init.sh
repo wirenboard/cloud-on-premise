@@ -48,6 +48,7 @@ $body
 WRAP" | sed "s#/usr/bin/docker#$tmp/fakedocker#" > "$tmp/wrap.sh"
 printf '#!/bin/sh\necho "VERSION=$VERSION args=$*"\n' > "$tmp/fakedocker"; chmod +x "$tmp/fakedocker"
 [ "$(sh "$tmp/wrap.sh" up -d)" = "VERSION=v9.9.9 args=compose up -d" ] || fail "обёртка не передаёт VERSION"
+grep -q "^Restart=on-failure$" "$here/../cloud-init/install-onprem.sh" || fail "у юнита нет повтора при сбое"
 echo "ok compose-wrapper"
 # регрессия Q4.8: образы Docker не уходят мимо диска данных (containerd-snapshotter выключен, data-root на диске данных)
 grep -q '"features": { "containerd-snapshotter": false }' "$here/../cloud-init/install-onprem.sh" || fail "containerd-snapshotter не выключен"

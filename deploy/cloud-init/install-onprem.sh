@@ -229,6 +229,9 @@ WorkingDirectory=$INSTALL_DIR
 ExecStart=/usr/local/bin/onprem-compose up -d
 ExecStop=/usr/local/bin/onprem-compose stop
 TimeoutStartSec=900
+# при старте всего стека после перезагрузки backend может не успеть стать healthy в окне compose — повторить
+Restart=on-failure
+RestartSec=30
 [Install]
 WantedBy=multi-user.target
 UNIT
