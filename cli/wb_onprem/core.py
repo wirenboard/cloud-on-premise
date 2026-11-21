@@ -76,6 +76,8 @@ def emit(report, as_json, out=None):
         out.write(f"{key}: {value}\n")
     for it in report["items"]:
         out.write(f"{mark[it['status']]} {it['name']}: {it['detail']}\n")
+    if report.get("changelog"):
+        out.write("\nchangelog:\n" + report["changelog"] + "\n")
     out.write(f"overall: {report['status']}\n")
 
 

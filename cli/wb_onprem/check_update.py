@@ -1,0 +1,161 @@
+"""`check-update`: a newer release, its CHANGELOG_EN.md excerpt and the .env variables new in it."""
+
+import os
+import re
+import tempfile
+
+from . import core, status
+from .core import FAIL, OK, WARN
+from .status import item
+
+HELP = "newer release, its changelog and the .env variables new in it"
+
+_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-testing)?$")
+_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+_CREDENTIALS = re.compile(r"(\w+://)[^/@\s]+@")
+_NAME = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=", re.M)
+_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0"}
+
+
+def add_arguments(parser):
+    parser.add_argument("--remote", default="origin", help="git remote name, URL or path with release tags "
+                                                         "(default: origin)")
+
+
+def redact(text):
+    return _CREDENTIALS.sub(r"\1", text)
+
+
+def parse_version(text):
+    m = _VERSION.match((text or "").strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def git(args, cwd, timeout=60):
+    return core.run(["git", *args], cwd=cwd, env=_GIT_ENV, timeout=timeout)
+
+
+def git_error(err, directory):
+    lines = [line for line in err.splitlines() if line.strip()]
+    text = next((line for line in lines if line.startswith("fatal:")), lines[-1] if lines else "git failed")
+    if "dubious ownership" in err:
+        text += f"; run `git config --global --add safe.directory {directory}`"
+    return text
+
+
+def remote_url(directory, remote):
+    """URL of the remote, or `remote` itself when it is not a remote name. (url, error)."""
+    code, out, err = git(["remote", "get-url", remote], directory)
+    if code == 0:
+        return out.strip(), None
+    if "dubious ownership" in err:
+        return None, git_error(err, directory)
+    return remote, None
+
+
+def list_tags(directory, url):
+    """[(version, tag)] of vX.Y.Z tags, oldest first. (tags, error)."""
+    code, out, err = git(["ls-remote", "--tags", "--refs", url], directory, timeout=30)
+    if code != 0:
+        return None, git_error(err, directory)
+    tags = []
+    for line in out.splitlines():
+        tag = line.rpartition("refs/tags/")[2]
+        if _TAG.match(tag):
+            tags.append((parse_version(tag), tag))
+    return sorted(tags), None
+
+
+def read_tag(url, config, tag, paths):
+    """Files of the tag (None if absent) via a temporary bare repository; the installation .git is not touched."""
+    with tempfile.TemporaryDirectory() as tmp:
+        code, _, err = git(["init", "-q", "--bare", tmp], tmp)
+        if code == 0:
+            code, _, err = git(["-c", f"include.path={config}", "fetch", "-q", "--depth", "1", url, "tag", tag],
+                               tmp, timeout=120)
+        if code != 0:
+            return None, git_error(err, tmp)
+        files = {}
+        for path in paths:
+            code, out, _ = git(["show", f"{tag}:{path}"], tmp)
+            files[path] = out if code == 0 else None
+        return files, None
+
+
+def changelog_between(text, current, target):
+    """Sections `## [X.Y.Z]` with current < X.Y.Z <= target."""
+    keep = []
+    for part in re.split(r"(?m)^(?=## \[)", text):
+        m = re.match(r"## \[([^\]]+)\]", part)
+        version = parse_version(m.group(1)) if m else None
+        if version and current < version <= target:
+            keep.append(part.rstrip() + "\n")
+    return "\n".join(keep)
+
+
+def names(text):
+    return _NAME.findall(text)
+
+
+def read_names(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return set(names(f.read()))
+    except OSError:
+        return set()
+
+
+def env_item(directory, tag, example):
+    if example is None:
+        return item("env", WARN, f"cannot read .env.example of {tag}")
+    known = read_names(os.path.join(directory, ".env.example")) | read_names(os.path.join(directory, ".env"))
+    new = [name for name in names(example) if name not in known]
+    if not new:
+        return item("env", OK, f".env has every variable new in {tag}")
+    return item("env", WARN, f"new in {tag}: {', '.join(new)} (see .env.example of {tag})")
+
+
+def check(directory, remote, facts):
+    installation = status.installation_item(directory)
+    if installation and installation["status"] == FAIL:
+        return [item("update", WARN, "1.x installation: run `make upgrade` to move to 2.x")], None
+    items = [installation] if installation else []
+    installed = core.read_version(directory)
+    current = parse_version(installed)
+    if current is None:
+        return items + [item("version", FAIL, f"cannot read a release version from VERSION ({installed!r})")], None
+    url, error = remote_url(directory, remote)
+    if error:
+        return items + [item("remote", FAIL, f"cannot read the URL of '{remote}': {error}")], None
+    facts["remote"] = url
+    tags, error = list_tags(directory, url)
+    if error:
+        return items + [item("remote", FAIL, f"cannot list tags of {url}: {error}")], None
+    newer = [(version, tag) for version, tag in tags if version > current]
+    if not newer:
+        return items + [item("update", OK, f"{installed} is the newest release")], None
+    target, tag = newer[-1]
+    facts["available"] = tag[1:]
+    if target[0] > current[0]:
+        items.append(item("update", WARN, f"{installed} -> {tag[1:]} is a major release: "
+                                          f"read its release notes before updating"))
+    else:
+        items.append(item("update", OK, f"{installed} -> {tag[1:]} is available"))
+    files, error = read_tag(url, os.path.join(directory, ".git", "config"), tag, ["CHANGELOG_EN.md", ".env.example"])
+    if error:
+        return items + [item("notes", WARN, f"found {tag}, cannot read its notes: {error}")], None
+    items.append(env_item(directory, tag, files[".env.example"]))
+    if files["CHANGELOG_EN.md"] is None:
+        return items + [item("notes", WARN, f"cannot read CHANGELOG_EN.md of {tag}")], None
+    return items, changelog_between(files["CHANGELOG_EN.md"], current, target)
+
+
+def build(directory, args):
+    facts = {"directory": directory, "installed": core.read_version(directory) or "unknown"}
+    items, changelog = check(directory, args.remote, facts)
+    items = [{**it, "detail": redact(it["detail"])} for it in items]
+    report = {"status": core.worst(it["status"] for it in items), "items": items,
+              "facts": {key: redact(value) for key, value in facts.items()}}
+    if changelog:
+        report["changelog"] = changelog
+    return report

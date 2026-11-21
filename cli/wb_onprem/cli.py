@@ -2,10 +2,10 @@ import argparse
 import sys
 import traceback
 
-from . import __version__, core, status
+from . import __version__, check_update, core, status
 
 # name -> module with HELP, add_arguments(parser) and build(directory, args) -> report
-COMMANDS = {"status": status}
+COMMANDS = {"status": status, "check-update": check_update}
 
 
 class _Parser(argparse.ArgumentParser):
