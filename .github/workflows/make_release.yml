@@ -35,8 +35,31 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
-  retag-and-push:
+  build-cli:
     needs: read-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build wb-onprem.pyz
+        run: |
+          bash cli/build.sh
+          test -s cli/dist/wb-onprem.pyz
+          test -s cli/dist/wb-onprem.pyz.sha256
+
+      - name: Upload wb-onprem.pyz
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wb-onprem
+          path: cli/dist/
+          if-no-files-found: error
+
+  # Waits for build-cli: a failed build must not leave `latest` pushed without a release.
+  retag-and-push:
+    needs: [read-version, build-cli]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -103,7 +126,7 @@ jobs:
       TG_CLOUD_DEBUG_CHAT_ID: ${{ secrets.TG_CLOUD_DEBUG_CHAT_ID }}
 
   create-release:
-    needs: [read-version, retag-and-push]
+    needs: [read-version, build-cli, retag-and-push]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -111,6 +134,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Download wb-onprem.pyz
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wb-onprem
+          path: cli/dist/
 
       - name: Extract changelog section for release notes
         shell: bash
@@ -133,6 +162,7 @@ jobs:
           tag_name: v${{ needs.read-version.outputs.version }}
           name: Release v${{ needs.read-version.outputs.version }}
           body_path: /tmp/release_notes.md
+          fail_on_unmatched_files: true
           files: |
             VERSION
             CHANGELOG.md
@@ -155,6 +185,8 @@ jobs:
             migration/upgrade.sh
             migration/migrate-env.sh
             migration/migration_doctor.py
+            cli/dist/wb-onprem.pyz
+            cli/dist/wb-onprem.pyz.sha256
 
       - name: Done
         run: echo "✅ Release completed for version ${{ needs.read-version.outputs.version }}"

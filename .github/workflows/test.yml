@@ -27,3 +27,23 @@ jobs:
 
       - name: Run fixture tests
         run: make test
+
+  # Ubuntu 22.04 ships Python 3.10, the oldest one wb-onprem runs on.
+  fixtures-python-3-10:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Install PyYAML
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 -c 'import yaml'
+
+      - name: Run fixture tests
+        run: make test
