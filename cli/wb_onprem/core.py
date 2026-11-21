@@ -79,15 +79,30 @@ def emit(report, as_json, out=None):
     out.write(f"overall: {report['status']}\n")
 
 
-def run(cmd, cwd=None, input=None, timeout=60):
+def run(cmd, cwd=None, input=None, timeout=60, env=None):
     """Run a command; never raises. Returns (returncode, stdout, stderr); 127 if missing."""
     try:
-        p = subprocess.run(cmd, cwd=cwd, input=input, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, cwd=cwd, input=input, capture_output=True, text=True, timeout=timeout,
+                           env=env and {**os.environ, **env})
     except FileNotFoundError:
         return 127, "", f"{cmd[0]}: command not found"
     except subprocess.TimeoutExpired:
         return 124, "", f"{' '.join(cmd)}: timed out after {timeout}s"
     return p.returncode, p.stdout, p.stderr
+
+
+def read_version(directory):
+    try:
+        with open(os.path.join(directory, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def compose(directory, args, timeout=60):
+    """`docker compose ...` in the installation with VERSION exported, as the Makefile does."""
+    return run(["docker", "compose", *args], cwd=directory, env={"VERSION": read_version(directory) or ""},
+               timeout=timeout)
 
 
 # $(info) prints the value as make sees it; a shell echo would glob *.domain against the directory.
