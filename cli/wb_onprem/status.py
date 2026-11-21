@@ -63,15 +63,20 @@ def _row_item(name, row, one_shot):
     return item(name, WARN if health == "starting" else OK, detail)
 
 
-def service_items(directory):
-    """One item per service of `docker compose config`; compose stderr is never shown, it may hold .env values."""
+def compose_config(directory):
+    """(services of `docker compose config`, None) or (None, fail item); compose stderr may hold .env values."""
     code, out, _ = core.compose(directory, ["config", "--format", "json"])
     if code != 0:
-        return [item("services", FAIL, "docker compose config failed, run `make check-env`")]
+        return None, item("services", FAIL, "docker compose config failed, run `make check-env`")
     try:
         services = json.loads(out)["services"]
     except (ValueError, KeyError, TypeError):
-        return [item("services", FAIL, "cannot parse `docker compose config` output")]
+        return None, item("services", FAIL, "cannot parse `docker compose config` output")
+    return services, None
+
+
+def service_items(directory, services):
+    """One item per service; compose stderr is never shown."""
     code, out, _ = core.compose(directory, ["ps", "--all", "--format", "json"])
     if code != 0:
         return [item("containers", FAIL, "docker compose ps failed, is Docker running?")]
@@ -138,14 +143,22 @@ def cert_end(path):
 
 def cert_item(directory, now=None):
     """Expiry only; the full certificate check is `doctor`."""
-    tls_dir = core.make_var(directory, "TLS_DIR")
-    if not tls_dir:
+    tls = tls_dir(directory)
+    if not tls:
         return item("certificate", WARN, "cannot determine TLS_DIR from the Makefile")
-    tls_dir = os.path.normpath(os.path.join(directory, tls_dir))
-    paths = [os.path.join(tls_dir, name) for name in ("fullchain.pem", "cert.pem")]
+    paths = [os.path.join(tls, name) for name in ("fullchain.pem", "cert.pem")]
     path = next((p for p in paths if os.path.isfile(p)), None)
     if path is None:
         return item("certificate", FAIL, f"{paths[0]} not found, run `make check-certs`")
+    return expiry_item(path, now)
+
+
+def tls_dir(directory):
+    value = core.make_var(directory, "TLS_DIR")
+    return os.path.normpath(os.path.join(directory, value)) if value else None
+
+
+def expiry_item(path, now=None):
     end = cert_end(path)
     if end is None:
         return item("certificate", WARN, f"{path}: cannot read the expiry date with openssl")
@@ -171,6 +184,8 @@ def build(directory, args):
     if installation and installation["status"] == FAIL:
         items = [installation]
     else:
-        items = ([installation] if installation else []) + service_items(directory) + disk_items(directory)
+        services, failed = compose_config(directory)
+        items = ([installation] if installation else []) + ([failed] if failed else service_items(directory, services))
+        items += disk_items(directory)
         items.append(cert_item(directory))
     return {"status": core.worst(it["status"] for it in items), "items": items, "facts": facts(directory)}
