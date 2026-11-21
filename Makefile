@@ -166,7 +166,7 @@ check-not-1x:
 # [ TESTS ] -------------------------------------------------------------------
 # Fixtures only — no containers, no database. Not shipped with the release.
 
-# tests/ covers the product; migration/tests/ goes away with the 1.x upgrade path.
+# tests/ and cli/tests/ cover the product; migration/tests/ goes away with the 1.x upgrade path.
 .PHONY: test
 test:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ TESTS ]====================="
@@ -177,6 +177,9 @@ test:
 	@bash migration/tests/test-upgrade-gate.sh
 	@printf "\n"
 	@python3 migration/tests/test_migration_doctor.py
+	@printf "\n"
+	@PYTHONPATH=cli python3 -W error -m unittest discover -s cli/tests
+	@PYTHONWARNINGS=error bash cli/tests/test_build.sh
 
 #------------------------------------------------------------------------------
 # [ TLS CERTIFICATE CHECK ] ---------------------------------------------------
