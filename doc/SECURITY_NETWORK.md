@@ -32,7 +32,7 @@ Traefik (443) — `https://metrics-ingest.your-domain.com` (Telegraf, mTLS), а
 | timescale (TimescaleDB) | — | нет | Хранилище метрик контроллеров, только внутри docker-сети; host-порт не публикуется |
 | telegraf | — | нет | Приём метрик с контроллеров; доступен через Traefik: `https://metrics-ingest.your-domain.com` (mTLS) |
 | clients-grafana (Grafana) | — | нет | Пользовательские дашборды метрик; доступна через Traefik: `https://metrics.your-domain.com` |
-| minio | — | нет | Объектное хранилище, только внутри сети |
+| seaweedfs | — | нет | Объектное хранилище, только внутри сети |
 | backend / agent_backend / tunnel-webhooks-backend | — | нет | API (`:8000`), доступны Traefik'у, tunnel_auth, frontend и tunnel (webhook) |
 | webssh | — | нет | SSH-в-браузере (`:8888`), проксируется через tunnel_auth — внутренний сервис авторизации туннельных подключений |
 | frontend | — | нет | SPA, доступен только Traefik'у |
@@ -97,7 +97,7 @@ flowchart LR
             direction TB
             pg["PostgreSQL"]
             redis["Redis"]
-            minio["MinIO"]
+            seaweedfs["SeaweedFS"]
             timescale["TimescaleDB"]
         end
     end
@@ -121,7 +121,7 @@ flowchart LR
     grafana --> timescale
     backend --> pg
     backend --> redis
-    backend --> minio
+    backend --> seaweedfs
     backend --> timescale
     wbcloud <-.-|"метрики — только FREE-версия"| backend
     smtp <-.-|"почта — если EMAIL_ENABLED=True"| backend
@@ -144,7 +144,7 @@ _Легенда: **красный** — публичные порты (откр�
 | Дашборды метрик | Браузер оператора | Traefik → Grafana (`metrics.your-domain.com`) | 443 | вход |
 | Туннели контроллеров | **Контроллер WB** | tunnel (FRP) | 7107 | **вход** (контроллер дозванивается в облако) |
 | Tunnel dashboard | Браузер админа | tunnel | 7501 | вход (опц., см. §7) |
-| БД / кэш / хранилище / метрики | backend, worker, telegraf, grafana | postgres / redis / minio / timescale | — | внутри сети |
+| БД / кэш / хранилище / метрики | backend, worker, telegraf, grafana | postgres / redis / seaweedfs / timescale | — | внутри сети |
 | **Метрики к WB** | backend | `on-premise-metrics.wirenboard.cloud` | 443 | **исход (egress)** — только в бесплатной (FREE) версии |
 | Почта | backend | SMTP (`EMAIL_HOST`) | `EMAIL_PORT` (в примере 587) | исход — только при `EMAIL_ENABLED=True` |
 
@@ -195,7 +195,7 @@ RequireAndVerifyClientCert` — см. `traefik/traefik-check-ca.toml` и labels 
 > публикует порты в обход ufw.
 
 **НЕ открывать наружу:** порты postgres / redis / timescale / telegraf / grafana /
-minio / backend:8000 / webssh:8888 — они только внутри docker-сети.
+seaweedfs / backend:8000 / webssh:8888 — они только внутри docker-сети.
 
 ### OUTBOUND — egress
 
@@ -203,7 +203,7 @@ minio / backend:8000 / webssh:8888 — они только внутри docker-�
 |------------|------|------|----------------|
 | Метрики WB | `on-premise-metrics.wirenboard.cloud` | 443 | Закрытие = нельзя добавлять контроллеры (в бесплатной версии отправка обязательна) |
 | Почта | `EMAIL_HOST` (SMTP) | `EMAIL_PORT` (в примере 587) | Да — задайте `EMAIL_ENABLED=False` (приглашения тогда передаются ссылкой из админ-панели) |
-| Docker-образы (установка/обновление) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, telegraf, grafana, minio, traefik) | 443 | Нужен только на время установки/обновления; в остальное время можно закрыть |
+| Docker-образы (установка/обновление) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, telegraf, grafana, seaweedfs, traefik) | 443 | Нужен только на время установки/обновления; в остальное время можно закрыть |
 | База геолокации сессий | `download.db-ip.com` | 443 | Да — нужен только при `GEOIP_ENABLED=True` и только в момент загрузки базы (`make run`, `make update-geoip`) |
 
 > **TLS-сертификаты.** Инсталляция сама наружу за сертификатами **не ходит** —

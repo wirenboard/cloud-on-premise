@@ -118,6 +118,7 @@ help:
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
 	@printf "  generate-django-secret   Generate Django secret key\n"
+	@printf "  generate-s3-keys         Generate S3 storage keys\n"
 
 #------------------------------------------------------------------------------
 # [ INTROSPECTION ] -----------------------------------------------------------
@@ -357,6 +358,12 @@ generate-django-secret:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating Django secret ------"
 	$(call gen_token,SECRET_KEY,openssl rand -base64 50 | tr -dc 'A-Za-z0-9!@#$%^&*(-_=+)' | cut -c1-50)
 
+.PHONY: generate-s3-keys
+generate-s3-keys:
+	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating S3 storage keys ------"
+	$(call gen_token,MINIO_ROOT_USER,openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20)
+	$(call gen_token,MINIO_ROOT_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)
+
 .PHONY: generate-absolute-server-regex
 generate-absolute-server-regex:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating ABSOLUTE_SERVER_REGEX ------"
@@ -391,6 +398,7 @@ generate-env:
 	@${MAKE} generate-tunnel-token
 	@${MAKE} generate-metrics-passwords
 	@${MAKE} generate-django-secret
+	@${MAKE} generate-s3-keys
 	@${MAKE} generate-absolute-server-regex
 	@${MAKE} generate-jwt
 	@bash ./scripts/fetch-geoip.sh
@@ -452,7 +460,8 @@ update:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@VERSION=$(VERSION) docker compose pull
-	@VERSION=$(VERSION) docker compose down
+	@# Services dropped from the release keep running as orphans otherwise.
+	@VERSION=$(VERSION) docker compose down --remove-orphans
 	docker image prune -f
 	docker container prune -f
 	@VERSION=$(VERSION) docker compose up -d --build
@@ -471,7 +480,7 @@ restart:
 	@${MAKE} check-not-1x
 	@${MAKE} generate-env
 	@${MAKE} check-certs
-	@export VERSION=$(VERSION); docker compose down && docker compose up -d --build
+	@export VERSION=$(VERSION); docker compose down --remove-orphans && docker compose up -d --build
 	@${MAKE} check-metrics-schema
 
 # Traefik reads the certificate files once at startup, so a renewed certificate

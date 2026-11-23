@@ -35,7 +35,7 @@ network.
 | timescale (TimescaleDB) | — | no | Controller metrics storage, docker network only; no host port published |
 | telegraf | — | no | Controller metrics ingest; reachable through Traefik: `https://metrics-ingest.your-domain.com` (mTLS) |
 | clients-grafana (Grafana) | — | no | User metrics dashboards; reachable through Traefik: `https://metrics.your-domain.com` |
-| minio | — | no | Object storage, internal network only |
+| seaweedfs | — | no | Object storage, internal network only |
 | backend / agent_backend / tunnel-webhooks-backend | — | no | API (`:8000`), reachable by Traefik, tunnel_auth, frontend and tunnel (webhook) |
 | webssh | — | no | SSH-in-browser (`:8888`), proxied through tunnel_auth — the internal tunnel-connection authorization service |
 | frontend | — | no | SPA, reachable by Traefik only |
@@ -100,7 +100,7 @@ flowchart LR
             direction TB
             pg["PostgreSQL"]
             redis["Redis"]
-            minio["MinIO"]
+            seaweedfs["SeaweedFS"]
             timescale["TimescaleDB"]
         end
     end
@@ -124,7 +124,7 @@ flowchart LR
     grafana --> timescale
     backend --> pg
     backend --> redis
-    backend --> minio
+    backend --> seaweedfs
     backend --> timescale
     wbcloud <-.-|"metrics — FREE edition only"| backend
     smtp <-.-|"email — if EMAIL_ENABLED=True"| backend
@@ -150,7 +150,7 @@ when `EMAIL_ENABLED=True` is set explicitly (the variable is mandatory since 2.0
 | Metrics dashboards | Operator's browser | Traefik → Grafana (`metrics.your-domain.com`) | 443 | inbound |
 | Controller tunnels | **WB controller** | tunnel (FRP) | 7107 | **inbound** (the controller dials in to the cloud) |
 | Tunnel dashboard | Admin's browser | tunnel | 7501 | inbound (opt., see §7) |
-| DB / cache / storage / metrics | backend, worker, telegraf, grafana | postgres / redis / minio / timescale | — | internal network |
+| DB / cache / storage / metrics | backend, worker, telegraf, grafana | postgres / redis / seaweedfs / timescale | — | internal network |
 | **Metrics to WB** | backend | `on-premise-metrics.wirenboard.cloud` | 443 | **outbound (egress)** — free (FREE) edition only |
 | Email | backend | SMTP (`EMAIL_HOST`) | `EMAIL_PORT` (587 in the example) | outbound — only when `EMAIL_ENABLED=True` |
 
@@ -202,7 +202,7 @@ by **Grafana**: `https://metrics.your-domain.com` (browser, port 443).
 > in `.env`. Keep in mind that docker publishes ports bypassing ufw.
 
 **Do NOT expose:** the postgres / redis / timescale / telegraf / grafana /
-minio / backend:8000 / webssh:8888 ports — they exist only inside the docker
+seaweedfs / backend:8000 / webssh:8888 ports — they exist only inside the docker
 network.
 
 ### OUTBOUND — egress
@@ -211,7 +211,7 @@ network.
 |-------------|------|------|--------------------|
 | WB metrics | `on-premise-metrics.wirenboard.cloud` | 443 | Blocking = new controllers cannot be added (sending is mandatory in the free edition) |
 | Email | `EMAIL_HOST` (SMTP) | `EMAIL_PORT` (587 in the example) | Yes — set `EMAIL_ENABLED=False` (invitations are then shared as links from the admin panel) |
-| Docker images (install/upgrade) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, telegraf, grafana, minio, traefik) | 443 | Needed only during install/upgrade; can stay blocked the rest of the time |
+| Docker images (install/upgrade) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, telegraf, grafana, seaweedfs, traefik) | 443 | Needed only during install/upgrade; can stay blocked the rest of the time |
 | Session geolocation database | `download.db-ip.com` | 443 | Yes — needed only with `GEOIP_ENABLED=True`, and only while the database downloads (`make run`, `make update-geoip`) |
 
 > **TLS certificates.** The installation does **not** fetch certificates from

@@ -61,7 +61,7 @@ x-backend-common-env: &backend-common-env
   ADMIN_PASSWORD: ${ADMIN_PASSWORD}
   AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
   AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
-  AWS_S3_ENDPOINT_URL: "http://minio:9000"
+  AWS_S3_ENDPOINT_URL: "http://seaweedfs:8333"
   AWS_STORAGE_BUCKET_NAME: "media"
   AWS_S3_REGION_NAME: "eu-west-1"
 
@@ -240,7 +240,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_healthy
       tunnel-webhooks-backend:
         condition: service_healthy
@@ -359,7 +359,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -525,33 +525,47 @@ services:
       timescale:
         condition: service_healthy
 
-  minio:
-    image: ghcr.io/wirenboard/on-premise/minio:RELEASE.2025-09-07T16-13-09Z
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.53
     logging: *default-logging
     volumes:
-      - minioData:/data
+      - seaweedfsData:/data
     restart: always
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_login}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_pass}
-    command: server /data
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
+    # Without signing keys the filer and volume HTTP APIs serve and take files for any container on the network.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        export WEED_JWT_FILER_SIGNING_KEY="$$(head -c 32 /dev/urandom | base64)"
+        export WEED_JWT_FILER_SIGNING_READ_KEY="$$(head -c 32 /dev/urandom | base64)"
+        export WEED_JWT_SIGNING_KEY="$$(head -c 32 /dev/urandom | base64)"
+        export WEED_JWT_SIGNING_READ_KEY="$$(head -c 32 /dev/urandom | base64)"
+        exec /entrypoint.sh "$$@"
+      - --
+    command: >-
+      mini -dir=/data -bucket=media -webdav=false -admin.ui=false
+      -master.telemetry=false -s3.port.iceberg=0 -s3.port.lance=0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8333/healthz"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 12
 
-  minio-client:
-    image: ghcr.io/wirenboard/on-premise/mc:RELEASE.2025-08-13T08-35-41Z
+  # Backstop for the backend's own 15-minute cleanup of diagnostic archives.
+  seaweedfs-init:
+    image: chrislusf/seaweedfs:4.53
     logging: *default-logging
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio_login} ${MINIO_ROOT_PASSWORD:-minio_pass};
-      /usr/bin/mc mb --quiet --ignore-existing local/media/;
-      /usr/bin/mc anonymous set public local/media/;
-      "
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        echo 'fs.configure -locationPrefix=/buckets/media/diagnostic_data/ -ttl=1h -apply'
+        | weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888
     depends_on:
-      minio:
+      seaweedfs:
         condition: service_healthy
 
 
@@ -562,5 +576,5 @@ networks:
 volumes:
   timescaleData: {}
   postgresData: {}
-  minioData: {}
+  seaweedfsData: {}
   clientsGrafanaData: {}
