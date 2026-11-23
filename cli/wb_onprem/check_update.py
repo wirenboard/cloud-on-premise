@@ -12,8 +12,8 @@ HELP = "newer release, its changelog and the .env variables new in it"
 
 _VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-testing)?$")
 _TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
-_CREDENTIALS = re.compile(r"(\w+://)[^/\s'\"]*@")
-_QUERY = re.compile(r"(\w+://[^\s?'\"]*)\?[^\s'\"]*")
+_CREDENTIALS = re.compile(r"(\w+://)[^/\s]*@")
+_QUERY_FRAGMENT = re.compile(r"(\w+://[^\s?#'\"]*)[?#][^\s'\"]*")
 _NAME = re.compile(r"^\s*(#?)([A-Za-z_][A-Za-z0-9_]*)=", re.M)
 
 
@@ -23,7 +23,7 @@ def add_arguments(parser):
 
 
 def redact(text):
-    return _QUERY.sub(r"\1", _CREDENTIALS.sub(r"\1", text))
+    return _QUERY_FRAGMENT.sub(r"\1", _CREDENTIALS.sub(r"\1", text))
 
 
 def parse_version(text):

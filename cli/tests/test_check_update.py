@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from wb_onprem import cli
+from wb_onprem import check_update, cli
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 GIT = shutil.which("git")
@@ -330,6 +330,21 @@ class CheckUpdateTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("available: 3.0.0\n", text)
         self.assertIn("- three-zero-zero notes", text)
+
+
+class RedactTest(unittest.TestCase):
+    def test_credentials_query_and_fragment_are_cut(self):
+        for text, expected in (
+            ("fatal: unable to access 'https://u:pw@host/repo/': 403",
+             "fatal: unable to access 'https://host/repo/': 403"),
+            ("https://u'ser:p\"w@host/repo", "https://host/repo"),
+            ("'https://u:p'w@host/repo': failed", "'https://host/repo': failed"),
+            ("https://host/repo#token", "https://host/repo"),
+            ("'https://host/repo?a=1#token': failed", "'https://host/repo': failed"),
+            ("remote: https://host/repo", "remote: https://host/repo"),
+        ):
+            with self.subTest(text):
+                self.assertEqual(check_update.redact(text), expected)
 
 
 if __name__ == "__main__":
