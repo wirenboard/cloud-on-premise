@@ -166,17 +166,22 @@ check-not-1x:
 # [ TESTS ] -------------------------------------------------------------------
 # Fixtures only — no containers, no database. Not shipped with the release.
 
-# tests/ covers the product; migration/tests/ goes away with the 1.x upgrade path.
+# tests/ and cli/tests/ cover the product; migration/tests/ goes away with the 1.x upgrade path.
 .PHONY: test
 test:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ TESTS ]====================="
 	@bash tests/test-check-env.sh
+	@printf "\n"
+	@bash tests/test-check-certs.sh
 	@printf "\n"
 	@bash migration/tests/test-migrate-env.sh
 	@printf "\n"
 	@bash migration/tests/test-upgrade-gate.sh
 	@printf "\n"
 	@python3 migration/tests/test_migration_doctor.py
+	@printf "\n"
+	@PYTHONPATH=cli python3 -W error -m unittest discover -s cli/tests
+	@PYTHONWARNINGS=error bash cli/tests/test_build.sh
 
 #------------------------------------------------------------------------------
 # [ TLS CERTIFICATE CHECK ] ---------------------------------------------------
@@ -221,9 +226,11 @@ check-certs: check-cert-paths
 	fi
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Validating key and certificate match ------"
 	@printf "Verifying key and certificate match...\n"
-	@CERT_MOD=$$(openssl x509 -noout -modulus -in $(FULLCHAIN) | openssl md5); \
-	KEY_MOD=$$(openssl rsa -noout -modulus -in $(PRIVKEY) | openssl md5); \
-	if [ "$$CERT_MOD" != "$$KEY_MOD" ]; then \
+	@CERT_PUB=$$(openssl x509 -noout -pubkey -in $(FULLCHAIN)); \
+	KEY_PUB=$$(openssl pkey -pubout -in $(PRIVKEY)); \
+	if [ -z "$$CERT_PUB" ] || [ -z "$$KEY_PUB" ]; then \
+		printf "$(RED)ERROR: openssl cannot read the certificate or the private key.$(NC)\n"; exit 1; \
+	elif [ "$$CERT_PUB" != "$$KEY_PUB" ]; then \
 		printf "$(RED)ERROR: Certificate and private key do not match.$(NC)\n"; exit 1; \
 	else \
 		printf "$(GREEN)Key and certificate match.$(NC)\n"; \
@@ -241,7 +248,7 @@ check-certs: check-cert-paths
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Checking required domains in certificate (SAN) ------"
 	@printf "Checking required domains in certificate (SAN)...\n"
 	@printf "Certificate SANs found:\n"
-	@CERT_DOMAINS=$$(openssl x509 -in $(FULLCHAIN) -noout -text | \
+	@set -f; CERT_DOMAINS=$$(openssl x509 -in $(FULLCHAIN) -noout -text | \
 	  awk '/X509v3 Subject Alternative Name/ {getline; print}' | \
 	  tr ',' '\n' | sed 's/^[[:space:]]*DNS://g' | sed 's/[[:space:]]*$$//'); \
 	printf "%s\n" "$$CERT_DOMAINS"; \

@@ -20,6 +20,9 @@ __pycache__/
 migration/conflicts.yaml
 backups/
 
+# wb-onprem.pyz built by cli/build.sh
+cli/dist/
+
 branding/*.svg
 branding/*.ico
 branding/*.png

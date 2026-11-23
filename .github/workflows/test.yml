@@ -1,14 +1,18 @@
 name: Tests
 
-# Fixtures only: no containers, no database, seconds to run. They guard the
+# Fixtures only: no containers, no database, a few minutes to run. They guard the
 # parts an operator meets before anything starts — .env validation, the config
-# migration and the 1.x guard — so they run on every change, not by hand.
+# migration, the 1.x guard, check-certs — and the wb-onprem utility with its pyz
+# build and release files, so they run on every change, not by hand.
 on:
   pull_request:
   push:
     branches:
       - main
       - 'onprem-release/**'
+
+permissions:
+  contents: read
 
 jobs:
   fixtures:
@@ -23,6 +27,26 @@ jobs:
         run: |
           python3 -m pip install --quiet pyyaml \
             || python3 -m pip install --quiet --break-system-packages pyyaml
+          python3 -c 'import yaml'
+
+      - name: Run fixture tests
+        run: make test
+
+  # Ubuntu 22.04 ships Python 3.10, the oldest one wb-onprem runs on.
+  fixtures-python-3-10:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Install PyYAML
+        run: |
+          python3 -m pip install --quiet pyyaml
           python3 -c 'import yaml'
 
       - name: Run fixture tests
