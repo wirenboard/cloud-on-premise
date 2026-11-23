@@ -178,7 +178,7 @@ services:
         condition: service_healthy
 
   redis:
-    image: redis:7.4.8-alpine
+    image: redis:7.4.12-alpine
     logging: *default-logging
     restart: always
     command: redis-server --save "" --appendonly no
@@ -496,7 +496,7 @@ services:
         condition: service_healthy
 
   clients-grafana:
-    image: grafana/grafana:12.2.2
+    image: grafana/grafana:12.4.14
     logging: *default-logging
     restart: always
     environment:
@@ -527,6 +527,17 @@ services:
       traefik.http.routers.clients_grafana.tls: "true"
       traefik.http.routers.clients_grafana.priority: "98"
       traefik.http.services.clients_grafana.loadbalancer.server.port: "3000"
+      # Writes only: the buffer holds the whole response, whose size the user sets on the bypassed paths.
+      traefik.http.routers.clients_grafana_write.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathRegexp(`(?i)^(/|%2F)+(api(/|%2F)+)?user(/|%2F)+password`) && !PathPrefix(`/metrics`) && !Method(`GET`) && !Method(`HEAD`) && !PathRegexp(`(?i)^(/|%2F)+(apis(/|%2F)+query[.]grafana[.]app|api(/|%2F)+ds(/|%2F)+query|api(/|%2F)+datasources(/|%2F)+.*(proxy|resources)|api(/|%2F)+plugins(/|%2F)+.*resources|api(/|%2F)+plugin-proxy|api(/|%2F)+v1(/|%2F)+(eval|rule(/|%2F)+(test|backtest)))`)"
+      traefik.http.routers.clients_grafana_write.entrypoints: "websecure"
+      traefik.http.routers.clients_grafana_write.service: "clients_grafana"
+      traefik.http.routers.clients_grafana_write.tls: "true"
+      traefik.http.routers.clients_grafana_write.priority: "99"
+      traefik.http.routers.clients_grafana_write.middlewares: "clients_grafana_inflight,clients_grafana_size_limit"
+      traefik.http.middlewares.clients_grafana_inflight.inflightreq.amount: "30"
+      traefik.http.middlewares.clients_grafana_inflight.inflightreq.sourcecriterion.ipstrategy.depth: "0"
+      traefik.http.middlewares.clients_grafana_size_limit.buffering.maxrequestbodybytes: "4194304"
+      traefik.http.middlewares.clients_grafana_size_limit.buffering.maxresponsebodybytes: "16777216"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health >/dev/null"]
       interval: 10s
