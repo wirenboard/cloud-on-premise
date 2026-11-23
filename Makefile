@@ -228,7 +228,9 @@ check-certs: check-cert-paths
 	@printf "Verifying key and certificate match...\n"
 	@CERT_PUB=$$(openssl x509 -noout -pubkey -in $(FULLCHAIN)); \
 	KEY_PUB=$$(openssl pkey -pubout -in $(PRIVKEY)); \
-	if [ "$$CERT_PUB" != "$$KEY_PUB" ]; then \
+	if [ -z "$$CERT_PUB" ] || [ -z "$$KEY_PUB" ]; then \
+		printf "$(RED)ERROR: openssl cannot read the certificate or the private key.$(NC)\n"; exit 1; \
+	elif [ "$$CERT_PUB" != "$$KEY_PUB" ]; then \
 		printf "$(RED)ERROR: Certificate and private key do not match.$(NC)\n"; exit 1; \
 	else \
 		printf "$(GREEN)Key and certificate match.$(NC)\n"; \

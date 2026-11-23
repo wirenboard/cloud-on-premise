@@ -51,6 +51,15 @@ for type in ec rsa; do
 done
 
 echo
+echo "files openssl cannot read are not a matching pair"
+setup
+echo "not pem" > tls/fullchain.pem
+echo "not pem" > tls/privkey.pem
+run_check; rc=$?
+check "unreadable certificate and key are refused" \
+    "$([ $rc -ne 0 ] && says "openssl cannot read the certificate or the private key" && ! says "Key and certificate match"; echo $?)"
+
+echo
 echo "a file named like a wildcard does not stand in for it"
 setup
 touch "a.$DOMAIN"
