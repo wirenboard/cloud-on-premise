@@ -35,22 +35,25 @@ def log_command(service):
 
 def log_tail(directory, service):
     _, out, _ = core.compose(directory, ["logs", "--no-color", "--tail", str(TAIL_LINES), service])
-    return out.strip().splitlines()[-TAIL_LINES:]
+    # Escape sequences from a container log would drive the terminal.
+    return ["".join(c if c.isprintable() else "?" for c in line) for line in out.strip().splitlines()[-TAIL_LINES:]]
 
 
 def container_items(directory, services, with_logs):
-    """Broken services with the log command, and the log tail when `with_logs`; all ok collapses into one item."""
+    """(items, services that are ok): broken services with the log command, and the log tail when `with_logs`;
+    all ok collapses into one item."""
     items = status.service_items(directory, services)
+    healthy = {it["name"] for it in items if it["status"] == OK and it["name"] in services}
     broken = [it for it in items if it["status"] != OK]
     if not broken:
-        return [item("containers", OK, f"{len(items)} services running or completed")]
+        return [item("containers", OK, f"{len(items)} services running or completed")], healthy
     for it in broken:
         if it["name"] not in services:
             continue
         tail = log_tail(directory, it["name"]) if with_logs else []
         it["detail"] += f"; log: `{log_command(it['name'])}`, after the fix `make run`"
         it["detail"] += "".join(f"\n    | {line}" for line in tail)
-    return broken
+    return broken, healthy
 
 
 def env_item(directory):
@@ -79,7 +82,7 @@ def key_item(cert, privkey):
     cert_key = public_key(["openssl", "x509", "-noout", "-pubkey", "-in", cert])
     if cert_key is None:
         return item("certificate key", FAIL, f"{cert}: openssl cannot read the certificate")
-    key = public_key(["openssl", "pkey", "-pubout", "-in", privkey])
+    key = public_key(["openssl", "pkey", "-pubout", "-passin", "pass:", "-in", privkey])
     if key is None:
         return item("certificate key", FAIL, f"{privkey}: openssl cannot read the private key")
     if key != cert_key:
@@ -94,10 +97,8 @@ def cert_names(path):
     if code != 0:
         return None
     lines = out.splitlines()
-    for i, line in enumerate(lines[:-1]):
-        if "X509v3 Subject Alternative Name" in line:
-            return [n.strip().removeprefix("DNS:") for n in lines[i + 1].split(",")]
-    return []
+    return [name.strip().removeprefix("DNS:") for i, line in enumerate(lines[:-1])
+            if "X509v3 Subject Alternative Name" in line for name in lines[i + 1].split(",")]
 
 
 def names_item(directory, cert):
@@ -153,12 +154,13 @@ def disk_items(directory):
 
 
 def published_ports(services):
-    ports = set()
-    for service in services.values():
+    """{port: services publishing it}"""
+    ports = {}
+    for name, service in services.items():
         for port in service.get("ports") or ():
             if str(port.get("published", "")).isdigit():
-                ports.add(int(port["published"]))
-    return sorted(ports)
+                ports.setdefault(int(port["published"]), set()).add(name)
+    return ports
 
 
 def listeners():
@@ -176,7 +178,8 @@ def listeners():
     return found
 
 
-def port_items(services, stack_running):
+def port_items(services, healthy):
+    """`healthy`: services that are running; a hidden owner of a port they publish is taken to be Docker."""
     ports = published_ports(services)
     found = listeners()
     if found is None:
@@ -184,15 +187,17 @@ def port_items(services, stack_running):
     if not ports:
         return [item("ports", OK, "the stack publishes no ports")]
     items = []
-    for port in ports:
+    for port, publishers in sorted(ports.items()):
         owners = found.get(port, set())
         foreign = sorted(owners - {None, *DOCKER_PROCESSES})
+        down = sorted(publishers - healthy)
         if foreign:
             items.append(item(f"port {port}", FAIL,
                               f"taken by {', '.join(foreign)}, stop it or publish the stack on another port"))
-        elif None in owners and not stack_running:
-            items.append(item(f"port {port}", WARN, "in use while the stack is stopped, run as root to see by whom"))
-    return items or [item("ports", OK, ", ".join(map(str, ports)) + " free or used by Docker")]
+        elif None in owners and down:
+            items.append(item(f"port {port}", WARN,
+                              f"in use while {', '.join(down)} is not running, run as root to see by whom"))
+    return items or [item("ports", OK, ", ".join(map(str, sorted(ports))) + " free or used by Docker")]
 
 
 def clock_item():
@@ -215,12 +220,15 @@ def build(directory, args):
         services = None
         if docker["status"] == OK:
             services, failed = status.compose_config(directory)
-            items += [failed] if failed else container_items(directory, services, not getattr(args, "json", False))
+            if failed:
+                items.append(failed)
+            else:
+                containers, healthy = container_items(directory, services, not getattr(args, "json", False))
+                items += containers
         items.append(env_item(directory))
         items += cert_items(directory)
         items += disk_items(directory)
         if services is not None:
-            stack_running = not any(it["name"] == "containers" and it["status"] == FAIL for it in items)
-            items += port_items(services, stack_running)
+            items += port_items(services, healthy)
         items.append(clock_item())
     return {"status": core.worst(it["status"] for it in items), "items": items, "facts": status.facts(directory)}

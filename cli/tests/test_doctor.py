@@ -59,10 +59,11 @@ ENV = {
 Usage = collections.namedtuple("Usage", "total used free")
 
 
-def make_cert(cert, key, days=90, names=NAMES, algorithm=("-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1")):
+def make_cert(cert, key, days=90, names=NAMES, algorithm=("-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"),
+              subject="/CN=t"):
     san = ",".join(f"DNS:{name}" for name in names)
     subprocess.run(["openssl", "req", "-x509", *algorithm, "-nodes", "-keyout", str(key), "-out", str(cert),
-                    "-days", str(days), "-subj", "/CN=t", "-addext", f"subjectAltName={san}"],
+                    "-days", str(days), "-subj", subject, "-addext", f"subjectAltName={san}"],
                    check=True, capture_output=True)
 
 
@@ -197,6 +198,14 @@ class DoctorTest(unittest.TestCase):
         self.assertNotIn("line 11\n", text)
         self.assertNotIn("compose-stderr-marker", text)
 
+    def test_log_tail_control_characters_are_not_printed(self):
+        self.set_services({"worker": []}, [{"Service": "worker", "State": "restarting", "ExitCode": 1}])
+        self.fake("logs", out="worker-1  | \x1b]0;title\x07\x1b[2Jcleared")
+        _, text = self.run_doctor(as_json=False)
+        self.assertIn("cleared", text)
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\x07", text)
+
     def test_log_tail_that_is_not_utf8(self):
         self.set_services({"worker": []}, [{"Service": "worker", "State": "restarting", "ExitCode": 1}])
         (self.bin / "logs.out").write_bytes(b"worker-1  | \xff\xfe broken bytes\n")
@@ -240,6 +249,21 @@ class DoctorTest(unittest.TestCase):
         self.assertEqual(env["status"], "fail")
         self.assertIn("Required variable 'SECRET_KEY' is missing", env["detail"])
         self.assertNotIn("\x1b", env["detail"])
+
+    def test_env_check_shows_only_its_error_lines(self):
+        (self.bin / "make").write_text(f"""#!/bin/sh
+case "$*" in
+  *check-env*) printf '\\033[0;31mERROR: Required variable X is missing\\033[0m\\n'
+               echo "POSTGRES_PASSWORD={SECRET}"; exit 2 ;;
+esac
+exec {shutil.which("make")} "$@"
+""")
+        (self.bin / "make").chmod(0o755)
+        for as_json in (True, False):
+            _, out = self.run_doctor(as_json)
+            text = json.dumps(out) if as_json else out
+            self.assertIn("Required variable X is missing; run `make check-env`", text)
+            self.assertNotIn(SECRET, text)
 
     def test_env_missing_or_empty(self):
         for content in (None, ""):
@@ -287,6 +311,52 @@ class DoctorTest(unittest.TestCase):
                 self.assertEqual({name: got[name][0] for name in expected if name in got}, expected, got)
                 if "fail" in expected.values():
                     self.assertTrue(any("make reload-certs" in detail for _, detail in got.values()), got)
+
+    def test_unreadable_key_or_certificate(self):
+        for name, expected in (("privkey.pem", "openssl cannot read the private key"),
+                               ("fullchain.pem", "openssl cannot read the certificate")):
+            with self.subTest(name):
+                make_cert(self.tls / "fullchain.pem", self.tls / "privkey.pem")
+                (self.tls / name).write_text("not pem\n")
+                self.assertEqual(self.cert()["certificate key"], ("fail", f"{self.tls / name}: {expected}"))
+        self.assertEqual(self.cert()["certificate names"],
+                         ("warn", f"{self.tls / 'fullchain.pem'}: openssl cannot read the names"))
+
+    def test_empty_openssl_output_is_not_a_match(self):
+        (self.bin / "openssl").write_text("#!/bin/sh\nexit 0\n")
+        (self.bin / "openssl").chmod(0o755)
+        got = doctor.key_item(str(self.tls / "fullchain.pem"), str(self.tls / "privkey.pem"))
+        self.assertEqual(got["status"], "fail")
+
+    def test_encrypted_key_does_not_wait_for_a_password(self):
+        subprocess.run(["openssl", "genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-aes256",
+                        "-pass", "pass:x", "-out", str(self.tls / "privkey.pem")], check=True, capture_output=True)
+        (self.bin / "openssl").write_text(f'#!/bin/sh\necho "$*" >> "${{0%/*}}/openssl-calls"\n'
+                                          f'exec {shutil.which("openssl")} "$@"\n')
+        (self.bin / "openssl").chmod(0o755)
+        self.assertEqual(self.cert()["certificate key"][0], "fail")
+        pkey = [c for c in (self.bin / "openssl-calls").read_text().splitlines() if c.startswith("pkey ")]
+        self.assertTrue(pkey and all("-passin pass: " in c for c in pkey), pkey)
+
+    def test_common_name_like_the_san_header(self):
+        make_cert(self.tls / "fullchain.pem", self.tls / "privkey.pem", subject="/CN=X509v3 Subject Alternative Name")
+        self.assertEqual(self.cert()["certificate names"][0], "ok")
+
+    def test_names_agree_with_make_check_certs(self):
+        cases = {
+            "all names": ({}, "ok"),
+            "one missing": ({"names": NAMES[:-1]}, "fail"),
+            "common name like the SAN header": ({"subject": "/CN=X509v3 Subject Alternative Name"}, "ok"),
+            "file named like a wildcard": ({"names": [DOMAIN, f"a.{DOMAIN}"] + NAMES[2:]}, "fail"),
+        }
+        (self.install / f"a.{DOMAIN}").write_text("")
+        for case, (kwargs, expected) in cases.items():
+            with self.subTest(case):
+                make_cert(self.tls / "fullchain.pem", self.tls / "privkey.pem", **kwargs)
+                got = self.cert()["certificate names"][0]
+                make = subprocess.run(["make", "-s", "check-certs"], cwd=self.install, capture_output=True, text=True)
+                self.assertEqual(got, expected)
+                self.assertEqual(make.returncode == 0, got == "ok", make.stdout + make.stderr)
 
     def test_directory_stops_the_certificate_check(self):
         for name in ("fullchain.pem", "privkey.pem"):
@@ -380,6 +450,8 @@ class DoctorTest(unittest.TestCase):
             ([ss_line(8443, "nginx"), ss_line(7107, "docker-proxy")], 2, {"port 8443": "fail"}),
             ([ss_line(7107, "sshd")], 2, {"port 7107": "fail"}),
             ([ss_line(8443), ss_line(7107)], 0, {"ports": "ok"}),
+            ([ss_line(8443, "dockerd"), ss_line(7107, "rootlesskit")], 0, {"ports": "ok"}),
+            (["LISTEN 0 4096", ss_line(8443, "docker-proxy"), ss_line(7107, "docker-proxy")], 0, {"ports": "ok"}),
         )
         for lines, code, expected in cases:
             with self.subTest(lines=lines):
@@ -413,6 +485,16 @@ class DoctorTest(unittest.TestCase):
         _, report = self.run_doctor()
         self.assertEqual(self.items(report)["port 443"]["status"], "warn")
         self.assertIn("run as root", self.items(report)["port 443"]["detail"])
+
+    def test_port_owner_hidden_while_its_service_is_down(self):
+        self.set_services({"traefik": ["443"], "tunnel": ["7107"]},
+                          [{"Service": "traefik", "State": "restarting", "ExitCode": 1}, running("tunnel")])
+        self.fake("ss", out="\n".join([ss_line(443), ss_line(7107)]))
+        _, report = self.run_doctor()
+        self.assertEqual(self.items(report)["port 443"],
+                         {"name": "port 443", "status": "warn",
+                          "detail": "in use while traefik is not running, run as root to see by whom"})
+        self.assertNotIn("port 7107", self.items(report))
 
     def test_ss_failure_warns(self):
         self.fake("ss", rc=1)
