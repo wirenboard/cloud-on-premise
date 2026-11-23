@@ -564,7 +564,7 @@ services:
         condition: service_healthy
 
   seaweedfs:
-    image: chrislusf/seaweedfs:4.53
+    image: ghcr.io/wirenboard/on-premise/seaweedfs:4.53
     logging: *default-logging
     volumes:
       - seaweedfsData:/data
@@ -594,7 +594,7 @@ services:
 
   # Backstop for the backend's own 15-minute cleanup of diagnostic archives.
   seaweedfs-init:
-    image: chrislusf/seaweedfs:4.53
+    image: ghcr.io/wirenboard/on-premise/seaweedfs:4.53
     logging: *default-logging
     entrypoint:
       - /bin/sh
