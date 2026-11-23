@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import traceback
 
@@ -27,7 +28,7 @@ def build_parser():
     p.add_argument("--version", action="version", version=f"wb-onprem {__version__}")
     sub = p.add_subparsers(dest="command", metavar="command")
     for name, command in COMMANDS.items():
-        command.add_arguments(sub.add_parser(name, parents=[common], help=command.HELP))
+        command.add_arguments(sub.add_parser(name, parents=[common], help=command.HELP, description=command.HELP))
     return p
 
 
@@ -49,5 +50,9 @@ def main(argv=None):
     except Exception:
         traceback.print_exc()
         return core.EXIT_START_ERROR
-    core.emit(report, getattr(args, "json", False))
+    try:
+        core.emit(report, getattr(args, "json", False))
+    except BrokenPipeError:
+        # `| head` closed the pipe; without this Python reports the error again when it flushes stdout at exit.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
     return core.exit_code(report["status"])

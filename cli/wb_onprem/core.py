@@ -49,7 +49,7 @@ def find_dir(arg=None):
     if _is_installation(os.getcwd()):
         return os.getcwd()
     configured = _config_dir()
-    if configured:
+    if configured is not None:
         return _checked(configured, CONFIG_PATH)
     if _is_installation(DEFAULT_DIR):
         return DEFAULT_DIR

@@ -3,7 +3,10 @@
 import contextlib
 import io
 import json
+import os
 import pathlib
+import subprocess
+import sys
 import tempfile
 import types
 import unittest
@@ -76,7 +79,7 @@ class CommandTest(unittest.TestCase):
                 self.assertEqual(code, expected)
 
     def test_installation_not_found_is_a_start_error(self):
-        code, out, err = self.run_probe(["probe", "--dir", str(self.install / "missing")])
+        code, out, err = self.run_probe(["probe", "--json", "--dir", str(self.install / "missing")])
         self.assertEqual((code, out), (3, ""))
         self.assertIn("not an installation directory", err)
 
@@ -85,6 +88,25 @@ class CommandTest(unittest.TestCase):
             with self.subTest(argv=argv):
                 code, _, _ = self.run_probe(argv)
                 self.assertEqual(code, 3)
+
+    def test_command_help_describes_it(self):
+        code, out, _ = self.run_probe(["probe", "--help"])
+        self.assertEqual(code, 0)
+        self.assertIn("\ntest command\n", out)
+
+    def test_closed_output_pipe_is_not_an_error(self):
+        script = ("import sys, types; from wb_onprem import cli; "
+                  "items = [{'name': str(i), 'status': 'ok', 'detail': 'x' * 100} for i in range(10000)]; "
+                  "cli.COMMANDS['probe'] = types.SimpleNamespace(HELP='', add_arguments=lambda p: None, "
+                  "build=lambda d, a: {'status': 'ok', 'items': items, 'facts': {}}); "
+                  "sys.exit(cli.main(['probe', '--dir', sys.argv[1]]))")
+        with subprocess.Popen([sys.executable, "-c", script, str(self.install)], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, env={**os.environ, "PYTHONPATH": str(REPO / "cli")}) as p:
+            p.stdout.readline()
+            p.stdout.close()
+            err = p.stderr.read().decode()
+        self.assertEqual(p.returncode, 0, err)
+        self.assertEqual(err, "")
 
     def test_crash_inside_a_command_is_a_start_error(self):
         broken = types.SimpleNamespace(HELP="broken", add_arguments=lambda parser: None, build=lambda d, a: 1 / 0)

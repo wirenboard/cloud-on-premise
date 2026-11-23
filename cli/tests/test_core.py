@@ -98,6 +98,17 @@ class FindDirTest(unittest.TestCase):
         with self.assertRaisesRegex(core.CliError, "WB_ONPREM_DIR"):
             core.find_dir(None)
 
+    def test_config_key_is_matched_exactly(self):
+        conf = make_installation(self.root / "conf")
+        self.write_config(f"directory={self.root / 'missing'}\ndir={conf}\n")
+        self.assertEqual(core.find_dir(None), str(conf))
+
+    def test_empty_config_dir_is_reported_not_skipped(self):
+        make_installation(self.default)
+        self.write_config("dir=\n")
+        with self.assertRaisesRegex(core.CliError, "config"):
+            core.find_dir(None)
+
     def test_broken_config_is_reported_not_skipped(self):
         make_installation(self.default)
         self.write_config(f"dir={self.root / 'missing'}\n")
