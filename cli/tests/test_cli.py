@@ -94,18 +94,29 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("\ntest command\n", out)
 
-    def test_closed_output_pipe_is_not_an_error(self):
+    def probe_process(self, status, count, **kwargs):
         script = ("import sys, types; from wb_onprem import cli; "
-                  "items = [{'name': str(i), 'status': 'ok', 'detail': 'x' * 100} for i in range(10000)]; "
+                  "items = [{'name': str(i), 'status': 'ok', 'detail': 'x' * 100} for i in range(int(sys.argv[3]))]; "
                   "cli.COMMANDS['probe'] = types.SimpleNamespace(HELP='', add_arguments=lambda p: None, "
-                  "build=lambda d, a: {'status': 'ok', 'items': items, 'facts': {}}); "
+                  "build=lambda d, a: {'status': sys.argv[2], 'items': items, 'facts': {}}); "
                   "sys.exit(cli.main(['probe', '--dir', sys.argv[1]]))")
-        with subprocess.Popen([sys.executable, "-c", script, str(self.install)], stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, env={**os.environ, "PYTHONPATH": str(REPO / "cli")}) as p:
+        return subprocess.Popen([sys.executable, "-c", script, str(self.install), status, str(count)],
+                                stderr=subprocess.PIPE, env={**os.environ, "PYTHONPATH": str(REPO / "cli")}, **kwargs)
+
+    def test_closed_output_pipe_is_not_an_error(self):
+        with self.probe_process("ok", 10000, stdout=subprocess.PIPE) as p:
             p.stdout.readline()
             p.stdout.close()
             err = p.stderr.read().decode()
         self.assertEqual(p.returncode, 0, err)
+        self.assertEqual(err, "")
+
+    def test_small_report_into_a_closed_pipe_keeps_its_exit_code(self):
+        read, write = os.pipe()
+        os.close(read)
+        with os.fdopen(write, "wb") as out, self.probe_process("warn", 0, stdout=out) as p:
+            err = p.stderr.read().decode()
+        self.assertEqual(p.returncode, 1, err)
         self.assertEqual(err, "")
 
     def test_crash_inside_a_command_is_a_start_error(self):

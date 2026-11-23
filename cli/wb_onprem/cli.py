@@ -52,6 +52,7 @@ def main(argv=None):
         return core.EXIT_START_ERROR
     try:
         core.emit(report, getattr(args, "json", False))
+        sys.stdout.flush()
     except BrokenPipeError:
         # `| head` closed the pipe; without this Python reports the error again when it flushes stdout at exit.
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
