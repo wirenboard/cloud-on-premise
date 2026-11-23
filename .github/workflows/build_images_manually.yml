@@ -69,3 +69,10 @@ jobs:
               "GROUP": "on-premise",
               "REF": "${{ inputs.REF || github.ref_name }}"
             }
+
+  explain-guard:
+    if: inputs.REGISTRY == 'ghcr.io'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build_explain_guard.yml

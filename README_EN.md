@@ -301,6 +301,8 @@ make run
 
 ✅ Your cloud is now ready.
 
+> 💡 In `docker compose ps -a` the `explain-guard` and `timescale-init` services stay `Exited (0)`: they are one-off start-up tasks, this is expected.
+
 ---
 
 ## ▶️ Usage

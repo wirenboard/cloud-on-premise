@@ -33,6 +33,7 @@ network.
 | postgres | — | no | Database, docker network only |
 | redis | — | no | Cache/broker, internal network only |
 | timescale (TimescaleDB) | — | no | Controller metrics storage, docker network only; no host port published |
+| explain-guard | — | no | One-off start-up task: puts the `wb_explain_guard` library for timescale into a volume and exits |
 | telegraf | — | no | Controller metrics ingest; reachable through Traefik: `https://metrics-ingest.your-domain.com` (mTLS) |
 | clients-grafana (Grafana) | — | no | User metrics dashboards; reachable through Traefik: `https://metrics.your-domain.com` |
 | minio | — | no | Object storage, internal network only |
@@ -211,7 +212,7 @@ network.
 |-------------|------|------|--------------------|
 | WB metrics | `on-premise-metrics.wirenboard.cloud` | 443 | Blocking = new controllers cannot be added (sending is mandatory in the free edition) |
 | Email | `EMAIL_HOST` (SMTP) | `EMAIL_PORT` (587 in the example) | Yes — set `EMAIL_ENABLED=False` (invitations are then shared as links from the admin panel) |
-| Docker images (install/upgrade) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, telegraf, grafana, minio, traefik) | 443 | Needed only during install/upgrade; can stay blocked the rest of the time |
+| Docker images (install/upgrade) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, wbc-explain-guard, telegraf, grafana, minio, traefik) | 443 | Needed only during install/upgrade; can stay blocked the rest of the time |
 | Session geolocation database | `download.db-ip.com` | 443 | Yes — needed only with `GEOIP_ENABLED=True`, and only while the database downloads (`make run`, `make update-geoip`) |
 
 > **TLS certificates.** The installation does **not** fetch certificates from

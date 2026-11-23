@@ -34,6 +34,8 @@ for f in docker-compose.yml timescale/10-apply-init.sh timescale/init.sql.tmpl; 
 done
 chmod +x "$WORK/old/timescale/10-apply-init.sh"
 cp -R "$ROOT/docker-compose.yml" "$ROOT/timescale" "$WORK/new/"
+TIMESCALE_IMAGE="$(sed -nE 's#^ +image: (timescale/timescaledb-ha:[^ ]+)$#\1#p' "$ROOT/docker-compose.yml" | sort -u)"
+GUARD_IMAGE="$(sed -nE 's#^ +image: (.+/wbc-explain-guard:[^ ]+)$#\1#p' "$ROOT/docker-compose.yml")"
 cat "$ROOT/.env.example" > "$WORK/env"
 printf '%s=x\n' VERSION ABSOLUTE_SERVER ABSOLUTE_SERVER_REGEX SECRET_KEY PRIVATE_KEY PUBLIC_KEY \
     TUNNEL_AUTH_TOKEN TUNNEL_DASHBOARD_USER TUNNEL_DASHBOARD_PASSWORD ADMIN_EMAIL ADMIN_PASSWORD >> "$WORK/env"
@@ -60,12 +62,95 @@ leak_probes() { # tree project -> every value a client gets to see from org view
     client_sql "$1" "$2" metrics "SELECT count(*) FROM org_controllers WHERE host::int >= 0"
     client_sql "$1" "$2" metrics "SELECT count(*) FROM mqtt_metrics_topics_readable WHERE host::int >= 0"
 }
+# Organisation B's host, so a plan or its row estimate tells a client how much B has.
+EXPLAINED="SELECT * FROM mqtt_metrics_readable WHERE host = 'HOSTB'"
+explain_probes() { # tree project -> a plan or an error from each way to run EXPLAIN
+    client_sql "$1" "$2" metrics "EXPLAIN $EXPLAINED"
+    client_sql "$1" "$2" metrics "EXPLAIN ANALYZE $EXPLAINED"
+    client_sql "$1" "$2" metrics "PREPARE q AS $EXPLAINED; EXPLAIN EXECUTE q"
+    client_sql "$1" "$2" metrics "DO \$\$ DECLARE r text; BEGIN
+        FOR r IN EXECUTE 'EXPLAIN ANALYZE $(printf '%s' "$EXPLAINED" | sed "s/'/''/g")' LOOP RAISE NOTICE '%', r; END LOOP; END \$\$"
+    client_sql "$1" "$2" metrics "
+        CREATE FUNCTION pg_temp.plan() RETURNS SETOF text LANGUAGE plpgsql
+          AS \$\$ BEGIN RETURN QUERY EXECUTE 'EXPLAIN $(printf '%s' "$EXPLAINED" | sed "s/'/''/g")'; END \$\$;
+        SELECT pg_temp.plan()"
+}
+debug_plan_probes() { # tree project -> the planner's tree sent as LOG messages
+    client_sql "$1" "$2" metrics "SET client_min_messages = debug5; SET debug_print_plan = on; $EXPLAINED"
+    client_sql "$1" "$2" metrics "SELECT set_config('client_min_messages', 'log', false), set_config('debug_print_parse', 'on', false),
+        set_config('debug_print_rewritten', 'on', false); $EXPLAINED"
+}
+ORG_A_ROLE="org_${ORG_A//-/_}"
+TABLE_QUERY="SELECT count(*) FROM mqtt_metrics WHERE host = 'HOSTB'"
+set_role_probes() { # tree project -> what a client gets after switching to its organisation role; the table is planned before it is refused
+    client_sql "$1" "$2" metrics "SET ROLE $ORG_A_ROLE; SET client_min_messages = debug5; SET debug_print_plan = on; $TABLE_QUERY"
+    client_sql "$1" "$2" metrics "SET ROLE $ORG_A_ROLE; EXPLAIN $TABLE_QUERY"
+}
+definer_probe() { # tree project -> what a client gets from the owner's query in a SECURITY DEFINER function
+    su_sql "$1" "$2" "CREATE FUNCTION public.definer_probe() RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER
+        AS \$\$ BEGIN RETURN ($TABLE_QUERY); END \$\$;
+        GRANT EXECUTE ON FUNCTION public.definer_probe() TO client_a" >/dev/null
+    client_sql "$1" "$2" metrics "SET client_min_messages = debug5; SET debug_print_plan = on; SELECT public.definer_probe()"
+    su_sql "$1" "$2" "DROP FUNCTION public.definer_probe()" >/dev/null
+}
+# Statistics a client must not reach, and which of them the caller can.
+STATS_GRANTS="SELECT coalesce(string_agg(o, ',' ORDER BY o), '') FROM (
+    SELECT proname::text FROM pg_proc
+    WHERE proname IN ('pg_stat_statements', 'pg_stat_statements_info', 'chunk_statistics') AND has_function_privilege(oid, 'EXECUTE')
+    UNION ALL
+    SELECT 'stat_chunk_activity' WHERE has_table_privilege(to_regclass('timescaledb_information.stat_chunk_activity'), 'SELECT')) s(o)"
+grafana_sql() { # tree project sql
+    dc "$1" "$2" exec -T -e PGPASSWORD=grafana_timescale_password timescale \
+        psql -X -tA -h 127.0.0.1 -U grafana -d metrics -c "$3" 2>&1
+}
+denied_explains() { printf '%s\n' "$1" | grep -c "permission denied to run EXPLAIN"; }
+guard_checks() { # tree project -- what a client and the service roles may do in a store with the guard
+    local out
+    out="$(explain_probes "$1" "$2")"
+    check "EXPLAIN, EXPLAIN ANALYZE, EXPLAIN EXECUTE and EXPLAIN in DO are refused to a client" \
+        "$(is "$(denied_explains "$out")" 4; echo $?)"
+    check "a client cannot create a pg_temp function to run EXPLAIN in" \
+        "$(has "$out" "permission denied to create temporary tables"; echo $?)"
+    check "no plan reaches a client" "$(! has "$out" "rows=" && ! has "$out" "Rows Removed"; echo $?)"
+    out="$(debug_plan_probes "$1" "$2")"
+    check "debug_print_* send no plan tree to a client" "$(! has "$out" ":rtable" && ! has "$out" "plan_rows"; echo $?)"
+    check "and the client's query still runs" "$(! has "$out" ERROR; echo $?)"
+    check "a client cannot create temporary tables" \
+        "$(has "$(client_sql "$1" "$2" metrics "CREATE TEMP TABLE t(x int)")" "permission denied"; echo $?)"
+    check "a client cannot connect to template1" \
+        "$(has "$(client_sql "$1" "$2" template1 "SELECT 1")" "permission denied for database"; echo $?)"
+    check "a client at debug5 receives no LOG message" "$(! has "$(debug_plan_probes "$1" "$2")" "LOG:"; echo $?)"
+    out="$(set_role_probes "$1" "$2")"
+    check "after SET ROLE to its organisation role a client gets no plan tree" "$(! has "$out" "plan_rows" && ! has "$out" "LOG:"; echo $?)"
+    check "after SET ROLE to its organisation role EXPLAIN is still refused" "$(has "$out" "permission denied to run EXPLAIN"; echo $?)"
+    check "a SECURITY DEFINER function sends a client no plan of the owner's query" \
+        "$(out="$(definer_probe "$1" "$2")"; ! has "$out" ERROR && ! has "$out" "plan_rows"; echo $?)"
+    check "a client cannot run ensure_measurement" \
+        "$(has "$(client_sql "$1" "$2" metrics "CALL ensure_measurement('mqtt_metrics')")" "permission denied for procedure"; echo $?)"
+    check "a client cannot read TimescaleDB or pg_stat_statements statistics" "$(is "$(client_sql "$1" "$2" metrics "$STATS_GRANTS")" ""; echo $?)"
+    check "the exporter role reads them and creates a temporary table" "$(out="$(su_sql "$1" "$2" "SET ROLE ts_exporter; $STATS_GRANTS")"
+        has "$out" "pg_stat_statements" && has "$(su_sql "$1" "$2" "SET ROLE ts_exporter; CREATE TEMP TABLE t(x int)" 2>&1)" "CREATE TABLE"; echo $?)"
+    check "telegraf runs ensure_measurement and creates a temporary table" \
+        "$(su_sql "$1" "$2" "SET ROLE telegraf; CALL ensure_measurement('mqtt_metrics'); CREATE TEMP TABLE t(x int)" >/dev/null 2>&1; echo $?)"
+    check "timescale sends LOG messages to its log, where the guard sees them" \
+        "$(is "$(su_sql "$1" "$2" "SHOW log_min_messages")" warning; echo $?)"
+    check "the superuser gets a plan" "$(has "$(su_sql "$1" "$2" "EXPLAIN $EXPLAINED")" "rows="; echo $?)"
+    check "the Grafana role gets a plan and a temporary table" "$(has "$(grafana_sql "$1" "$2" "EXPLAIN $EXPLAINED")" "rows=" \
+        && has "$(grafana_sql "$1" "$2" "CREATE TEMP TABLE t(x int)")" "CREATE TABLE"; echo $?)"
+}
+
 stats_probes() { # tree project
     client_sql "$1" "$2" metrics "SELECT count(*) FROM pg_stat_user_tables"
     client_sql "$1" "$2" metrics "SELECT count(*) FROM pg_statio_user_tables"
     client_sql "$1" "$2" metrics "SELECT pg_stat_get_tuples_returned('pg_class'::regclass)"
 }
 
+echo "the EXPLAIN guard image"
+check "is tagged as the timescale image it is built against" "$([[ "${GUARD_IMAGE##*:}" =~ ^"${TIMESCALE_IMAGE##*:}"(-r[0-9]+)?$ ]]; echo $?)"
+docker build -q --build-arg TIMESCALE_IMAGE="$TIMESCALE_IMAGE" -t "$GUARD_IMAGE" "$ROOT/explain-guard" >/dev/null
+check "builds" "$?"
+
+echo
 echo "$BASE_REF store with two organisations and a compressed chunk"
 dc old "$PROJECT" up -d --wait timescale >/dev/null 2>&1 || { echo "  FAIL old timescale did not start"; exit 1; }
 init old "$PROJECT" >/dev/null
@@ -94,6 +179,12 @@ out="$(leak_probes old "$PROJECT")"
 check "a failing condition reveals organisation B's rows" "$(has "$out" secret-b- || has "$out" HOSTB; echo $?)"
 out="$(stats_probes old "$PROJECT")"
 check "statistics are readable" "$(! has "$out" "permission denied"; echo $?)"
+out="$(explain_probes old "$PROJECT")"
+check "every way to run EXPLAIN shows a plan" "$(is "$(printf '%s\n' "$out" | grep -c "Result  (cost")" 5; echo $?)"
+check "EXPLAIN ANALYZE counts organisation B's rows" "$(has "$out" "Rows Removed by Filter: 50"; echo $?)"
+check "debug_print_* send the plan tree" "$(has "$(debug_plan_probes old "$PROJECT")" "plan_rows"; echo $?)"
+check "a client creates temporary tables" "$(has "$(client_sql old "$PROJECT" metrics "CREATE TEMP TABLE t(x int)")" "CREATE TABLE"; echo $?)"
+check "a client connects to template1" "$(is "$(client_sql old "$PROJECT" template1 "SELECT 1")" 1; echo $?)"
 
 echo
 echo "upgrade to this tree"
@@ -125,8 +216,15 @@ out="$(leak_probes new "$PROJECT")"
 check "no error reveals organisation B's rows" "$(! has "$out" secret-b- && ! has "$out" HOSTB; echo $?)"
 out="$(stats_probes new "$PROJECT")"
 check "every statistics probe is refused" "$(is "$(printf '%s\n' "$out" | grep -c "permission denied")" 3; echo $?)"
+guard_checks new "$PROJECT"
 check "readable views keep the newest rows first" "$(is "$(su_sql new "$PROJECT" "
     SELECT count(*) FROM pg_views WHERE viewname IN ('mqtt_metrics_readable', 'mqtt_metrics_numeric_readable') AND definition ~ 'ORDER BY \"?time\"? DESC'")" 2; echo $?)"
+
+echo
+echo "the guard after a restart of timescale alone"
+dc new "$PROJECT" restart timescale >/dev/null 2>&1
+for _ in $(seq 60); do su_sql new "$PROJECT" "SELECT 1" >/dev/null 2>&1 && break; sleep 1; done
+check "EXPLAIN is still refused to a client" "$(is "$(denied_explains "$(explain_probes new "$PROJECT")")" 4; echo $?)"
 
 echo
 echo "a public view readable by clients without security_barrier stops timescale-init"
@@ -140,9 +238,12 @@ echo "fresh install of this tree"
 dc new "$PROJECT-fresh" up -d --wait timescale >/dev/null 2>&1 || { echo "  FAIL fresh timescale did not start"; exit 1; }
 init new "$PROJECT-fresh" >/dev/null; rc=$?
 check "timescale-init succeeds on a fresh volume" "$rc"
-su_sql new "$PROJECT-fresh" "CREATE ROLE client_a LOGIN PASSWORD 'client_pw'; GRANT views_reader TO client_a" >/dev/null 2>&1
+su_sql new "$PROJECT-fresh" "CALL ensure_measurement('mqtt_metrics');
+    CREATE ROLE client_a LOGIN PASSWORD 'client_pw'; GRANT views_reader TO client_a;
+    CALL auth.grant_org_role('client_a', '$ORG_A')" >/dev/null 2>&1
 out="$(stats_probes new "$PROJECT-fresh")"
 check "statistics are refused to a client" "$(is "$(printf '%s\n' "$out" | grep -c "permission denied")" 3; echo $?)"
+guard_checks new "$PROJECT-fresh"
 
 echo
 if [ "$failures" -eq 0 ]; then echo "all passed"; else echo "$failures failed"; exit 1; fi

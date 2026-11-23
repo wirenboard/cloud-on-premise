@@ -30,6 +30,7 @@ Traefik (443) — `https://metrics-ingest.your-domain.com` (Telegraf, mTLS), а
 | postgres | — | нет | БД, только внутри docker-сети |
 | redis | — | нет | Кэш/брокер, только внутри сети |
 | timescale (TimescaleDB) | — | нет | Хранилище метрик контроллеров, только внутри docker-сети; host-порт не публикуется |
+| explain-guard | — | нет | Разовая задача при запуске: кладёт библиотеку `wb_explain_guard` для timescale в том и завершается |
 | telegraf | — | нет | Приём метрик с контроллеров; доступен через Traefik: `https://metrics-ingest.your-domain.com` (mTLS) |
 | clients-grafana (Grafana) | — | нет | Пользовательские дашборды метрик; доступна через Traefik: `https://metrics.your-domain.com` |
 | minio | — | нет | Объектное хранилище, только внутри сети |
@@ -203,7 +204,7 @@ minio / backend:8000 / webssh:8888 — они только внутри docker-�
 |------------|------|------|----------------|
 | Метрики WB | `on-premise-metrics.wirenboard.cloud` | 443 | Закрытие = нельзя добавлять контроллеры (в бесплатной версии отправка обязательна) |
 | Почта | `EMAIL_HOST` (SMTP) | `EMAIL_PORT` (в примере 587) | Да — задайте `EMAIL_ENABLED=False` (приглашения тогда передаются ссылкой из админ-панели) |
-| Docker-образы (установка/обновление) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, telegraf, grafana, minio, traefik) | 443 | Нужен только на время установки/обновления; в остальное время можно закрыть |
+| Docker-образы (установка/обновление) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, wbc-explain-guard, telegraf, grafana, minio, traefik) | 443 | Нужен только на время установки/обновления; в остальное время можно закрыть |
 | База геолокации сессий | `download.db-ip.com` | 443 | Да — нужен только при `GEOIP_ENABLED=True` и только в момент загрузки базы (`make run`, `make update-geoip`) |
 
 > **TLS-сертификаты.** Инсталляция сама наружу за сертификатами **не ходит** —

@@ -102,12 +102,25 @@ services:
     volumes:
       - postgresData:/var/lib/postgresql/data
 
+  # Puts wb_explain_guard into a volume for timescale; tagged as the timescale image it is built against.
+  explain-guard:
+    image: ghcr.io/wirenboard/on-premise/wbc-explain-guard:pg17.11-ts2.30.2
+    logging: *default-logging
+    restart: "no"
+    volumes:
+      - explainGuard:/out
+
   timescale:
     # timescaledb-ha image, but run as a plain single PostgreSQL instance
     # (no Patroni / etcd / HAProxy — those are upstream HA-only concerns).
     image: timescale/timescaledb-ha:pg17.11-ts2.30.2
     logging: *default-logging
     restart: always
+    # Overrides postgresql.conf; the first two libraries are the image's, the guard sees only server-logged messages.
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb,pg_textsearch,/opt/wbguard/wb_explain_guard", "-c", "log_min_messages=warning"]
+    depends_on:
+      explain-guard:
+        condition: service_completed_successfully
     environment:
       # The three passwords are generated into .env by 'make generate-env' and are
       # required by check-env: the literals below are only a bare-compose fallback.
@@ -125,6 +138,7 @@ services:
       TZ: UTC
     volumes:
       - timescaleData:/home/postgres/pgdata
+      - explainGuard:/opt/wbguard:ro
       # init.sql.tmpl is rendered + applied by 10-apply-init.sh on first init.
       - ./timescale/10-apply-init.sh:/docker-entrypoint-initdb.d/10-apply-init.sh:ro
       - ./timescale/init.sql.tmpl:/timescale/init.sql.tmpl:ro
@@ -561,6 +575,7 @@ networks:
 
 volumes:
   timescaleData: {}
+  explainGuard: {}
   postgresData: {}
   minioData: {}
   clientsGrafanaData: {}
