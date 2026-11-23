@@ -105,6 +105,32 @@ class FindDirTest(unittest.TestCase):
             core.find_dir(None)
 
 
+class RunTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = pathlib.Path(tmp.name)
+
+    def test_missing_command(self):
+        self.assertEqual(core.run(["no-such-tool-7f3a", "arg"]), (127, "", "no-such-tool-7f3a: command not found"))
+
+    def test_output_that_is_not_utf8(self):
+        self.assertEqual(core.run(["sh", "-c", r"printf 'a\377\376b'"]), (0, "a\ufffd\ufffdb", ""))
+
+    def test_command_that_is_not_executable(self):
+        (self.root / "tool").write_text("#!/bin/sh\n")
+        with mock.patch.dict(os.environ, {"PATH": str(self.root)}):
+            code, _, err = core.run(["tool"])
+        self.assertEqual(code, 126)
+        self.assertIn("Permission denied", err)
+
+    def test_missing_working_directory_is_not_a_missing_command(self):
+        code, _, err = core.run(["true"], cwd=str(self.root / "missing"))
+        self.assertEqual(code, 126)
+        self.assertIn(str(self.root / "missing"), err)
+        self.assertNotIn("command not found", err)
+
+
 class MakeVarTest(unittest.TestCase):
     """Values come from the repository Makefile itself, as on a real installation."""
 

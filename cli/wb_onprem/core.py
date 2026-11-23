@@ -82,12 +82,16 @@ def emit(report, as_json, out=None):
 
 
 def run(cmd, cwd=None, input=None, timeout=60, env=None):
-    """Run a command; never raises. Returns (returncode, stdout, stderr); 127 if missing."""
+    """Run a command; never raises. Returns (returncode, stdout, stderr); 127 if missing, 126 if it cannot start."""
     try:
-        p = subprocess.run(cmd, cwd=cwd, input=input, capture_output=True, text=True, timeout=timeout,
-                           env=env and {**os.environ, **env})
-    except FileNotFoundError:
-        return 127, "", f"{cmd[0]}: command not found"
+        p = subprocess.run(cmd, cwd=cwd, input=input, capture_output=True, text=True, errors="replace",
+                           timeout=timeout, env=env and {**os.environ, **env})
+    except FileNotFoundError as e:
+        if e.filename == cmd[0]:
+            return 127, "", f"{cmd[0]}: command not found"
+        return 126, "", f"{cmd[0]}: {e.strerror}: {e.filename}"
+    except OSError as e:
+        return 126, "", f"{cmd[0]}: {e.strerror}"
     except subprocess.TimeoutExpired:
         return 124, "", f"{' '.join(cmd)}: timed out after {timeout}s"
     return p.returncode, p.stdout, p.stderr

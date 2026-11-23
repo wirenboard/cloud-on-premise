@@ -197,6 +197,13 @@ class DoctorTest(unittest.TestCase):
         self.assertNotIn("line 11\n", text)
         self.assertNotIn("compose-stderr-marker", text)
 
+    def test_log_tail_that_is_not_utf8(self):
+        self.set_services({"worker": []}, [{"Service": "worker", "State": "restarting", "ExitCode": 1}])
+        (self.bin / "logs.out").write_bytes(b"worker-1  | \xff\xfe broken bytes\n")
+        code, text = self.run_doctor(as_json=False)
+        self.assertEqual(code, 2)
+        self.assertIn("broken bytes", text)
+
     def test_stopped_stack_is_one_item(self):
         self.set_services({"traefik": ["443"], "backend": []}, [])
         self.fake("ss", out="")
