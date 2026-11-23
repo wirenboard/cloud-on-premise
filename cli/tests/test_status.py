@@ -313,9 +313,7 @@ class StatusTest(unittest.TestCase):
         self.assertEqual(code, 1)
 
     def test_facts_and_json_before_the_command(self):
-        git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(self.install)]
-        for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "release"], ["tag", "v2.0.1"]):
-            subprocess.run(git + args, check=True, capture_output=True)
+        self.commit_installation()
         (self.install / "VERSION").write_text("2.1.0\n")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -325,6 +323,36 @@ class StatusTest(unittest.TestCase):
         self.assertEqual(set(report), {"status", "items", "facts"})
         self.assertEqual(report["facts"], {"directory": str(self.install), "version": "2.1.0",
                                            "git": "v2.0.1-dirty", "wb-onprem": __version__})
+
+    def commit_installation(self):
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(self.install)]
+        for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "release"], ["tag", "v2.0.1"]):
+            subprocess.run(git + args, check=True, capture_output=True)
+
+    def test_status_and_doctor_do_not_write_the_git_index(self):
+        self.commit_installation()
+        (self.install / "VERSION").write_text("2.0.1\n")
+        (self.install / "docker-compose.yml").write_text("services: {x: {}}\n")
+        index = self.install / ".git" / "index"
+        before = (index.stat().st_ino, index.stat().st_mtime_ns)
+        for command in ("status", "doctor"):
+            with self.subTest(command), contextlib.redirect_stdout(io.StringIO()) as out, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                cli.main([command, "--dir", str(self.install), "--json"])
+                self.assertEqual((index.stat().st_ino, index.stat().st_mtime_ns), before)
+                self.assertEqual(json.loads(out.getvalue())["facts"]["git"], "v2.0.1-dirty")
+
+    def test_clean_checkout_is_not_dirty(self):
+        self.commit_installation()
+        _, report = self.run_status()
+        self.assertEqual(report["facts"]["git"], "v2.0.1")
+
+    def test_dubious_ownership_is_not_called_a_missing_checkout(self):
+        (self.bin / "git").write_text(f"#!/bin/sh\necho \"fatal: detected dubious ownership in repository at '{self.install}'\" >&2\n"
+                                      "exit 128\n")
+        (self.bin / "git").chmod(0o755)
+        _, report = self.run_status()
+        self.assertIn(f"run wb-onprem as the owner of {self.install}", report["facts"]["git"])
 
     def test_text_output(self):
         out = io.StringIO()

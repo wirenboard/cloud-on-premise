@@ -18,7 +18,7 @@ GIT = shutil.which("git")
 
 FAKE_GIT = """#!/bin/sh
 d="${{0%/*}}"
-echo "GIT_TERMINAL_PROMPT=${{GIT_TERMINAL_PROMPT-unset}} $*" >> "$d/git-calls"
+echo "GIT_TERMINAL_PROMPT=${{GIT_TERMINAL_PROMPT-unset}} LC_ALL=${{LC_ALL-unset}} $*" >> "$d/git-calls"
 for a in "$@"; do
   if [ -f "$d/fail-$a" ]; then cat "$d/fail-$a" >&2; exit 128; fi
 done
@@ -167,12 +167,12 @@ class CheckUpdateTest(unittest.TestCase):
         self.assertIn("three-zero-zero", report["changelog"])
         self.assertEqual(self.snapshot(), before)
 
-    def test_every_git_call_disables_the_terminal_prompt(self):
+    def test_every_git_call_disables_the_terminal_prompt_and_the_locale(self):
         self.check()
         calls = self.git_calls()
         self.assertTrue(any(" ls-remote " in c for c in calls) and any(" fetch " in c for c in calls), calls)
         for call in calls:
-            self.assertTrue(call.startswith("GIT_TERMINAL_PROMPT=0 "), call)
+            self.assertTrue(call.startswith("GIT_TERMINAL_PROMPT=0 LC_ALL=C "), call)
         fetch = next(c for c in calls if " fetch " in c)
         self.assertIn(f"include.path={self.install / '.git' / 'config'} fetch", fetch)
 
@@ -231,13 +231,14 @@ class CheckUpdateTest(unittest.TestCase):
         code, report = self.check()
         self.assertTrue(self.items(report)["remote"]["detail"].endswith(": error: last line"), report)
 
-    def test_dubious_ownership_suggests_safe_directory(self):
+    def test_dubious_ownership_asks_to_run_as_the_owner(self):
         (self.bin / "fail-get-url").write_text(
             f"fatal: detected dubious ownership in repository at '{self.install}'\n")
         code, report = self.check()
         self.assertEqual(code, 2)
         detail = report["items"][0]["detail"]
-        self.assertIn(f"git config --global --add safe.directory {self.install}", detail)
+        self.assertIn(f"run wb-onprem as the owner of {self.install}", detail)
+        self.assertNotIn("safe.directory", detail)
 
     def test_text_output_shows_the_changelog(self):
         code, text = self.check("--remote", str(self.origin), as_json=False)

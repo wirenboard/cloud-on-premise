@@ -25,8 +25,14 @@ def item(name, status, detail):
 
 
 def git_describe(directory):
-    code, out, _ = core.run(["git", "describe", "--tags", "--always", "--dirty"], cwd=directory)
-    return out.strip() if code == 0 and out.strip() else None
+    # `describe --dirty` refreshes the index and rewrites .git/index, even with --no-optional-locks.
+    code, out, err = core.git(["describe", "--tags", "--always"], directory)
+    if "dubious ownership" in err:
+        return f"unknown, {core.git_error(err, directory)}"
+    if code != 0 or not out.strip():
+        return None
+    code, changes, _ = core.git(["--no-optional-locks", "status", "--porcelain", "--untracked-files=no"], directory)
+    return out.strip() + ("-dirty" if code == 0 and changes.strip() else "")
 
 
 def facts(directory):

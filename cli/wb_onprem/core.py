@@ -93,6 +93,22 @@ def run(cmd, cwd=None, input=None, timeout=60, env=None):
     return p.returncode, p.stdout, p.stderr
 
 
+# C locale: git_error matches English messages.
+_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
+
+
+def git(args, cwd, timeout=60):
+    return run(["git", *args], cwd=cwd, env=_GIT_ENV, timeout=timeout)
+
+
+def git_error(err, directory):
+    lines = [line for line in err.splitlines() if line.strip()]
+    text = next((line for line in lines if line.startswith("fatal:")), lines[-1] if lines else "git failed")
+    if "dubious ownership" in err:
+        text += f"; run wb-onprem as the owner of {directory}"
+    return text
+
+
 def read_version(directory):
     try:
         with open(os.path.join(directory, "VERSION"), encoding="utf-8") as f:

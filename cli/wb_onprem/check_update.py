@@ -14,7 +14,6 @@ _VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-testing)?$")
 _TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 _CREDENTIALS = re.compile(r"(\w+://)[^/@\s]+@")
 _NAME = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=", re.M)
-_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0"}
 
 
 def add_arguments(parser):
@@ -31,33 +30,21 @@ def parse_version(text):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
-def git(args, cwd, timeout=60):
-    return core.run(["git", *args], cwd=cwd, env=_GIT_ENV, timeout=timeout)
-
-
-def git_error(err, directory):
-    lines = [line for line in err.splitlines() if line.strip()]
-    text = next((line for line in lines if line.startswith("fatal:")), lines[-1] if lines else "git failed")
-    if "dubious ownership" in err:
-        text += f"; run `git config --global --add safe.directory {directory}`"
-    return text
-
-
 def remote_url(directory, remote):
     """URL of the remote, or `remote` itself when it is not a remote name. (url, error)."""
-    code, out, err = git(["remote", "get-url", remote], directory)
+    code, out, err = core.git(["remote", "get-url", remote], directory)
     if code == 0:
         return out.strip(), None
     if "dubious ownership" in err:
-        return None, git_error(err, directory)
+        return None, core.git_error(err, directory)
     return remote, None
 
 
 def list_tags(directory, url):
     """[(version, tag)] of vX.Y.Z tags, oldest first. (tags, error)."""
-    code, out, err = git(["ls-remote", "--tags", "--refs", url], directory, timeout=30)
+    code, out, err = core.git(["ls-remote", "--tags", "--refs", url], directory, timeout=30)
     if code != 0:
-        return None, git_error(err, directory)
+        return None, core.git_error(err, directory)
     tags = []
     for line in out.splitlines():
         tag = line.rpartition("refs/tags/")[2]
@@ -69,15 +56,15 @@ def list_tags(directory, url):
 def read_tag(url, config, tag, paths):
     """Files of the tag (None if absent) via a temporary bare repository; the installation .git is not touched."""
     with tempfile.TemporaryDirectory() as tmp:
-        code, _, err = git(["init", "-q", "--bare", tmp], tmp)
+        code, _, err = core.git(["init", "-q", "--bare", tmp], tmp)
         if code == 0:
-            code, _, err = git(["-c", f"include.path={config}", "fetch", "-q", "--depth", "1", url, "tag", tag],
+            code, _, err = core.git(["-c", f"include.path={config}", "fetch", "-q", "--depth", "1", url, "tag", tag],
                                tmp, timeout=120)
         if code != 0:
-            return None, git_error(err, tmp)
+            return None, core.git_error(err, tmp)
         files = {}
         for path in paths:
-            code, out, _ = git(["show", f"{tag}:{path}"], tmp)
+            code, out, _ = core.git(["show", f"{tag}:{path}"], tmp)
             files[path] = out if code == 0 else None
         return files, None
 
