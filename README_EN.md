@@ -236,6 +236,8 @@ FOOTER_SITE_LABEL_EN — caption of that link for English (default: "Wiren Board
 
 If the variables are not set, the Wiren Board defaults are used. Restart the stack after changing `.env`: `make restart`.
 
+The product name and color can also be set without a restart, in the backend admin under "Settings → Branding". The web console picks them up within a minute, and the new values show after a page reload; `SERVICE_NAME` and `PRIMARY_COLOR` from `.env` apply while the admin field is empty.
+
 ### Controller map
 
 The map background is served by the CARTO service and requires an API key. Get one at https://carto.com/basemaps/apikey and put it into `.env`:

@@ -303,6 +303,7 @@ services:
     restart: always
     environment:
       REDIS_URL: "redis://redis:6379/1"
+      BACKEND_APP_URL: "http://backend:8000/"
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
