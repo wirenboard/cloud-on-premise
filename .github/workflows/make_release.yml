@@ -50,6 +50,10 @@ jobs:
           test -s cli/dist/wb-onprem.pyz
           test -s cli/dist/wb-onprem.pyz.sha256
 
+      # create-release fails on a missing file only after retag-and-push has moved `latest`.
+      - name: Check release files
+        run: PYTHONPATH=cli python3 -W error -m unittest discover -s cli/tests -p test_release.py
+
       - name: Upload wb-onprem.pyz
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
