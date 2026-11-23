@@ -213,7 +213,9 @@ To replace the logo and icons, place your files in that directory with the exact
 
 Sizes are not validated automatically: a file with wrong proportions is served as is and may render incorrectly.
 
-You can also replace only some of these files.
+You can also replace only some of these files. The files can also be uploaded in the backend admin under "Settings → Branding": they are saved to the same `branding/` directory.
+
+On every start of the stack the `branding/` directory is handed to the `nobody` user the backend saves uploaded files as. So put and replace files by hand with `sudo`, for example `sudo cp logo.svg branding/`, or upload them in the admin.
 
 If the project is already running, restart the stack after replacing the files:
 
@@ -236,17 +238,13 @@ FOOTER_SITE_LABEL_EN — caption of that link for English (default: "Wiren Board
 
 If the variables are not set, the Wiren Board defaults are used. Restart the stack after changing `.env`: `make restart`.
 
-The product name and color can also be set without a restart, in the backend admin under "Settings → Branding". The web console picks them up within a minute, and the new values show after a page reload; `SERVICE_NAME` and `PRIMARY_COLOR` from `.env` apply while the admin field is empty.
+The product name and color can also be set without a restart, in the backend admin under "Settings → Branding". The web console picks them up within a minute, and the new values show after a page reload; `SERVICE_NAME` and `PRIMARY_COLOR` from `.env` apply while the admin field is empty. On an update from 2.0.x these values are copied from `.env` to the admin once, so change the name and color there after the update.
 
 ### Controller map
 
-The map background is served by the CARTO service and requires an API key. Get one at https://carto.com/basemaps/apikey and put it into `.env`:
+The map background is served by the CARTO service and requires an API key. Get one at https://carto.com/basemaps/apikey and set it in the backend admin under "Settings → Maps". Without a key the maps and the address search are hidden in the interface. The key is not checked on save: an installation without internet access cannot reach CARTO. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`.
 
-```
-CARTO_API_KEY="..."
-```
-
-Without a key the map shows blank tiles with an "API KEY REQUIRED" label instead of the basemap. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Restart the stack after changing `.env`: `make restart`.
+On an update from 2.0.x, the key from `CARTO_API_KEY` in `.env` moves to the admin once.
 
 ---
 
@@ -432,6 +430,18 @@ skips it.
 
 If you want to use your own private and public JWT keys, place `private.pem` and `public.pem` in
 the `jwt` directory in the project root — otherwise they are generated automatically.
+
+### Email, proxy and web console
+
+| Variable | What it sets |
+|---|---|
+| `EMAIL_FALLBACK_URLS` | Backup mail servers, comma-separated (`smtp+tls://user:password@host:587` or `smtp+ssl://…:465`): an email goes through the next one when the main `EMAIL_HOST` does not take it |
+| `HTTPS_PROXY`, `NO_PROXY` | Proxy for the cloud's outbound HTTPS requests and your exceptions from it; the cloud services reach each other past the proxy |
+| `WS_RESUME_GRACE`, `WS_RESUME_GRACE_PAGE_CLOSED`, `WS_RESUME_BUFFER_SIZE` | How many seconds a web console terminal waits to be resumed after a dropped connection or a closed page, and how many bytes of output it keeps meanwhile |
+| `WS_RESUME_MAX_DETACHED`, `WS_RESUME_BUSY_PING_TIMEOUT` | How many detached terminals of one tab stay open on the controller, and how many seconds to wait for the previous tab to answer before handing the terminal to a new one |
+| `SSH_CHANNEL_TIMEOUT`, `SFTP_TIMEOUT`, `DELETE_TIMEOUT` | Web console timeouts (seconds): opening an SSH channel, file operations, deleting files |
+
+Defaults are in [`.env.example`](.env.example).
 
 ### Background task performance
 

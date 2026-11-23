@@ -137,7 +137,7 @@ flowchart LR
 
 _Legend: **red** — public ports (open to the outside), **blue** — external
 services (outbound connections, egress); dotted lines — outbound traffic.
-**Metrics** are sent to WB only in the free (FREE) edition; **email** — only
+**Metrics** are sent to WB only in the free (FREE) edition, the only one so far; **email** — only
 when `EMAIL_ENABLED=True` is set explicitly (the variable is mandatory since 2.0)._
 
 ## 5. Who initiates connections
@@ -175,7 +175,7 @@ optional (see §7).
 
 **Metrics to the WB server (egress).** The installation **must** send anonymous
 metrics to our server `https://on-premise-metrics.wirenboard.cloud` (free
-edition, up to 100 controllers). If this egress is blocked by a firewall, the
+edition, up to 100 controllers; there is no other edition yet). If this egress is blocked by a firewall, the
 cloud keeps working but **new controllers cannot be added**. The exact set of
 metrics being sent is visible in the admin panel: "On-Premise" → "Metrics".
 Internally, controller metrics are stored in the local **TimescaleDB** (no host
