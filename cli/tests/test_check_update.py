@@ -232,6 +232,15 @@ class CheckUpdateTest(unittest.TestCase):
                 self.assertIn("cannot list tags", self.items(report)["remote"]["detail"])
                 self.assertFalse(marker.exists())
 
+    def test_tag_fetch_never_takes_the_url_for_an_option(self):
+        marker = self.root / "upload-pack-ran"
+        config = self.root / "config"
+        config.write_text(f'[remote "tag"]\n\turl = {self.origin}\n')
+        files, error = check_update.read_tag(f"--upload-pack=touch {marker} #", str(config), "v3.0.0", ["VERSION"])
+        self.assertIsNone(files)
+        self.assertTrue(error)
+        self.assertFalse(marker.exists())
+
     def test_unreadable_version(self):
         (self.install / "VERSION").write_text("next\n")
         code, report = self.check()
