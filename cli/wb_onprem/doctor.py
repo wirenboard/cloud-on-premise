@@ -91,6 +91,26 @@ def key_item(cert, privkey):
     return item("certificate key", OK, f"{privkey} matches the certificate")
 
 
+def rsa_only_check_certs(directory):
+    """Whether `make check-certs` of the installation compares RSA moduli (2.0.x) rather than public keys."""
+    try:
+        with open(os.path.join(directory, "Makefile"), encoding="utf-8", errors="replace") as f:
+            recipe = re.search(r"(?m)^check-certs:.*\n((?:\t.*\n|\n)*)", f.read())
+    except OSError:
+        return False
+    return bool(recipe) and "pkey -pubout" not in recipe.group(1)
+
+
+def rsa_key_item(directory, privkey, key):
+    if key["status"] != OK or not rsa_only_check_certs(directory):
+        return key
+    code, _, _ = core.run(["openssl", "rsa", "-noout", "-modulus", "-passin", "pass:", "-in", privkey])
+    if code == 0:
+        return key
+    return item("certificate key", WARN, f"{privkey} matches the certificate, but this release's `make check-certs` "
+                                         f"accepts only RSA keys: use an RSA key or update the installation")
+
+
 def cert_names(path):
     """DNS names of the subjectAltName, or None; parsed from `-text` the way `make check-certs` does."""
     code, out, _ = core.run(["openssl", "x509", "-noout", "-text", "-in", path])
@@ -142,7 +162,7 @@ def cert_items(directory, now=None):
     expiry = status.expiry_item(path, now)
     if expiry["status"] != OK:
         expiry["detail"] += ", renew it and run `make reload-certs`"
-    return [files, key_item(path, privkey), expiry, names_item(directory, path)]
+    return [files, rsa_key_item(directory, privkey, key_item(path, privkey)), expiry, names_item(directory, path)]
 
 
 def disk_items(directory):

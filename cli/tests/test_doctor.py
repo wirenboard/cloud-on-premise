@@ -358,6 +358,21 @@ exec {shutil.which("make")} "$@"
                 self.assertEqual(got, expected)
                 self.assertEqual(make.returncode == 0, got == "ok", make.stdout + make.stderr)
 
+    def test_key_type_refused_by_the_check_certs_of_2_0_x(self):
+        makefile = self.install / "Makefile"
+        # 2.0.x compares RSA moduli (`git show v2.0.1:Makefile`), the tags are not in a CI checkout
+        makefile.write_text(makefile.read_text()
+                            .replace("openssl x509 -noout -pubkey", "openssl x509 -noout -modulus")
+                            .replace("openssl pkey -pubout", "openssl rsa -noout -modulus"))
+        for algorithm, expected in ((("-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"), "warn"),
+                                    (("-newkey", "rsa:2048"), "ok")):
+            with self.subTest(algorithm[1]):
+                make_cert(self.tls / "fullchain.pem", self.tls / "privkey.pem", algorithm=algorithm)
+                status_, detail = self.cert()["certificate key"]
+                self.assertEqual(status_, expected, detail)
+                if expected == "warn":
+                    self.assertIn("this release's `make check-certs` accepts only RSA keys", detail)
+
     def test_directory_stops_the_certificate_check(self):
         for name in ("fullchain.pem", "privkey.pem"):
             with self.subTest(name):
