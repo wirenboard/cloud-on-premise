@@ -18,7 +18,7 @@ def add_arguments(parser):
 
 
 def docker_item():
-    # `docker info --format` exits 0 with empty output when the daemon is unreachable; `docker version` exits 1.
+    """Via `docker version`: `docker info --format` exits 0 with empty output when the daemon is unreachable."""
     code, out, err = core.run(["docker", "version", "--format", "{{.Server.Version}}"])
     if code == 127:
         return item("docker", FAIL, "docker not found, install Docker Engine with the compose plugin")

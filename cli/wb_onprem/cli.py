@@ -16,8 +16,8 @@ class _Parser(argparse.ArgumentParser):
 
 
 def build_parser():
-    # SUPPRESS keeps a flag given before the command from being reset by the subparser default.
     common = argparse.ArgumentParser(add_help=False)
+    # SUPPRESS keeps a flag given before the command from being reset by the subparser default.
     common.add_argument("--dir", default=argparse.SUPPRESS,
                         help=f"installation directory (default: $WB_ONPREM_DIR, the current directory, "
                              f"dir= in {core.CONFIG_PATH}, {core.DEFAULT_DIR})")

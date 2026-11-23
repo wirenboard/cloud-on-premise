@@ -266,7 +266,7 @@ class StatusTest(unittest.TestCase):
                 self.assertEqual([it["name"] for it in self.disk_items(report)], expected)
 
     def test_docker_root_unknown_still_checks_root_and_installation(self):
-        # The real CLI exits 0 with empty output from `info --format` when the daemon is unreachable.
+        """The real CLI exits 0 with empty output from `info --format` when the daemon is unreachable."""
         self.fake("info", err="Cannot connect to the Docker daemon", rc=0)
         devices = {"/": 1, str(self.install): 2}
         with mock.patch.object(status, "device", devices.get):

@@ -29,7 +29,7 @@ def item(name, status, detail):
 
 
 def git_describe(directory):
-    # `describe --dirty` refreshes the index and rewrites .git/index, even with --no-optional-locks.
+    """Dirty flag via `git status`: `describe --dirty` rewrites .git/index, even with --no-optional-locks."""
     code, out, err = core.git(["describe", "--tags", "--always"], directory)
     if "dubious ownership" in err:
         return f"unknown, {core.git_error(err, directory)}"
@@ -49,7 +49,7 @@ def facts(directory):
 
 
 def _ps_rows(text):
-    # NDJSON since compose 2.21, a single JSON array before.
+    """`docker compose ps --format json`: NDJSON since compose 2.21, a single JSON array before."""
     text = text.strip()
     if text.startswith("["):
         rows = json.loads(text)
