@@ -103,8 +103,8 @@ def env_item(directory, tag, example):
 
 
 def check(directory, remote, facts):
-    installation = status.installation_item(directory)
-    if installation and installation["status"] == FAIL:
+    installation, one_x = status.installation_item(directory)
+    if one_x:
         return [item("update", WARN, "1.x installation: run `make upgrade` to move to 2.x")], None
     items = [installation] if installation else []
     installed = core.read_version(directory)

@@ -205,8 +205,8 @@ def clock_item():
 
 
 def build(directory, args):
-    installation = status.installation_item(directory)
-    if installation and installation["status"] == FAIL:
+    installation, one_x = status.installation_item(directory)
+    if one_x:
         items = [installation]
     else:
         items = [installation] if installation else []

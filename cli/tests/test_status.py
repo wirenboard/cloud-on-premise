@@ -20,6 +20,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 FAKE_DOCKER = """#!/bin/sh
 d="${0%/*}"
 echo "VERSION=$VERSION $*" >> "$d/calls"
+[ "$1" = ps ] && [ -f "$d/ps.hang" ] && exec sleep 5
 case "$1 $2" in
   "info "*) key=info ;;
   "compose config") key=config ;;
@@ -311,6 +312,25 @@ class StatusTest(unittest.TestCase):
         self.assertIn("make", items["installation"]["detail"])
         self.assertEqual(items["backend"]["status"], "ok")
         self.assertEqual(code, 1)
+
+    def test_hung_docker_is_not_a_one_x_installation(self):
+        (self.bin / "ps.hang").write_text("")
+        with mock.patch.object(status, "CHECK_TIMEOUT", 1):
+            code, report = self.run_status()
+        items = self.items(report)
+        self.assertEqual(items["installation"], {"name": "installation", "status": "warn",
+                                                 "detail": "`make check-not-1x` timed out, Docker may be hung"})
+        self.assertEqual(items["backend"]["status"], "ok")
+        self.assertEqual(code, 1)
+
+    def test_missing_makefile_is_not_a_one_x_installation(self):
+        (self.install / "Makefile").unlink()
+        code, report = self.run_status()
+        items = self.items(report)
+        self.assertEqual(items["installation"]["status"], "fail")
+        self.assertIn("Makefile not found", items["installation"]["detail"])
+        self.assertEqual(items["backend"]["status"], "ok")
+        self.assertEqual(code, 2)
 
     def test_facts_and_json_before_the_command(self):
         self.commit_installation()

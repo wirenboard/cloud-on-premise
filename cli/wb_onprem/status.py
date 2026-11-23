@@ -14,6 +14,7 @@ HELP = "version, services, disk space and certificate expiry"
 DISK_WARN_PERCENT = 15
 DISK_FAIL_PERCENT = 5
 CERT_WARN_DAYS = 14
+CHECK_TIMEOUT = 60
 
 
 def add_arguments(parser):
@@ -176,18 +177,22 @@ def expiry_item(path, now=None):
 
 
 def installation_item(directory):
-    """None for 2.x. A 1.x Makefile has no check-not-1x; a 2.x one fails it on a 1.x .env or running 1.x images."""
-    code, _, _ = core.run(["make", "-s", "check-not-1x"], cwd=directory)
+    """(item or None, is 1.x): a 1.x Makefile has no check-not-1x, a 2.x one fails it on a 1.x .env or images."""
+    if not os.path.isfile(os.path.join(directory, "Makefile")):
+        return item("installation", FAIL, f"Makefile not found in {directory}, the installation is incomplete"), False
+    code, _, _ = core.run(["make", "-s", "check-not-1x"], cwd=directory, timeout=CHECK_TIMEOUT)
     if code == 127:
-        return item("installation", WARN, "make not found, cannot tell a 1.x installation from 2.x")
+        return item("installation", WARN, "make not found, cannot tell a 1.x installation from 2.x"), False
+    if code == 124:
+        return item("installation", WARN, "`make check-not-1x` timed out, Docker may be hung"), False
     if code != 0:
-        return item("installation", FAIL, "1.x installation: run `make upgrade` first")
-    return None
+        return item("installation", FAIL, "1.x installation: run `make upgrade` first"), True
+    return None, False
 
 
 def build(directory, args):
-    installation = installation_item(directory)
-    if installation and installation["status"] == FAIL:
+    installation, one_x = installation_item(directory)
+    if one_x:
         items = [installation]
     else:
         services, failed = compose_config(directory)
