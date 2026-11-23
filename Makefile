@@ -173,6 +173,8 @@ test:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ TESTS ]====================="
 	@bash tests/test-check-env.sh
 	@printf "\n"
+	@bash tests/test-compose-env.sh
+	@printf "\n"
 	@bash migration/tests/test-migrate-env.sh
 	@printf "\n"
 	@bash migration/tests/test-upgrade-gate.sh

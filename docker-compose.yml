@@ -64,6 +64,19 @@ x-backend-common-env: &backend-common-env
   AWS_S3_ENDPOINT_URL: "http://seaweedfs:8333"
   AWS_STORAGE_BUCKET_NAME: "media"
   AWS_S3_REGION_NAME: "eu-west-1"
+  EMAIL_FALLBACK_URLS: ${EMAIL_FALLBACK_URLS:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: "localhost,127.0.0.1,postgres,timescale,redis,seaweedfs,clients-grafana,tunnel,tunnel-webhooks-backend,backend,webssh${NO_PROXY:+,${NO_PROXY}}"
+  # Read once by the site_settings migrations: no value leaves the variable unset (the default), an empty one hides the link.
+  SERVICE_NAME:
+  PRIMARY_COLOR:
+  SERVICE_STATUS_URL:
+  SERVICE_DOCS_URL:
+  SERVICE_DOCS_URL_EN:
+  FOOTER_SITE_URL:
+  FOOTER_SITE_LABEL_RU:
+  FOOTER_SITE_LABEL_EN:
+  CARTO_API_KEY:
 
 x-backend-healthcheck: &backend-healthcheck
   test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/"]
@@ -293,6 +306,15 @@ services:
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
+      # Defaults of cloud-webssh settings.py: an empty value fails its startup.
+      WS_RESUME_GRACE: ${WS_RESUME_GRACE:-600}
+      WS_RESUME_GRACE_PAGE_CLOSED: ${WS_RESUME_GRACE_PAGE_CLOSED:-150}
+      WS_RESUME_BUFFER_SIZE: ${WS_RESUME_BUFFER_SIZE:-65536}
+      WS_RESUME_MAX_DETACHED: ${WS_RESUME_MAX_DETACHED:-3}
+      WS_RESUME_BUSY_PING_TIMEOUT: ${WS_RESUME_BUSY_PING_TIMEOUT:-3}
+      SSH_CHANNEL_TIMEOUT: ${SSH_CHANNEL_TIMEOUT:-15}
+      SFTP_TIMEOUT: ${SFTP_TIMEOUT:-60}
+      DELETE_TIMEOUT: ${DELETE_TIMEOUT:-120}
     volumes:
       - ./branding:/branding:ro
     depends_on:
@@ -314,7 +336,6 @@ services:
       SERVICE_DOCS_URL: "${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud}"
       SERVICE_DOCS_URL_EN: "${SERVICE_DOCS_URL_EN-${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud/en}}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
-      CARTO_API_KEY: "${CARTO_API_KEY:-}"
     volumes:
       - ./branding:/branding:ro
     healthcheck:
@@ -334,6 +355,16 @@ services:
       backend:
         condition: service_healthy
 
+  # The backend runs as nobody and writes the logos uploaded in the admin into the bind mount.
+  branding-init:
+    image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
+    logging: *default-logging
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec", "chown nobody:nogroup /branding && chmod 755 /branding"]
+    volumes:
+      - ./branding:/branding
+
   backend:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
     logging: *default-logging
@@ -342,6 +373,7 @@ services:
       <<: *backend-common-env
     volumes:
       - ./geoip:/data/geoip:ro
+      - ./branding:/branding
     labels:
       <<: *traefik-common
       traefik.http.routers.backend.rule: "(Host(`${ABSOLUTE_SERVER}`) && PathPrefix(`/static/`)) || (Host(`app.${ABSOLUTE_SERVER}`) && (PathPrefix(`/admin/`) || PathPrefix(`/static/`) || PathPrefix(`/silk/`)))"
@@ -365,6 +397,8 @@ services:
         condition: service_healthy
       timescale:
         condition: service_healthy
+      branding-init:
+        condition: service_completed_successfully
 
   # Dedicated backend instance that serves the FRP tunnel webhooks.
   tunnel-webhooks-backend:
@@ -388,6 +422,8 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-agent-backend:${VERSION}
     logging: *default-logging
     restart: always
+    # Above UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN of the image (120s): agent long polls finish instead of being cut.
+    stop_grace_period: 2m10s
     environment:
       <<: *backend-common-env
     labels:
@@ -414,6 +450,8 @@ services:
     environment:
       <<: *backend-common-env
       QUEUE: default_queue
+      # Tags the telemetry of WB test installations; this worker runs send_metrics.
+      METRICS_INTERNAL_TESTING: ${METRICS_INTERNAL_TESTING:-False}
       CONCURRENCY: ${WORKER_CONCURRENCY:-4}
       SOFT_TIME_LIMIT: 120
     depends_on:
