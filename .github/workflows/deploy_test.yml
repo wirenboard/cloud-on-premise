@@ -112,7 +112,8 @@ jobs:
             cat VERSION
 
             echo "==> [3/4] Running 'make update' (this is what a user runs manually)"
-            make update
+            # No one answers the confirmation here; --redeploy takes new -testing images of the same version.
+            make update WB_ONPREM_UPDATE_FLAGS="--yes --redeploy"
 
             echo "==> [4/4] Showing container status"
             docker compose ps

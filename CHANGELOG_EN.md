@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- `make update` updates through the `wb-onprem` utility: a backup of the volumes, the switch, a rollback on failure; without the utility it refuses and links to its releases. `make run` and `make restart` refuse while another version of the cloud runs.
+- The `minio` and `minio-client` containers are removed on the update, their volume stays. If the diagnostic archives in it are not needed, remove it after the update: `docker volume ls -q --filter name=minioData` shows its name, `docker volume rm <name>` removes it.
+
 ## [2.0.1] - 2026-09-30
 
 ### Fixed

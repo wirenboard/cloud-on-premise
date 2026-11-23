@@ -515,9 +515,9 @@ Run all commands from the repo root.
 | `make generate-django-secret` | Generate Django SECRET_KEY                              |
 | `make run`               | Full launch cycle (generate-env, cert check, build and start containers) |
 | `make run-no-cert-check` | Same without the TLS certificate check (not recommended)     |
-| `make stop`              | Stop containers                                              |
+| `make stop`              | Stop containers without removing them                        |
 | `make restart`           | Restart containers (with the cert check)                     |
-| `make update`            | Stop containers, update images, rebuild and restart. It also prunes unused images and **every stopped container on the host** — mind that if the server is shared |
+| `make update`            | Update the cloud to the version of the downloaded files (after `git pull`) with `wb-onprem update`: backup, switch, rollback on failure, see "Updating" |
 | `make reload-certs`      | Apply a renewed certificate: validate it and restart Traefik only |
 | `make update-geoip`      | Refresh the session geolocation database |
 | `make upgrade`           | 1.x → 2.x upgrade: checks while the cloud runs, then backup, stop, migrate, start |
@@ -530,9 +530,8 @@ Run all commands from the repo root.
 # First launch (environment initialization and container startup)
 make run
 
-# Update the project to the latest state: git pull fetches the new version, make update pulls its images
-git pull
-make update
+# Update the cloud to a new release (needs the wb-onprem utility, see "Updating")
+sudo wb-onprem update
 
 # Validate environment variables
 make check-env
@@ -543,6 +542,54 @@ make help
 
 ---
 
+## ⬆️ Updating
+
+Updates are run by the `wb-onprem` utility ([wirenboard/wb-onprem-cli](https://github.com/wirenboard/wb-onprem-cli)).
+While the cloud keeps running, it checks the installation and the release, including the release's one-off
+checks (for 2.1.0, logins that differ only by letter case), and pulls the images. Then it stops the cloud,
+copies the volumes, `.env`, certificates, `jwt/` and `branding/` into `backups/wb-onprem-<time>-<version>/`,
+starts the new version and, if it does not become healthy, brings the previous one back from that copy.
+
+Install the utility once:
+
+```bash
+curl -fLO https://github.com/wirenboard/wb-onprem-cli/releases/latest/download/wb-onprem.pyz
+curl -fLO https://github.com/wirenboard/wb-onprem-cli/releases/latest/download/wb-onprem.pyz.sha256
+sha256sum -c wb-onprem.pyz.sha256
+sudo install -m 755 wb-onprem.pyz /usr/local/bin/wb-onprem
+```
+
+Update from the installation directory:
+
+```bash
+sudo wb-onprem update
+```
+
+The utility moves the clone to the new release tag itself after the checks and the backup, and moves it
+back on a rollback. A specific release: `--to vX.Y.Z`.
+
+The fallback is the files first, then the utility:
+
+```bash
+git pull
+make update
+```
+
+`make update` runs `sudo wb-onprem update` for the files already downloaded; without the utility it refuses
+and links to its releases. While the server has containers of the previous version, `make run` and
+`make restart` on the new files refuse and point to `make update`: otherwise the new version would start
+without a backup. The utility updates only a running cloud, so start one stopped by `make stop` as it was
+first: `docker compose start`.
+
+**Which versions.** 2.1.0 is updated to from 2.0.1 and later. Update a 2.0.0 installation to 2.0.1 first:
+`sudo wb-onprem update --to v2.0.1`. A 1.x installation is taken by `wb-onprem update` through
+`make upgrade` of release 2.0.1 (the section below) and then on to the new version.
+
+**Going back by hand.** If the new version passed the check but does not suit you, restore the previous one
+from the copy: `sudo wb-onprem restore backups/wb-onprem-<time>-<version>`. Details are in the utility's README.
+
+---
+
 ## ⬆️ Upgrading from 1.x to 2.0
 
 Release **2.0** is incompatible with 1.x, but **no user data is deleted** — it is migrated in
@@ -550,14 +597,16 @@ place. The key change: **the email becomes the login** — it is mandatory, uniq
 the account name. The new schema requires this but does not repair the data itself, so the
 database has to be put in order before the migration — that is what `make upgrade` does.
 
-The upgrade runs as a single command:
+`sudo wb-onprem update` (see "Updating") runs the upgrade: first to 2.0.1 with that release's
+`make upgrade`, then on to the new version. The step to 2.0.1 by hand:
 
 ```bash
-git pull
+git fetch --tags
+git checkout v2.0.1
 make upgrade
 ```
 
-It runs its checks while the cloud keeps serving and changes nothing until all of them pass,
+`make upgrade` runs its checks while the cloud keeps serving and changes nothing until all of them pass,
 then asks for confirmation and only after that begins the downtime.
 
 > 📖 Migration conditions, resolving account conflicts, the expected downtime and the rollback

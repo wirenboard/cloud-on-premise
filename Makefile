@@ -109,7 +109,7 @@ help:
 	@printf "  run-no-cert-check        Launch without checking TLS certificates (not recommended)\n"
 	@printf "  stop                     Stop containers\n"
 	@printf "  restart                  Restart containers (with cert check)\n"
-	@printf "  update                   Update images, rebuild and start\n"
+	@printf "  update                   Update with wb-onprem: checks, backup, switch, rollback on failure\n"
 	@printf "  upgrade                  1.x -> 2.x upgrade: checks, then backup, stop, migrate, start\n"
 	@printf "  fix-users                Run migration_doctor (MODE=scan|auto|resolve|dump|apply)\n"
 	@printf "  backup                   Back up PostgreSQL (+ InfluxDB if present) into ./backups\n"
@@ -164,6 +164,25 @@ check-not-1x:
 	fi
 
 #------------------------------------------------------------------------------
+# [ VERSION GUARD ] -----------------------------------------------------------
+
+# After `git pull` the files are newer than the running stack; starting them here
+# would migrate the database with no backup to roll back to.
+.PHONY: check-running-version
+check-running-version:
+	@running="$$(VERSION=$(VERSION) docker compose ps -a --format '{{.Image}}' 2>/dev/null \
+		| grep -E 'on-premise/wbc-' | sed 's/.*://' | sort -u | tr '\n' ' ')"; \
+	running="$${running% }"; \
+	if [ -n "$$running" ] && [ "$$running" != "$(VERSION)" ]; then \
+		printf "$(RED)ERROR: the running stack is %s, the files are %s.$(NC)\n" "$$running" "$(VERSION)"; \
+		if [ -z "$$(VERSION=$(VERSION) docker compose ps -q --status running 2>/dev/null)" ]; then \
+			printf "$(YELLOW)The stack is stopped: start it as it was with 'docker compose start' first.$(NC)\n"; \
+		fi; \
+		printf "$(YELLOW)Run 'make update': it backs up the running version, switches and rolls back on failure.$(NC)\n"; \
+		exit 1; \
+	fi
+
+#------------------------------------------------------------------------------
 # [ TESTS ] -------------------------------------------------------------------
 # Fixtures only — no containers, no database. Not shipped with the release.
 
@@ -174,6 +193,8 @@ test:
 	@bash tests/test-check-env.sh
 	@printf "\n"
 	@bash tests/test-compose-env.sh
+	@printf "\n"
+	@bash tests/test-update-path.sh
 	@printf "\n"
 	@bash migration/tests/test-migrate-env.sh
 	@printf "\n"
@@ -439,9 +460,10 @@ run:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE ]====================="
 	@$(call require_version)
 	@${MAKE} check-not-1x
+	@${MAKE} check-running-version
 	@${MAKE} generate-env
 	@${MAKE} check-certs
-	@VERSION=$(VERSION) docker compose up -d --build
+	@VERSION=$(VERSION) docker compose up -d --build --remove-orphans
 	@${MAKE} check-metrics-schema
 
 .PHONY: run-no-cert-check
@@ -449,37 +471,47 @@ run-no-cert-check:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE (NO CERT CHECK) ]====================="
 	@$(call require_version)
 	@${MAKE} check-not-1x
+	@${MAKE} check-running-version
 	@${MAKE} generate-env
 	@${MAKE} check-cert-paths
-	@VERSION=$(VERSION) docker compose up -d --build
+	@VERSION=$(VERSION) docker compose up -d --build --remove-orphans
 	@${MAKE} check-metrics-schema
+
+WB_ONPREM_RELEASES := https://github.com/wirenboard/wb-onprem-cli/releases/latest
+
+# The test server deploy passes --yes --redeploy here; nothing else answers for the admin.
+WB_ONPREM_UPDATE_FLAGS ?=
 
 .PHONY: update
 update:
-	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING IMAGES AND RESTARTING CONTAINERS ]====================="
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING WITH wb-onprem ]====================="
 	@$(call require_version)
-	@${MAKE} check-not-1x
-	@${MAKE} generate-env
-	@${MAKE} check-certs
-	@VERSION=$(VERSION) docker compose pull
-	@# Services dropped from the release keep running as orphans otherwise.
-	@VERSION=$(VERSION) docker compose down --remove-orphans
-	docker image prune -f
-	docker container prune -f
-	@VERSION=$(VERSION) docker compose up -d --build
-	@${MAKE} check-metrics-schema
+	@cli="$$(command -v wb-onprem)" || { \
+		printf "$(RED)ERROR: wb-onprem is not installed: the update needs it for the backup and the rollback.$(NC)\n"; \
+		printf "$(YELLOW)Download wb-onprem.pyz and wb-onprem.pyz.sha256 from %s, check and install it:$(NC)\n" "$(WB_ONPREM_RELEASES)"; \
+		printf "$(YELLOW)  sha256sum -c wb-onprem.pyz.sha256 && sudo install -m 755 wb-onprem.pyz /usr/local/bin/wb-onprem$(NC)\n"; \
+		exit 1; \
+	}; \
+	if [ "$$(id -u)" -eq 0 ]; then \
+		"$$cli" update --dir "$(CURDIR)" $(WB_ONPREM_UPDATE_FLAGS); \
+	else \
+		sudo "$$cli" update --dir "$(CURDIR)" $(WB_ONPREM_UPDATE_FLAGS); \
+	fi
 
 .PHONY: stop
 stop:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ STOPPING CONTAINERS ]====================="
 	@$(call require_version)
-	@VERSION=$(VERSION) docker compose down
+	@export VERSION=$(VERSION); docker compose stop && \
+		left="$$(docker compose ps -q --status running)" && \
+		if [ -n "$$left" ]; then docker stop $$left; fi
 
 .PHONY: restart
 restart:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ RESTARTING CONTAINERS ]====================="
 	@$(call require_version)
 	@${MAKE} check-not-1x
+	@${MAKE} check-running-version
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@export VERSION=$(VERSION); docker compose down --remove-orphans && docker compose up -d --build

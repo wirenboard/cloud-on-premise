@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `make run` / `update` / `restart` must refuse while the installation is on 1.x.
+# `make run` / `restart` must refuse while the installation is on 1.x.
 #
 #     bash migration/tests/test-upgrade-gate.sh
 set -uo pipefail
@@ -76,9 +76,10 @@ check "the marker name is defined in env.sh" \
 check "and is not spelled out anywhere else" \
   "$(! grep -rl 'backups/\.upgrade-unfinished' "$ROOT/Makefile" "$ROOT/migration/upgrade.sh" >/dev/null 2>&1; echo $?)"
 
-# The guard has to sit on every target that starts the stack.
+# The guard has to sit on every target that starts the stack; `update` hands a 1.x
+# installation to wb-onprem, which goes through `make upgrade` of 2.0.1.
 setup
-for target in run run-no-cert-check update restart; do
+for target in run run-no-cert-check restart; do
     check "$target depends on the guard" \
       "$(awk -v t="^$target:$" '$0 ~ t {f=1; next} f && /^[a-z]/ {exit} f && /check-not-1x/ {found=1} END {exit !found}' "$ROOT/Makefile"; echo $?)"
 done
