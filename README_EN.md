@@ -2,6 +2,8 @@
 
 > ⚠️ By using this repository or downloading Docker images, you accept the terms of the license agreement (see the LICENSE file).
 
+> The `ghcr.io/wirenboard/on-premise/minio` and `ghcr.io/wirenboard/on-premise/mc` images of the 2.0.x releases are unmodified copies of MinIO, licensed under AGPL-3.0. Source code: [minio/minio `RELEASE.2025-09-07T16-13-09Z`](https://github.com/minio/minio/tree/RELEASE.2025-09-07T16-13-09Z) and [minio/mc `RELEASE.2025-08-13T08-35-41Z`](https://github.com/minio/mc/tree/RELEASE.2025-08-13T08-35-41Z).
+
 ---
 
 ## 📖 Description

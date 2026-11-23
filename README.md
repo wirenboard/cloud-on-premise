@@ -3,6 +3,8 @@
 
 > ⚠️ Используя этот репозиторий или загружая Docker образы, вы принимаете условия лицензионного соглашения (LICENSE файл).
 
+> Образы `ghcr.io/wirenboard/on-premise/minio` и `ghcr.io/wirenboard/on-premise/mc` из релизов 2.0.x — неизменённые копии MinIO под лицензией AGPL-3.0. Исходный код: [minio/minio `RELEASE.2025-09-07T16-13-09Z`](https://github.com/minio/minio/tree/RELEASE.2025-09-07T16-13-09Z) и [minio/mc `RELEASE.2025-08-13T08-35-41Z`](https://github.com/minio/mc/tree/RELEASE.2025-08-13T08-35-41Z).
+
 ---
 
 ## 📖 Описание
