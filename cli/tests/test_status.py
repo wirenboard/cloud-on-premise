@@ -341,6 +341,29 @@ class StatusTest(unittest.TestCase):
         (self.install / "Makefile").write_text("run:\n\tdocker compose up -d\n")
         self.assert_upgrade_first()
 
+    def test_unfinished_upgrade_is_sent_to_make_upgrade(self):
+        (self.install / "backups").mkdir()
+        (self.install / "backups" / ".upgrade-unfinished").write_text("")
+        self.assert_upgrade_first()
+
+    def test_one_x_makefile_under_a_translated_make(self):
+        (self.bin / "make").write_text(
+            f"#!/bin/sh\n[ \"$LC_ALL\" = C ] && exec {shutil.which('make')} \"$@\"\n"
+            "echo 'make: *** Нет правила для сборки цели «check-not-1x».  Останов.' >&2\nexit 2\n")
+        (self.bin / "make").chmod(0o755)
+        self.test_one_x_makefile_without_the_check()
+
+    def test_broken_makefile_is_not_a_one_x_installation(self):
+        for makefile in ("this is not a rule\n", "check-not-1x:\n\t@exit 1\n"):
+            with self.subTest(makefile):
+                (self.install / "Makefile").write_text(makefile)
+                code, report = self.run_status()
+                items = self.items(report)
+                self.assertEqual(items["installation"], {"name": "installation", "status": "fail",
+                                                         "detail": "Makefile cannot be read: make check-not-1x failed"})
+                self.assertEqual(items["backend"]["status"], "ok")
+                self.assertEqual(code, 2)
+
     def test_without_make_the_rest_is_still_checked(self):
         tools = self.root / "tools"
         tools.mkdir()

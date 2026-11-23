@@ -3,6 +3,7 @@
 import datetime
 import json
 import os
+import re
 import shutil
 import ssl
 
@@ -15,6 +16,8 @@ DISK_WARN_PERCENT = 15
 DISK_FAIL_PERCENT = 5
 CERT_WARN_DAYS = 14
 CHECK_TIMEOUT = 60
+# GNU make 3.81 quotes the target as `check-not-1x', 4.x as 'check-not-1x'.
+_NO_CHECK = re.compile(r"No rule to make target .check-not-1x'")
 
 
 def add_arguments(parser):
@@ -183,17 +186,21 @@ def expiry_item(path, now=None):
 
 
 def installation_item(directory):
-    """(item or None, is 1.x): a 1.x Makefile has no check-not-1x, a 2.x one fails it on a 1.x .env or images."""
+    """(item or None, is 1.x): a 1.x Makefile has no check-not-1x, a 2.x one refuses with ERROR: on a 1.x .env,
+    1.x images or an unfinished upgrade."""
     if not os.path.isfile(os.path.join(directory, "Makefile")):
         return item("installation", FAIL, f"Makefile not found in {directory}, the installation is incomplete"), False
-    code, _, _ = core.run(["make", "-s", "check-not-1x"], cwd=directory, timeout=CHECK_TIMEOUT)
+    code, out, err = core.run(["make", "-s", "check-not-1x"], cwd=directory, timeout=CHECK_TIMEOUT,
+                              env={"LC_ALL": "C"})
     if code == 127:
         return item("installation", WARN, "make not found, cannot tell a 1.x installation from 2.x"), False
     if code == 124:
         return item("installation", WARN, "`make check-not-1x` timed out, Docker may be hung"), False
-    if code != 0:
+    if code == 0:
+        return None, False
+    if _NO_CHECK.search(err) or "ERROR:" in out:
         return item("installation", FAIL, "1.x installation: run `make upgrade` first"), True
-    return None, False
+    return item("installation", FAIL, "Makefile cannot be read: make check-not-1x failed"), False
 
 
 def build(directory, args):
