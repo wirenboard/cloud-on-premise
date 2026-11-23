@@ -1,6 +1,7 @@
 -- TimescaleDB bootstrap for single-node on-premise.
 -- Rendered from cloud-infrastructure roles/deploy_stack/templates/timescale-init.sql.j2
 -- at cd394bae. Update the revision when re-syncing: it is the base for the next diff.
+-- Already carries the view security_barrier of 2355e29 and the statistics revokes of a1378c2.
 --
 -- Deliberate differences from that base, so the next diff is not mistaken for drift:
 -- the HA cluster is collapsed to one node, Jinja variables to constants and
@@ -523,9 +524,48 @@ REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_r
 REVOKE SELECT ON public.pg_stat_statements FROM PUBLIC;
 REVOKE SELECT ON public.pg_stat_statements_info FROM PUBLIC;
 DO $$
+DECLARE
+  obj text;
 BEGIN
   EXECUTE format('GRANT SELECT ON public.pg_stat_statements TO %I', 'ts_exporter');
   EXECUTE format('GRANT SELECT ON public.pg_stat_statements_info TO %I', 'ts_exporter');
+  FOR obj IN
+    SELECT oid::regprocedure::text FROM pg_proc
+    WHERE pronamespace = 'public'::regnamespace AND proname IN ('pg_stat_statements', 'pg_stat_statements_info')
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', obj, 'ts_exporter');
+  END LOOP;
+END$$;
+
+-- Statistics counters tell a client how many other orgs' rows were read before security_barrier.
+DO $$
+DECLARE
+  obj text;
+BEGIN
+  FOR obj IN
+    SELECT oid::regclass::text FROM pg_class
+    WHERE relkind = 'v' AND (
+      relnamespace = 'pg_catalog'::regnamespace AND (relname LIKE 'pg\_stat\_%' OR relname LIKE 'pg\_statio\_%')
+      OR oid = to_regclass('timescaledb_information.stat_chunk_activity'))
+  LOOP
+    EXECUTE format('REVOKE SELECT ON %s FROM PUBLIC', obj);
+    EXECUTE format('GRANT SELECT ON %s TO pg_monitor, all_reader', obj);
+  END LOOP;
+  FOR obj IN
+    SELECT oid::regprocedure::text FROM pg_proc
+    WHERE pronamespace = 'pg_catalog'::regnamespace AND proname LIKE 'pg\_stat\_get\_%'
+      OR pronamespace = to_regnamespace('_timescaledb_functions') AND proname = 'chunk_statistics'
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO pg_monitor, all_reader', obj);
+  END LOOP;
+  FOR obj IN
+    SELECT oid::regprocedure::text FROM pg_proc
+    WHERE pronamespace = to_regnamespace('_timescaledb_functions') AND proname = 'chunk_statistics_reset'
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj);
+  END LOOP;
 END$$;
 
 -- Limits for the reader roles.
