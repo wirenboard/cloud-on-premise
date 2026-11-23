@@ -48,9 +48,10 @@ def facts(directory):
 def _ps_rows(text):
     # NDJSON since compose 2.21, a single JSON array before.
     text = text.strip()
-    if text.startswith("["):
-        return json.loads(text)
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
+    rows = json.loads(text) if text.startswith("[") else [json.loads(line) for line in text.splitlines() if line.strip()]
+    if not all(isinstance(row, dict) for row in rows):
+        raise ValueError("a row is not a JSON object")
+    return rows
 
 
 def _one_shot(service):
@@ -58,7 +59,7 @@ def _one_shot(service):
 
 
 def _row_item(name, row, one_shot):
-    state, health, code = row.get("State", ""), row.get("Health", ""), row.get("ExitCode") or 0
+    state, health, code = row.get("State", ""), row.get("Health", ""), row.get("ExitCode", "unknown")
     if state == "exited":
         detail = f"exited, exit code {code}"
         if one_shot and code == 0:
@@ -72,7 +73,9 @@ def _row_item(name, row, one_shot):
 
 def compose_config(directory):
     """(services of `docker compose config`, None) or (None, fail item); compose stderr may hold .env values."""
-    code, out, _ = core.compose(directory, ["config", "--format", "json"])
+    code, out, err = core.compose(directory, ["config", "--format", "json"])
+    if code != 0 and "is not a docker command" in err:
+        return None, item("services", FAIL, "the Docker compose plugin is not installed, install docker-compose-plugin")
     if code != 0:
         return None, item("services", FAIL, "docker compose config failed, run `make check-env`")
     try:

@@ -160,6 +160,28 @@ class StatusTest(unittest.TestCase):
                          ("ok", "fail"), report)
         self.assertEqual(code, 2)
 
+    def test_unparsable_ps_output_fails(self):
+        for out in ("not json", '"a string"', json.dumps(running("backend")) + "\n42", "[1]"):
+            with self.subTest(out=out):
+                self.fake("ps", out=out)
+                code, report = self.run_status()
+                self.assertEqual(code, 2)
+                self.assertEqual(self.items(report)["containers"]["detail"], "cannot parse `docker compose ps` output")
+
+    def test_exited_without_an_exit_code_is_not_completed(self):
+        self.set_services({"backend": "always", "init": "no"},
+                          [running("backend"), {"Service": "init", "State": "exited", "Health": ""}])
+        code, report = self.run_status()
+        self.assertEqual(self.items(report)["init"], {"name": "init", "status": "fail",
+                                                      "detail": "exited, exit code unknown"})
+        self.assertEqual(code, 2)
+
+    def test_missing_compose_plugin_is_named(self):
+        self.fake("config", err="docker: 'compose' is not a docker command.\nSee 'docker --help'", rc=1)
+        code, report = self.run_status()
+        self.assertEqual(code, 2)
+        self.assertIn("compose plugin is not installed", self.items(report)["services"]["detail"])
+
     def test_stopped_stack_is_one_item(self):
         self.set_services({"backend": "always", "postgres": "always", "init": "no"}, [])
         code, report = self.run_status()
@@ -203,6 +225,24 @@ class StatusTest(unittest.TestCase):
                 disk = self.disk_items(report)[0]
                 self.assertEqual(disk["status"], expected)
                 self.assertTrue(disk["detail"].endswith(f"({percent}%)"), disk)
+
+    def test_free_space_in_gib(self):
+        self.free(50 * 2**30, 100 * 2**30)
+        _, report = self.run_status()
+        self.assertEqual(self.disk_items(report)[0]["detail"], "50.0 GiB free of 100.0 GiB (50%)")
+
+    def test_unreadable_free_space_warns(self):
+        with mock.patch.object(status.shutil, "disk_usage", side_effect=PermissionError(13, "Permission denied")):
+            code, report = self.run_status()
+        self.assertEqual({(it["status"], it["detail"]) for it in self.disk_items(report)},
+                         {("warn", "cannot read free space: Permission denied")})
+        self.assertEqual(code, 1)
+
+    def test_docker_root_missing_on_this_machine_is_skipped(self):
+        self.fake("info", out=str(self.root / "remote-docker-root"))
+        code, report = self.run_status()
+        self.assertEqual(code, 0)
+        self.assertNotIn("remote-docker-root", json.dumps(self.disk_items(report)))
 
     def test_zero_disk_size_warns(self):
         self.free(0, 0)
