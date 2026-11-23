@@ -40,19 +40,19 @@ def log_tail(directory, service):
 
 
 def container_items(directory, services, with_logs):
-    """(items, ok services): broken ones with the log command and, if `with_logs`, the tail; all ok is one item."""
+    """(items, running services): broken ones with the log command and, if `with_logs`, the tail; all ok is one item."""
     items = status.service_items(directory, services)
-    healthy = {it["name"] for it in items if it["status"] == OK and it["name"] in services}
+    running = {it["name"] for it in items if it["name"] in services and it["detail"].startswith("running")}
     broken = [it for it in items if it["status"] != OK]
     if not broken:
-        return [item("containers", OK, f"{len(items)} services running or completed")], healthy
+        return [item("containers", OK, f"{len(items)} services running or completed")], running
     for it in broken:
         if it["name"] not in services:
             continue
         tail = log_tail(directory, it["name"]) if with_logs else []
         it["detail"] += f"; log: `{log_command(it['name'])}`, after the fix `make run`"
         it["detail"] += "".join(f"\n    | {line}" for line in tail)
-    return broken, healthy
+    return broken, running
 
 
 def env_item(directory):
@@ -197,8 +197,8 @@ def listeners():
     return found
 
 
-def port_items(services, healthy):
-    """`healthy`: services that are running; a hidden owner of a port they publish is taken to be Docker."""
+def port_items(services, running):
+    """`running`: services with a running container; a Docker or hidden owner of a port is taken to be theirs only while they run."""
     ports = published_ports(services)
     found = listeners()
     if found is None:
@@ -209,10 +209,13 @@ def port_items(services, healthy):
     for port, publishers in sorted(ports.items()):
         owners = found.get(port, set())
         foreign = sorted(owners - {None, *DOCKER_PROCESSES})
-        down = sorted(publishers - healthy)
+        down = sorted(publishers - running)
         if foreign:
             items.append(item(f"port {port}", FAIL,
                               f"taken by {', '.join(foreign)}, stop it or publish the stack on another port"))
+        elif owners & set(DOCKER_PROCESSES) and down:
+            items.append(item(f"port {port}", FAIL,
+                              f"taken by another container or Docker process while {', '.join(down)} is down"))
         elif None in owners and down:
             items.append(item(f"port {port}", WARN,
                               f"in use while {', '.join(down)} is not running, run as root to see by whom"))
@@ -242,12 +245,12 @@ def build(directory, args):
             if failed:
                 items.append(failed)
             else:
-                containers, healthy = container_items(directory, services, not getattr(args, "json", False))
+                containers, running = container_items(directory, services, not getattr(args, "json", False))
                 items += containers
         items.append(env_item(directory))
         items += cert_items(directory)
         items += disk_items(directory)
         if services is not None:
-            items += port_items(services, healthy)
+            items += port_items(services, running)
         items.append(clock_item())
     return {"status": core.worst(it["status"] for it in items), "items": items, "facts": status.facts(directory)}

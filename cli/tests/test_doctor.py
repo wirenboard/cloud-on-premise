@@ -507,6 +507,28 @@ exec {shutil.which("make")} "$@"
                           "detail": "in use while traefik is not running, run as root to see by whom"})
         self.assertNotIn("port 7107", self.items(report))
 
+    def test_docker_owned_port_while_its_service_is_down(self):
+        self.set_services({"traefik": ["443"], "tunnel": ["7107"]},
+                          [{"Service": "traefik", "State": "exited", "ExitCode": 1}, running("tunnel")])
+        for owner in doctor.DOCKER_PROCESSES:
+            with self.subTest(owner):
+                self.fake("ss", out="\n".join([ss_line(443, owner), ss_line(7107, owner)]))
+                code, report = self.run_doctor()
+                self.assertEqual(self.items(report)["port 443"], {
+                    "name": "port 443", "status": "fail",
+                    "detail": "taken by another container or Docker process while traefik is down"})
+                self.assertNotIn("port 7107", self.items(report))
+                self.assertEqual(code, 2)
+
+    def test_docker_owned_port_of_a_starting_or_unhealthy_service_is_its_own(self):
+        for health in ("starting", "unhealthy"):
+            with self.subTest(health):
+                self.set_services({"traefik": ["443"]},
+                                  [{"Service": "traefik", "State": "running", "Health": health}])
+                self.fake("ss", out=ss_line(443, "docker-proxy"))
+                _, report = self.run_doctor()
+                self.assertNotIn("port 443", self.items(report))
+
     def test_ss_failure_warns(self):
         self.fake("ss", rc=1)
         _, report = self.run_doctor()
