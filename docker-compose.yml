@@ -105,7 +105,7 @@ services:
   timescale:
     # timescaledb-ha image, but run as a plain single PostgreSQL instance
     # (no Patroni / etcd / HAProxy — those are upstream HA-only concerns).
-    image: timescale/timescaledb-ha:pg17.5-ts2.21.3
+    image: timescale/timescaledb-ha:pg17.11-ts2.30.2
     logging: *default-logging
     restart: always
     environment:
@@ -140,7 +140,7 @@ services:
   # The entrypoint applies init.sql only on a fresh volume, so without this a schema
   # change never reaches an existing installation. Idempotent, one transaction.
   timescale-init:
-    image: timescale/timescaledb-ha:pg17.5-ts2.21.3
+    image: timescale/timescaledb-ha:pg17.11-ts2.30.2
     logging: *default-logging
     restart: "no"
     environment:
