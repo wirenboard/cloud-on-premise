@@ -27,3 +27,6 @@ jobs:
 
       - name: Run fixture tests
         run: make test
+
+      - name: Run release tooling tests
+        run: python3 -m unittest discover -s .github/scripts
