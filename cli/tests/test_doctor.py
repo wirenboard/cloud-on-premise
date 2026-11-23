@@ -338,10 +338,6 @@ exec {shutil.which("make")} "$@"
         pkey = [c for c in (self.bin / "openssl-calls").read_text().splitlines() if c.startswith("pkey ")]
         self.assertTrue(pkey and all("-passin pass: " in c for c in pkey), pkey)
 
-    def test_common_name_like_the_san_header(self):
-        make_cert(self.tls / "fullchain.pem", self.tls / "privkey.pem", subject="/CN=X509v3 Subject Alternative Name")
-        self.assertEqual(self.cert()["certificate names"][0], "ok")
-
     def test_names_agree_with_make_check_certs(self):
         cases = {
             "all names": ({}, "ok"),

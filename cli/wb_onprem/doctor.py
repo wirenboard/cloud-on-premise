@@ -40,8 +40,7 @@ def log_tail(directory, service):
 
 
 def container_items(directory, services, with_logs):
-    """(items, services that are ok): broken services with the log command, and the log tail when `with_logs`;
-    all ok collapses into one item."""
+    """(items, ok services): broken ones with the log command and, if `with_logs`, the tail; all ok is one item."""
     items = status.service_items(directory, services)
     healthy = {it["name"] for it in items if it["status"] == OK and it["name"] in services}
     broken = [it for it in items if it["status"] != OK]

@@ -48,7 +48,10 @@ def facts(directory):
 def _ps_rows(text):
     # NDJSON since compose 2.21, a single JSON array before.
     text = text.strip()
-    rows = json.loads(text) if text.startswith("[") else [json.loads(line) for line in text.splitlines() if line.strip()]
+    if text.startswith("["):
+        rows = json.loads(text)
+    else:
+        rows = [json.loads(line) for line in text.splitlines() if line.strip()]
     if not all(isinstance(row, dict) for row in rows):
         raise ValueError("a row is not a JSON object")
     return rows

@@ -408,8 +408,8 @@ class StatusTest(unittest.TestCase):
         self.assertEqual(report["facts"]["git"], "v2.0.1")
 
     def test_dubious_ownership_is_not_called_a_missing_checkout(self):
-        (self.bin / "git").write_text(f"#!/bin/sh\necho \"fatal: detected dubious ownership in repository at '{self.install}'\" >&2\n"
-                                      "exit 128\n")
+        (self.bin / "git").write_text(f"#!/bin/sh\necho \"fatal: detected dubious ownership in repository at "
+                                      f"'{self.install}'\" >&2\nexit 128\n")
         (self.bin / "git").chmod(0o755)
         _, report = self.run_status()
         self.assertIn(f"run wb-onprem as the owner of {self.install}", report["facts"]["git"])
