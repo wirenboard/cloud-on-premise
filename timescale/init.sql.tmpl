@@ -157,7 +157,8 @@ AS $$
 $$;
 
 -- VIEW that lists controllers quickly, filtered by RLS
-CREATE OR REPLACE VIEW public.org_controllers AS
+-- security_barrier sits in each definition: CREATE OR REPLACE VIEW resets view options.
+CREATE OR REPLACE VIEW public.org_controllers WITH (security_barrier = true) AS
 SELECT h.host, h.organization_id
 FROM auth.host_org_map h
 WHERE auth.is_admin()
@@ -172,7 +173,7 @@ CREATE TABLE IF NOT EXISTS public.mqtt_metrics_topics (
   PRIMARY KEY (host, topic)
 );
 
-CREATE OR REPLACE VIEW public.mqtt_metrics_topics_readable AS
+CREATE OR REPLACE VIEW public.mqtt_metrics_topics_readable WITH (security_barrier = true) AS
 SELECT org.organization_id, t.host, t.topic, t.first_seen
 FROM public.mqtt_metrics_topics t
 JOIN auth.host_org_map org ON org.host = t.host
@@ -325,6 +326,7 @@ BEGIN
   EXECUTE format('ALTER TABLE public.%I ALTER COLUMN host SET STATISTICS 1000', meas);
   EXECUTE format('ALTER TABLE public.%I ALTER COLUMN topic SET STATISTICS 1000', meas);
 
+  -- ORDER BY inside: a barrier view is not flattened, so without it a latest-value query reads the whole range.
   v_readable_sql := format(
     $view$
       SELECT
@@ -341,11 +343,12 @@ BEGIN
       FROM public.%I m
       WHERE auth.is_admin()
         OR m.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+      ORDER BY m.time DESC
     $view$,
     meas
   );
 
-  EXECUTE format('CREATE OR REPLACE VIEW public.%I AS %s', v_readable_view_name, v_readable_sql);
+  EXECUTE format('CREATE OR REPLACE VIEW public.%I WITH (security_barrier = true) AS %s', v_readable_view_name, v_readable_sql);
 
   v_numeric_readable_sql := format(
     $view$
@@ -358,11 +361,12 @@ BEGIN
       FROM public.%I m
       WHERE (auth.is_admin() OR m.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles()))
         AND m.value ~ '^[+-]?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))([eE][+-]?[0-9]+)?$'
+      ORDER BY m.time DESC
     $view$,
     meas
   );
 
-  EXECUTE format('CREATE OR REPLACE VIEW public.%I AS %s', v_numeric_readable_view_name, v_numeric_readable_sql);
+  EXECUTE format('CREATE OR REPLACE VIEW public.%I WITH (security_barrier = true) AS %s', v_numeric_readable_view_name, v_numeric_readable_sql);
 
   EXECUTE format('GRANT SELECT ON TABLE public.%I TO all_reader', meas);
   EXECUTE format('GRANT SELECT ON public.%I TO views_reader, all_reader', v_readable_view_name);
@@ -593,3 +597,20 @@ END$$;
 -- compression and retention policies — is never re-applied to a store that already
 -- exists, and only the top-level statements above would reach it.
 CALL _apply_ensure_measurement_all();
+
+DO $$
+DECLARE
+  v_views text;
+BEGIN
+  SELECT string_agg(c.oid::regclass::text, ', ')
+    INTO v_views
+  FROM pg_class c
+  WHERE c.relkind = 'v'
+    AND c.relnamespace = 'public'::regnamespace
+    AND has_table_privilege('views_reader', c.oid, 'SELECT')
+    AND NOT coalesce(c.reloptions, '{}') @> ARRAY['security_barrier=true'];
+  IF v_views IS NOT NULL THEN
+    RAISE EXCEPTION 'views readable by organisation users have no security_barrier and leak other orgs'' rows: %', v_views
+      USING HINT = 'ALTER VIEW ... SET (security_barrier = true), or REVOKE SELECT ON the view FROM views_reader.';
+  END IF;
+END$$;
