@@ -744,10 +744,16 @@ Certbot saves the certificate to:
 /etc/letsencrypt/live/your-domain.com/privkey.pem
 ```
 
-### Verify RSA Key
+### Verify the Key
 
 ```bash
-openssl rsa -in /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem -check -noout
+openssl pkey -in /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem -check -noout
+```
+
+Expected:
+
+```
+Key is valid
 ```
 
 ---
