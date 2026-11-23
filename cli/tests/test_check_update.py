@@ -136,6 +136,36 @@ class CheckUpdateTest(unittest.TestCase):
             "name": ".env", "status": "ok", "detail": "no new uncommented variables in .env.example of v2.1.0"})
         self.assertEqual(code, 0)
 
+    def test_new_commented_variables_are_listed_as_optional(self):
+        git(self.origin, "tag", "-d", "v3.0.0")
+        code, report = self.check()
+        self.assertEqual(self.items(report)[".env optional"], {
+            "name": ".env optional", "status": "ok", "detail": "new optional variables in v2.1.0: D"})
+        self.assertEqual(code, 1)
+        (self.install / ".env").write_text("C=3\n")
+        code, report = self.check()
+        self.assertEqual(self.items(report)[".env optional"]["status"], "ok")
+        self.assertEqual(code, 0)
+        for known in (".env.example", ".env"):
+            with self.subTest(known):
+                (self.install / ".env").write_text("C=3\n")
+                with open(self.install / known, "a") as f:
+                    f.write("#D=0\n")
+                _, report = self.check()
+                self.assertNotIn(".env optional", self.items(report))
+                git(self.install, "checkout", "--", ".env.example")
+
+    def test_variable_values_are_never_shown(self):
+        git(self.origin, "tag", "-d", "v3.0.0")
+        (self.origin / ".env.example").write_text(
+            "A=1\nNEW_REQUIRED=value-marker-1\n#NEW_REQUIRED=value-marker-3\n#NEW_OPTIONAL=value-marker-2\n")
+        git(self.origin, "commit", "-qam", "values")
+        git(self.origin, "tag", "-f", "v2.1.0")
+        _, out = self.check(as_json=False)
+        self.assertIn("new in v2.1.0: NEW_REQUIRED ", out)
+        self.assertIn("new optional variables in v2.1.0: NEW_OPTIONAL\n", out)
+        self.assertNotIn("value-marker", out)
+
     def test_newest_release_installed(self):
         for tag in ("v2.1.0", "v3.0.0"):
             git(self.origin, "tag", "-d", tag)

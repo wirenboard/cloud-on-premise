@@ -14,7 +14,7 @@ _VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-testing)?$")
 _TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 _CREDENTIALS = re.compile(r"(\w+://)[^/\s'\"]*@")
 _QUERY = re.compile(r"(\w+://[^\s?'\"]*)\?[^\s'\"]*")
-_NAME = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=", re.M)
+_NAME = re.compile(r"^\s*(#?)([A-Za-z_][A-Za-z0-9_]*)=", re.M)
 
 
 def add_arguments(parser):
@@ -84,26 +84,34 @@ def changelog_between(text, current, target):
     return "\n".join(keep)
 
 
-def names(text):
-    return _NAME.findall(text)
+def names(text, commented=False):
+    """Names of `NAME=value` lines, or of `#NAME=value` ones with `commented`; values are never kept."""
+    return [name for mark, name in _NAME.findall(text) if bool(mark) == commented]
 
 
-def read_names(path):
+def read_text(path):
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
-            return set(names(f.read()))
+            return f.read()
     except OSError:
-        return set()
+        return ""
 
 
-def env_item(directory, tag, example):
+def env_items(directory, tag, example):
     if example is None:
-        return item(".env", WARN, f"cannot read .env.example of {tag}")
-    known = read_names(os.path.join(directory, ".env.example")) | read_names(os.path.join(directory, ".env"))
+        return [item(".env", WARN, f"cannot read .env.example of {tag}")]
+    installed = [read_text(os.path.join(directory, name)) for name in (".env.example", ".env")]
+    known = {name for text in installed for name in names(text)}
     new = [name for name in names(example) if name not in known]
-    if not new:
-        return item(".env", OK, f"no new uncommented variables in .env.example of {tag}")
-    return item(".env", WARN, f"new in {tag}: {', '.join(new)} (see .env.example of {tag})")
+    if new:
+        items = [item(".env", WARN, f"new in {tag}: {', '.join(new)} (see .env.example of {tag})")]
+    else:
+        items = [item(".env", OK, f"no new uncommented variables in .env.example of {tag}")]
+    known |= {name for text in installed for name in names(text, commented=True)} | set(names(example))
+    optional = [name for name in names(example, commented=True) if name not in known]
+    if optional:
+        items.append(item(".env optional", OK, f"new optional variables in {tag}: {', '.join(optional)}"))
+    return items
 
 
 def check(directory, remote, facts):
@@ -135,7 +143,7 @@ def check(directory, remote, facts):
     files, error = read_tag(url, os.path.join(directory, ".git", "config"), tag, ["CHANGELOG_EN.md", ".env.example"])
     if error:
         return items + [item("notes", WARN, f"found {tag}, cannot read its notes: {error}")], None
-    items.append(env_item(directory, tag, files[".env.example"]))
+    items += env_items(directory, tag, files[".env.example"])
     if files["CHANGELOG_EN.md"] is None:
         return items + [item("notes", WARN, f"cannot read CHANGELOG_EN.md of {tag}")], None
     return items, changelog_between(files["CHANGELOG_EN.md"], current, target)
