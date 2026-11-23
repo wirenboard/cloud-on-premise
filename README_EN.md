@@ -544,7 +544,7 @@ make help
 ## 🧰 Maintenance: wb-onprem
 
 The `wb-onprem` utility checks an installation made from this repo: service state, common breakages
-and whether a new release is out. It needs only Python 3, which ships with Ubuntu 22.04 and 24.04.
+and whether a new release is out. It needs Python 3.10 or newer, which ships with Ubuntu 22.04 and 24.04.
 
 ### Installation
 
@@ -574,6 +574,10 @@ PYTHONPATH=cli python3 -m wb_onprem status
 `--json` gives machine-readable output. Exit codes follow monitoring plugins (Nagios, Zabbix):
 `0` — all fine, `1` — warning, `2` — failure, `3` — the utility could not start.
 
+`check-update` is the only command that needs the network: it reads tags and `CHANGELOG_EN.md` from the
+installation's `origin` remote; `--remote` takes another remote, URL or path. Without access to it the command
+reports a failure (exit code `2`) — keep that in mind before adding it to monitoring on a server without internet.
+
 ### Installation directory
 
 The utility looks for the installation in this order and takes the first match:
@@ -584,6 +588,9 @@ The utility looks for the installation in this order and takes the first match:
 4. the `dir=<path>` line in `/etc/wb-onprem/config`;
 5. `/opt/cloud-on-premise`.
 
+If `--dir`, `WB_ONPREM_DIR` or `dir=` points to something that is not an installation, the utility does not look
+further and exits with code `3`.
+
 If the installation is not in `/opt/cloud-on-premise`, write its absolute path to the config so the utility
 finds it from any directory and from cron:
 
@@ -593,7 +600,9 @@ echo 'dir=/srv/cloud-on-premise' | sudo tee /etc/wb-onprem/config
 ```
 
 > ⚠️ The config must be owned by root and not writable by others: the utility runs `make`
-> and `docker compose` in that directory with the rights of whoever called it.
+> and `docker compose` in that directory with the rights of whoever called it. The current directory
+> is checked before the config, so under `sudo` and in cron run the utility from the installation directory
+> or with `--dir`, as the owner of that directory — otherwise the `Makefile` of wherever you stand is run.
 
 > ⚠️ Review the output before sending it to support. The utility does not print passwords or keys from `.env`,
 > but the text output of `doctor` includes the last log lines of broken services.
