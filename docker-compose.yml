@@ -194,6 +194,8 @@ services:
     image: telegraf:1.35.4
     logging: *default-logging
     restart: always
+    # The default 10s cuts off the flush of a buffer piled up while the database was down.
+    stop_grace_period: 60s
     environment:
       TELEGRAF_TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER:-telegraf}
       TELEGRAF_TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD:-telegraf_password}
