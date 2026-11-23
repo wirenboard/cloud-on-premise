@@ -223,7 +223,7 @@ services:
         condition: service_healthy
 
   traefik:
-    image: traefik:3.6.2
+    image: traefik:3.7.16
     logging: *default-logging
     restart: always
     ports:
@@ -521,7 +521,7 @@ services:
       <<: *traefik-common
       # Closed as in the cloud: a password changed inside Grafana diverges from the
       # copy the backend keeps, and the user loses the metrics for good.
-      traefik.http.routers.clients_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathPrefix(`/user/password`) && !PathPrefix(`/api/user/password`)"
+      traefik.http.routers.clients_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathRegexp(`(?i)^(/|%2F)+(api(/|%2F)+)?user(/|%2F)+password`) && !PathPrefix(`/metrics`)"
       traefik.http.routers.clients_grafana.entrypoints: "websecure"
       traefik.http.routers.clients_grafana.service: "clients_grafana"
       traefik.http.routers.clients_grafana.tls: "true"
