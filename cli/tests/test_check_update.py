@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import itertools
 import json
 import os
 import pathlib
@@ -107,13 +108,14 @@ class CheckUpdateTest(unittest.TestCase):
         code, report = self.check()
         items = self.items(report)
         self.assertEqual(code, 1)
-        self.assertEqual(report["facts"]["installed"], "2.0.1")
+        self.assertEqual(report["facts"]["version"], "2.0.1")
+        self.assertIn("wb-onprem", report["facts"])
         self.assertEqual(report["facts"]["available"], "3.0.0")
         self.assertEqual(items["update"]["status"], "warn")
-        self.assertIn("major", items["update"]["detail"])
+        self.assertTrue(items["update"]["detail"].startswith("2.0.1 -> 3.0.0 is a major release"), items)
         self.assertIn("release notes", items["update"]["detail"])
-        self.assertEqual(items["env"]["status"], "warn")
-        self.assertIn("new in v3.0.0: C, E", items["env"]["detail"])
+        self.assertEqual(items[".env"]["status"], "warn")
+        self.assertIn("new in v3.0.0: C, E", items[".env"]["detail"])
         self.assertIn("three-zero-zero", report["changelog"])
         self.assertIn("two-one-zero", report["changelog"])
         self.assertNotIn("two-zero-one", report["changelog"])
@@ -125,12 +127,13 @@ class CheckUpdateTest(unittest.TestCase):
         code, report = self.check()
         items = self.items(report)
         self.assertEqual(report["facts"]["available"], "2.1.0")
-        self.assertEqual(items["update"]["status"], "ok")
-        self.assertTrue(items["env"]["detail"].startswith("new in v2.1.0: C "), items["env"]["detail"])
+        self.assertEqual(items["update"], {"name": "update", "status": "ok", "detail": "2.0.1 -> 2.1.0 is available"})
+        self.assertTrue(items[".env"]["detail"].startswith("new in v2.1.0: C "), items[".env"]["detail"])
         self.assertEqual(code, 1)
         (self.install / ".env").write_text("C=3\n")
         code, report = self.check()
-        self.assertEqual(self.items(report)["env"]["status"], "ok")
+        self.assertEqual(self.items(report)[".env"], {
+            "name": ".env", "status": "ok", "detail": "no new uncommented variables in .env.example of v2.1.0"})
         self.assertEqual(code, 0)
 
     def test_newest_release_installed(self):
@@ -176,6 +179,56 @@ class CheckUpdateTest(unittest.TestCase):
         fetch = next(c for c in calls if " fetch " in c)
         self.assertIn(f"include.path={self.install / '.git' / 'config'} fetch", fetch)
 
+    def test_named_remote_is_shown_by_its_url(self):
+        other = self.root / "other.git"
+        git(self.root, "clone", "-q", "--bare", str(self.origin), str(other))
+        git(self.install, "remote", "add", "upstream", str(other))
+        _, report = self.check("--remote", "upstream")
+        self.assertEqual(report["facts"]["remote"], str(other))
+        self.assertEqual(report["facts"]["available"], "3.0.0")
+
+    def test_relative_remote_path_is_read_from_the_installation(self):
+        code, report = self.check("--remote", "../origin")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["facts"]["remote"], str(self.origin))
+        self.assertIn("three-zero-zero", report["changelog"])
+
+    def test_remote_is_never_taken_for_an_option(self):
+        marker = self.root / "upload-pack-ran"
+        for remote in (f"--upload-pack=touch {marker} #", "--help"):
+            with self.subTest(remote):
+                code, report = self.check(f"--remote={remote}")
+                self.assertEqual(code, 2)
+                self.assertIn("cannot list tags", self.items(report)["remote"]["detail"])
+                self.assertFalse(marker.exists())
+
+    def test_unreadable_version(self):
+        (self.install / "VERSION").write_text("next\n")
+        code, report = self.check()
+        self.assertEqual(code, 2)
+        self.assertEqual(report["items"], [{"name": "version", "status": "fail",
+                                            "detail": "cannot read a release version from VERSION ('next')"}])
+
+    def test_without_make_the_update_is_still_checked(self):
+        with mock.patch.dict(os.environ, {"PATH": str(self.bin)}):
+            code, report = self.check()
+        items = self.items(report)
+        self.assertEqual(items["installation"]["status"], "warn")
+        self.assertIn("make not found", items["installation"]["detail"])
+        self.assertEqual(report["facts"]["available"], "3.0.0")
+        self.assertEqual(code, 1)
+
+    def test_without_git_the_error_names_it(self):
+        tools = self.root / "tools"
+        tools.mkdir()
+        for name in ("make", "sh", "bash", "grep", "sed", "awk", "sort", "head", "tr", "cat"):
+            (tools / name).symlink_to(shutil.which(name))
+        (tools / "docker").symlink_to(self.bin / "docker")
+        with mock.patch.dict(os.environ, {"PATH": str(tools)}):
+            code, report = self.check()
+        self.assertEqual(code, 2)
+        self.assertIn("git: command not found", self.items(report)["remote"]["detail"])
+
     def test_remote_option_reads_tags_from_another_repository(self):
         other = self.root / "other.git"
         git(self.root, "clone", "-q", "--bare", str(self.origin), str(other))
@@ -185,16 +238,18 @@ class CheckUpdateTest(unittest.TestCase):
         self.assertEqual(report["facts"]["available"], "2.1.0")
 
     def test_unreachable_remote_fails_without_credentials_in_the_output(self):
-        git(self.install, "remote", "set-url", "origin", TOKEN_URL)
-        for extra in ((), ("--remote", TOKEN_URL)):
-            for as_json in (True, False):
-                code, out = self.check(*extra, as_json=as_json)
-                text = json.dumps(out) if as_json else out
-                self.assertEqual(code, 2)
-                self.assertIn("cannot list tags", text)
-                self.assertIn("https://127.0.0.1:9/cloud-on-premise.git", text)
-                self.assertNotIn("s3cret-token", text)
-                self.assertNotIn("wbuser", text)
+        urls = (TOKEN_URL, TOKEN_URL.replace("s3cret-token@", "s3cret-token@at@"),
+                "https://127.0.0.1:9/cloud-on-premise.git?access_token=s3cret-token")
+        for url in urls:
+            git(self.install, "remote", "set-url", "origin", url)
+            for extra, as_json in itertools.product(((), ("--remote", url)), (True, False)):
+                with self.subTest(url=url, extra=extra, as_json=as_json):
+                    code, out = self.check(*extra, as_json=as_json)
+                    text = json.dumps(out) if as_json else out
+                    self.assertEqual(code, 2)
+                    self.assertIn("cannot list tags of https://127.0.0.1:9/cloud-on-premise.git", text)
+                    self.assertNotIn("s3cret-token", text)
+                    self.assertNotIn("wbuser", text)
 
     def test_fetch_failure_after_the_tag_is_found_warns(self):
         (self.bin / "fail-fetch").write_text(f"fatal: unable to access '{TOKEN_URL}/': Could not resolve host\n")
@@ -214,8 +269,8 @@ class CheckUpdateTest(unittest.TestCase):
         code, report = self.check()
         items = self.items(report)
         self.assertEqual(code, 1)
-        self.assertEqual(items["env"]["status"], "warn")
-        self.assertEqual(items["env"]["detail"], "cannot read .env.example of v4.0.0")
+        self.assertEqual(items[".env"]["status"], "warn")
+        self.assertEqual(items[".env"]["detail"], "cannot read .env.example of v4.0.0")
         self.assertEqual(items["notes"]["status"], "warn")
         self.assertIn("cannot read CHANGELOG_EN.md of v4.0.0", items["notes"]["detail"])
         self.assertNotIn("changelog", report)
