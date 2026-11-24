@@ -52,7 +52,7 @@ class VersionLabelTest(unittest.TestCase):
         self.assertIsNone(rc.version_label_error({"on-premise.version": "2.1.0"}, "2.1.0"))
 
     def test_testing_suffix_is_rejected(self):
-        self.assertIn("-testing", rc.version_label_error({"on-premise.version": "2.1.0-testing"}, "2.1.0"))
+        self.assertIn("#352", rc.version_label_error({"on-premise.version": "2.1.0-testing"}, "2.1.0"))
 
     def test_missing_label_is_rejected(self):
         self.assertIsNotNone(rc.version_label_error({}, "2.1.0"))

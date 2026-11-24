@@ -9,6 +9,10 @@ on:
         description: "Additional image reference to check, e.g. a known-missing one as a negative control"
         type: string
         required: false
+      ref:
+        description: "Branch whose docker-compose.yml is checked"
+        type: string
+        default: main
 
 permissions:
   contents: read
@@ -18,10 +22,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Checkout main
+      - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ inputs.ref || 'main' }}
 
       - name: Every compose image resolves without credentials
         env:
