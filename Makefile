@@ -202,6 +202,9 @@ check-running-version:
 		printf "$(YELLOW)Starting %s on it would migrate the database with no backup to roll back to.$(NC)\n" "$(VERSION)"; \
 		printf "$(YELLOW)Start the version that ran last with its own files, return to these and update:$(NC)\n"; \
 		printf "$(YELLOW)  git checkout v%s && make run && git checkout - && make update$(NC)\n" "$${last:-<previous>}"; \
+		if [ -d backups ] && [ ! -x backups ]; then \
+			printf "$(YELLOW)backups/ is readable only by root: if wb-onprem made the last update, run the same make command with sudo.$(NC)\n"; \
+		fi; \
 		exit 1; \
 	fi
 

@@ -102,6 +102,15 @@ mkdir backups && printf '{\n  "version": "2.0.1",\n  "commit": "%040d"\n}\n' 0 >
 touch -t 200001010000 .last-run-version
 check "takes the newer of the two records (a restore by wb-onprem after a run)" "$(PATH="$FAKE:$PATH" \
     FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version >/dev/null 2>&1 && echo 1 || echo 0)"
+if [ "$(id -u)" -ne 0 ]; then
+    setup 2.1.0
+    mkdir backups && printf '{\n  "version": "2.1.0",\n  "commit": "%040d"\n}\n' 0 > backups/installed.json
+    chmod 700 backups && chmod 000 backups
+    out="$(PATH="$FAKE:$PATH" FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version 2>&1)"
+    chmod 700 backups
+    check "tells to run with sudo when the wb-onprem record is closed to the user" \
+        "$(printf '%s' "$out" | grep -q 'with sudo'; echo $?)"
+fi
 setup 2.1.0
 out="$(PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.0.1)" FAKE_RUNNING="" make check-running-version 2>&1)"; rc=$?
 check "refuses a stopped stack of another version" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
