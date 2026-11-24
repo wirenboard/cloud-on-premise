@@ -532,7 +532,10 @@ END$$;
 REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
 REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_reader;
 REVOKE EXECUTE ON PROCEDURE public.ensure_measurement(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.populate_mqtt_metrics_dimensions() FROM PUBLIC;
 GRANT EXECUTE ON PROCEDURE public.ensure_measurement(text) TO "__TELEGRAF_USER__";
+-- TimescaleDB creates the trigger on a new chunk as the inserting role
+GRANT EXECUTE ON FUNCTION public.populate_mqtt_metrics_dimensions() TO "__TELEGRAF_USER__";
 
 -- Deny PUBLIC access to pg_stat_statements
 REVOKE SELECT ON public.pg_stat_statements FROM PUBLIC;

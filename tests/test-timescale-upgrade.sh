@@ -130,6 +130,13 @@ guard_checks() { # tree project -- what a client and the service roles may do in
         "$(has "$(client_sql "$1" "$2" metrics "$CREATE_IN_PUBLIC")" "permission denied for schema public"; echo $?)"
     check "a client cannot run ensure_measurement" \
         "$(has "$(client_sql "$1" "$2" metrics "CALL ensure_measurement('mqtt_metrics')")" "permission denied for procedure"; echo $?)"
+    check "a client cannot execute populate_mqtt_metrics_dimensions" \
+        "$(is "$(su_sql "$1" "$2" "SELECT has_function_privilege('client_a', 'public.populate_mqtt_metrics_dimensions()', 'EXECUTE')")" f; echo $?)"
+    check "telegraf writes a metric into a new chunk through the dimensions trigger" "$(has "$(su_sql "$1" "$2" "BEGIN;
+        INSERT INTO auth.host_org_map(host, organization_id) VALUES ('HOSTPROBE', '$ORG_A');
+        SET LOCAL ROLE telegraf;
+        INSERT INTO mqtt_metrics(time, host, topic, value) VALUES (now() + interval '30 days', 'HOSTPROBE', 'load', '1') RETURNING organization_id;
+        ROLLBACK" 2>&1)" "$ORG_A"; echo $?)"
     check "a client cannot read TimescaleDB or pg_stat_statements statistics" "$(is "$(client_sql "$1" "$2" metrics "$STATS_GRANTS")" ""; echo $?)"
     check "the exporter role reads them and creates a temporary table" "$(out="$(su_sql "$1" "$2" "SET ROLE ts_exporter; $STATS_GRANTS")"
         has "$out" "pg_stat_statements" && has "$(su_sql "$1" "$2" "SET ROLE ts_exporter; CREATE TEMP TABLE t(x int)" 2>&1)" "CREATE TABLE"; echo $?)"
