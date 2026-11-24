@@ -114,8 +114,8 @@ fi
 setup 2.1.0
 out="$(PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.0.1)" FAKE_RUNNING="" make check-running-version 2>&1)"; rc=$?
 check "refuses a stopped stack of another version" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
-check "tells to start the stopped stack as it was before make update" \
-    "$(printf '%s' "$out" | tr '\n' ' ' | grep -q 'docker compose start.*make update'; echo $?)"
+check "tells to start the stopped stack with its own files before make update" \
+    "$(printf '%s' "$out" | grep -qF 'git checkout v2.0.1 && make run && git checkout - && make update'; echo $?)"
 setup 2.1.0
 PATH="$FAKE:$PATH" FAKE_IMAGES="redis:7.4.12 grafana/grafana:12.4.14" make check-running-version >/dev/null 2>&1
 check "ignores images that are not wbc-*" $?

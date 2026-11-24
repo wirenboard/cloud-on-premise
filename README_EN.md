@@ -590,11 +590,10 @@ make update
 `make update` runs `sudo wb-onprem update` for the files already downloaded; without the utility it refuses
 and links to its releases. While the server has containers of the previous version, `make run` and
 `make restart` on the new files refuse and point to `make update`: otherwise the new version would start
-without a backup. The utility updates only a running cloud, so start one stopped by `make stop` as it was
-first: `docker compose start`. When the containers are removed (the `make stop` of 2.0.1 ran `docker compose down`),
-`make run` compares the version of the files with the version of the last start and refuses without a record of it:
-start the previous version with its own files — `git checkout v2.0.1 && make run && git checkout -` — then run
-`make update`.
+without a backup. The utility updates only a running cloud, so first start a cloud stopped by `make stop` as the
+previous version with its own files — `git checkout v2.0.1 && make run && git checkout -` — then run `make update`.
+The same goes when the containers are removed (the `make stop` of 2.0.1 ran `docker compose down`): `make run`
+compares the version of the files with the version of the last start and refuses without a record of it.
 
 **Which versions.** 2.1.0 is updated to from 2.0.1 and later. Update a 2.0.0 installation to 2.0.1 first:
 `sudo wb-onprem update --to v2.0.1`. A 1.x installation is taken by `wb-onprem update` through

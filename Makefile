@@ -185,9 +185,11 @@ check-running-version:
 	if [ -n "$$running" ] && [ "$$running" != "$(VERSION)" ]; then \
 		printf "$(RED)ERROR: the running stack is %s, the files are %s.$(NC)\n" "$$running" "$(VERSION)"; \
 		if [ -z "$$(VERSION=$(VERSION) docker compose ps -q --status running 2>/dev/null)" ]; then \
-			printf "$(YELLOW)The stack is stopped: start it as it was with 'docker compose start' first.$(NC)\n"; \
+			printf "$(YELLOW)The stack is stopped: start it with its own files, return to these and update:$(NC)\n"; \
+			printf "$(YELLOW)  git checkout v%s && make run && git checkout - && make update$(NC)\n" "$$running"; \
+		else \
+			printf "$(YELLOW)Run 'make update': it backs up the running version, switches and rolls back on failure.$(NC)\n"; \
 		fi; \
-		printf "$(YELLOW)Run 'make update': it backs up the running version, switches and rolls back on failure.$(NC)\n"; \
 		exit 1; \
 	fi; \
 	[ -z "$$running" ] || exit 0; \
