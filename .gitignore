@@ -12,6 +12,8 @@ tls/*.pem
 .env
 .env.bak-*
 
+.last-run-version
+
 # python bytecode from running the migration doctor locally
 __pycache__/
 *.pyc

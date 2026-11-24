@@ -16,13 +16,16 @@ check() {
 FAKE="$WORK/bin"
 mkdir -p "$FAKE"
 # docker: `compose ps -a` prints the images in $FAKE_IMAGES, `compose ps --status running`
-# the containers in $FAKE_RUNNING (all of $FAKE_IMAGES by default); every call is logged.
+# the containers in $FAKE_RUNNING (all of $FAKE_IMAGES by default), `volume inspect` finds
+# only the volumes in $FAKE_VOLUMES of the project "onprem"; every call is logged.
 cat > "$FAKE/docker" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CALLS"
 case "$*" in
     *"compose ps"*"--status running"*) printf '%s\n' ${FAKE_RUNNING-${FAKE_IMAGES:-}} ;;
     *"compose ps"*) printf '%s\n' ${FAKE_IMAGES:-} ;;
+    *"compose config"*) printf 'name: onprem\nservices: {}\n' ;;
+    "volume inspect "*) case " ${FAKE_VOLUMES:-} " in *" ${3:-} "*) ;; *) exit 1 ;; esac ;;
 esac
 exit 0
 SH
@@ -72,7 +75,33 @@ PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.1.0)" make check-running-version >/dev/n
 check "passes the stack of the files' version" $?
 setup 2.1.0
 PATH="$FAKE:$PATH" FAKE_IMAGES="" make check-running-version >/dev/null 2>&1
-check "passes when the installation has no containers (first start)" $?
+check "passes a fresh installation: no containers, no database volume" $?
+setup 2.1.0
+out="$(PATH="$FAKE:$PATH" FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version 2>&1)"; rc=$?
+check "refuses a database with no containers and no record of the version that ran" \
+    "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "tells to start the previous version with its files, then make update" \
+    "$(printf '%s' "$out" | tr '\n' ' ' | grep -q 'git checkout.*make run.*make update'; echo $?)"
+setup 2.1.0
+printf '2.0.1\n' > .last-run-version
+out="$(PATH="$FAKE:$PATH" FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version 2>&1)"; rc=$?
+check "refuses a database whose last run was another version" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "names the version that ran last and the files' version" \
+    "$(printf '%s' "$out" | tr '\n' ' ' | grep -q '2\.0\.1.*2\.1\.0'; echo $?)"
+setup 2.1.0
+printf '2.1.0\n' > .last-run-version
+PATH="$FAKE:$PATH" FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version >/dev/null 2>&1
+check "passes a database whose last run was the files' version" $?
+setup 2.1.0
+mkdir backups && printf '{\n  "version": "2.1.0",\n  "commit": "%040d"\n}\n' 0 > backups/installed.json
+PATH="$FAKE:$PATH" FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version >/dev/null 2>&1
+check "takes the version wb-onprem installed last as the record" $?
+setup 2.1.0
+printf '2.1.0\n' > .last-run-version
+mkdir backups && printf '{\n  "version": "2.0.1",\n  "commit": "%040d"\n}\n' 0 > backups/installed.json
+touch -t 200001010000 .last-run-version
+check "takes the newer of the two records (a restore by wb-onprem after a run)" "$(PATH="$FAKE:$PATH" \
+    FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version >/dev/null 2>&1 && echo 1 || echo 0)"
 setup 2.1.0
 out="$(PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.0.1)" FAKE_RUNNING="" make check-running-version 2>&1)"; rc=$?
 check "refuses a stopped stack of another version" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
@@ -88,6 +117,21 @@ check "refuses a stack with mixed versions" "$(PATH="$FAKE:$PATH" \
 setup 2.1.0-testing
 check "refuses a release stack under -testing files (a redeploy is make update)" \
     "$(PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.1.0)" make check-running-version >/dev/null 2>&1 && echo 1 || echo 0)"
+
+echo
+echo "a start records its version"
+for target in run run-no-cert-check restart; do
+    setup 2.1.0
+    PATH="$FAKE:$PATH" make "$target" MAKE=true >/dev/null 2>&1
+    check "make $target records the version it started" \
+        "$([ "$(cat .last-run-version 2>/dev/null)" = 2.1.0 ] && echo 0 || echo 1)"
+done
+setup 2.1.0
+printf '#!/usr/bin/env bash\nexit 1\n' > "$WORK/case/docker"; chmod +x "$WORK/case/docker"
+PATH="$WORK/case:$FAKE:$PATH" make run MAKE=true >/dev/null 2>&1
+check "a failed start records nothing" "$([ -e .last-run-version ] && echo 1 || echo 0)"
+check "the record is ignored by git" \
+    "$(git -C "$ROOT" check-ignore -q .last-run-version; echo $?)"
 
 echo
 echo "make stop keeps the containers for the version guard"

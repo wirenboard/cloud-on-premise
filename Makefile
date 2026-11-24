@@ -166,6 +166,15 @@ check-not-1x:
 #------------------------------------------------------------------------------
 # [ VERSION GUARD ] -----------------------------------------------------------
 
+RUN_RECORD       := .last-run-version
+# wb-onprem rewrites it after an update or a restore, which do not go through `make run`.
+WB_ONPREM_RECORD := backups/installed.json
+
+define record_run
+	printf '%s\n' "$(VERSION)" > $(RUN_RECORD) || \
+		printf "$(YELLOW)WARNING: could not write $(RUN_RECORD): the next start without containers will be refused.$(NC)\n"
+endef
+
 # After `git pull` the files are newer than the running stack; starting them here
 # would migrate the database with no backup to roll back to.
 .PHONY: check-running-version
@@ -179,6 +188,20 @@ check-running-version:
 			printf "$(YELLOW)The stack is stopped: start it as it was with 'docker compose start' first.$(NC)\n"; \
 		fi; \
 		printf "$(YELLOW)Run 'make update': it backs up the running version, switches and rolls back on failure.$(NC)\n"; \
+		exit 1; \
+	fi; \
+	[ -z "$$running" ] || exit 0; \
+	project="$$(VERSION=$(VERSION) docker compose config --no-interpolate 2>/dev/null | sed -n 's/^name: //p' | head -1)"; \
+	{ [ -n "$$project" ] && docker volume inspect "$${project}_postgresData" >/dev/null 2>&1; } || exit 0; \
+	last="$$(tr -d '[:space:]' 2>/dev/null < $(RUN_RECORD))"; \
+	if [ -f $(WB_ONPREM_RECORD) ] && { [ -z "$$last" ] || [ $(WB_ONPREM_RECORD) -nt $(RUN_RECORD) ]; }; then \
+		last="$$(sed -n 's/^  "version": "\(.*\)",$$/\1/p' $(WB_ONPREM_RECORD) 2>/dev/null | head -1)"; \
+	fi; \
+	if [ "$$last" != "$(VERSION)" ]; then \
+		printf "$(RED)ERROR: the database of %s is here with no containers, the files are %s.$(NC)\n" "$${last:-an unrecorded version}" "$(VERSION)"; \
+		printf "$(YELLOW)Starting %s on it would migrate the database with no backup to roll back to.$(NC)\n" "$(VERSION)"; \
+		printf "$(YELLOW)Start the version that ran last with its own files, return to these and update:$(NC)\n"; \
+		printf "$(YELLOW)  git checkout v%s && make run && git checkout - && make update$(NC)\n" "$${last:-<previous>}"; \
 		exit 1; \
 	fi
 
@@ -464,6 +487,7 @@ run:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@VERSION=$(VERSION) docker compose up -d --build --remove-orphans
+	@$(call record_run)
 	@${MAKE} check-metrics-schema
 
 .PHONY: run-no-cert-check
@@ -475,6 +499,7 @@ run-no-cert-check:
 	@${MAKE} generate-env
 	@${MAKE} check-cert-paths
 	@VERSION=$(VERSION) docker compose up -d --build --remove-orphans
+	@$(call record_run)
 	@${MAKE} check-metrics-schema
 
 WB_ONPREM_RELEASES := https://github.com/wirenboard/wb-onprem-cli/releases/latest
@@ -515,6 +540,7 @@ restart:
 	@${MAKE} generate-env
 	@${MAKE} check-certs
 	@export VERSION=$(VERSION); docker compose down --remove-orphans && docker compose up -d --build
+	@$(call record_run)
 	@${MAKE} check-metrics-schema
 
 # Traefik reads the certificate files once at startup, so a renewed certificate
