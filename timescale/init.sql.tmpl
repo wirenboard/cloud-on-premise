@@ -517,6 +517,9 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.mqtt_metrics_topics FROM
 REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
 REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
 
+-- PUBLIC keeps CREATE on public in a store upgraded from PostgreSQL 14.
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+
 -- Clients get no temporary objects; service roles keep what PUBLIC gave them.
 DO $$
 BEGIN

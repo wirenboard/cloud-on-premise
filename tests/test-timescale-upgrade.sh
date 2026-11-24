@@ -103,6 +103,7 @@ grafana_sql() { # tree project sql
     dc "$1" "$2" exec -T -e PGPASSWORD=grafana_timescale_password timescale \
         psql -X -tA -h 127.0.0.1 -U grafana -d metrics -c "$3" 2>&1
 }
+CREATE_IN_PUBLIC="CREATE FUNCTION public.x() RETURNS int LANGUAGE sql AS 'SELECT 1'"
 denied_explains() { printf '%s\n' "$1" | grep -c "permission denied to run EXPLAIN"; }
 guard_checks() { # tree project -- what a client and the service roles may do in a store with the guard
     local out
@@ -125,6 +126,8 @@ guard_checks() { # tree project -- what a client and the service roles may do in
     check "after SET ROLE to its organisation role EXPLAIN is still refused" "$(has "$out" "permission denied to run EXPLAIN"; echo $?)"
     check "a SECURITY DEFINER function sends a client no plan of the owner's query" \
         "$(out="$(definer_probe "$1" "$2")"; ! has "$out" ERROR && ! has "$out" "plan_rows"; echo $?)"
+    check "a client cannot create a function in public" \
+        "$(has "$(client_sql "$1" "$2" metrics "$CREATE_IN_PUBLIC")" "permission denied for schema public"; echo $?)"
     check "a client cannot run ensure_measurement" \
         "$(has "$(client_sql "$1" "$2" metrics "CALL ensure_measurement('mqtt_metrics')")" "permission denied for procedure"; echo $?)"
     check "a client cannot read TimescaleDB or pg_stat_statements statistics" "$(is "$(client_sql "$1" "$2" metrics "$STATS_GRANTS")" ""; echo $?)"
@@ -153,6 +156,8 @@ check "builds" "$?"
 echo
 echo "$BASE_REF store with two organisations and a compressed chunk"
 dc old "$PROJECT" up -d --wait timescale >/dev/null 2>&1 || { echo "  FAIL old timescale did not start"; exit 1; }
+# PUBLIC keeps CREATE on public in a store upgraded from PostgreSQL 14 or granted it by hand.
+su_sql old "$PROJECT" "GRANT CREATE ON SCHEMA public TO PUBLIC" >/dev/null
 init old "$PROJECT" >/dev/null
 su_sql old "$PROJECT" "
     CALL ensure_measurement('mqtt_metrics');
@@ -185,6 +190,8 @@ check "EXPLAIN ANALYZE counts organisation B's rows" "$(has "$out" "Rows Removed
 check "debug_print_* send the plan tree" "$(has "$(debug_plan_probes old "$PROJECT")" "plan_rows"; echo $?)"
 check "a client creates temporary tables" "$(has "$(client_sql old "$PROJECT" metrics "CREATE TEMP TABLE t(x int)")" "CREATE TABLE"; echo $?)"
 check "a client connects to template1" "$(is "$(client_sql old "$PROJECT" template1 "SELECT 1")" 1; echo $?)"
+check "a client creates a function in public" "$(has "$(client_sql old "$PROJECT" metrics "$CREATE_IN_PUBLIC")" "CREATE FUNCTION"; echo $?)"
+su_sql old "$PROJECT" "DROP FUNCTION IF EXISTS public.x()" >/dev/null
 
 echo
 echo "upgrade to this tree"
