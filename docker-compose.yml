@@ -102,12 +102,25 @@ services:
     volumes:
       - postgresData:/var/lib/postgresql/data
 
+  # Puts wb_explain_guard into a volume for timescale; tagged as the timescale image it is built against.
+  explain-guard:
+    image: ghcr.io/wirenboard/on-premise/wbc-timescale-guard:pg17.11-ts2.30.2
+    logging: *default-logging
+    restart: "no"
+    volumes:
+      - explainGuard:/out
+
   timescale:
     # timescaledb-ha image, but run as a plain single PostgreSQL instance
     # (no Patroni / etcd / HAProxy — those are upstream HA-only concerns).
-    image: timescale/timescaledb-ha:pg17.5-ts2.21.3
+    image: timescale/timescaledb-ha:pg17.11-ts2.30.2
     logging: *default-logging
     restart: always
+    # Overrides postgresql.conf; the first two libraries are the image's, the guard sees only server-logged messages.
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb,pg_textsearch,/opt/wbguard/wb_explain_guard", "-c", "log_min_messages=warning"]
+    depends_on:
+      explain-guard:
+        condition: service_completed_successfully
     environment:
       # The three passwords are generated into .env by 'make generate-env' and are
       # required by check-env: the literals below are only a bare-compose fallback.
@@ -125,6 +138,7 @@ services:
       TZ: UTC
     volumes:
       - timescaleData:/home/postgres/pgdata
+      - explainGuard:/opt/wbguard:ro
       # init.sql.tmpl is rendered + applied by 10-apply-init.sh on first init.
       - ./timescale/10-apply-init.sh:/docker-entrypoint-initdb.d/10-apply-init.sh:ro
       - ./timescale/init.sql.tmpl:/timescale/init.sql.tmpl:ro
@@ -140,7 +154,7 @@ services:
   # The entrypoint applies init.sql only on a fresh volume, so without this a schema
   # change never reaches an existing installation. Idempotent, one transaction.
   timescale-init:
-    image: timescale/timescaledb-ha:pg17.5-ts2.21.3
+    image: timescale/timescaledb-ha:pg17.11-ts2.30.2
     logging: *default-logging
     restart: "no"
     environment:
@@ -164,7 +178,7 @@ services:
         condition: service_healthy
 
   redis:
-    image: redis:7.4.8-alpine
+    image: redis:7.4.12-alpine
     logging: *default-logging
     restart: always
     command: redis-server --save "" --appendonly no
@@ -180,6 +194,8 @@ services:
     image: telegraf:1.35.4
     logging: *default-logging
     restart: always
+    # The default 10s cuts off the flush of a buffer piled up while the database was down.
+    stop_grace_period: 60s
     environment:
       TELEGRAF_TIMESCALE_USER: ${TELEGRAF_TIMESCALE_USER:-telegraf}
       TELEGRAF_TIMESCALE_PASSWORD: ${TELEGRAF_TIMESCALE_PASSWORD:-telegraf_password}
@@ -209,7 +225,7 @@ services:
         condition: service_healthy
 
   traefik:
-    image: traefik:3.6.2
+    image: traefik:3.7.16
     logging: *default-logging
     restart: always
     ports:
@@ -482,7 +498,7 @@ services:
         condition: service_healthy
 
   clients-grafana:
-    image: grafana/grafana:12.2.2
+    image: grafana/grafana:12.4.14
     logging: *default-logging
     restart: always
     environment:
@@ -507,12 +523,23 @@ services:
       <<: *traefik-common
       # Closed as in the cloud: a password changed inside Grafana diverges from the
       # copy the backend keeps, and the user loses the metrics for good.
-      traefik.http.routers.clients_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathPrefix(`/user/password`) && !PathPrefix(`/api/user/password`)"
+      traefik.http.routers.clients_grafana.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathRegexp(`(?i)^(/|%2F)+(api(/|%2F)+)?user(/|%2F)+password`) && !PathPrefix(`/metrics`)"
       traefik.http.routers.clients_grafana.entrypoints: "websecure"
       traefik.http.routers.clients_grafana.service: "clients_grafana"
       traefik.http.routers.clients_grafana.tls: "true"
       traefik.http.routers.clients_grafana.priority: "98"
       traefik.http.services.clients_grafana.loadbalancer.server.port: "3000"
+      # Writes only: the buffer holds the whole response, whose size the user sets on the bypassed paths.
+      traefik.http.routers.clients_grafana_write.rule: "Host(`metrics.${ABSOLUTE_SERVER}`) && !PathPrefix(`/grafana-auth`) && !PathRegexp(`(?i)^(/|%2F)+(api(/|%2F)+)?user(/|%2F)+password`) && !PathPrefix(`/metrics`) && !Method(`GET`) && !Method(`HEAD`) && !PathRegexp(`(?i)^(/|%2F)+(apis(/|%2F)+query[.]grafana[.]app|api(/|%2F)+ds(/|%2F)+query|api(/|%2F)+datasources(/|%2F)+.*(proxy|resources)|api(/|%2F)+plugins(/|%2F)+.*resources|api(/|%2F)+plugin-proxy|api(/|%2F)+v1(/|%2F)+(eval|rule(/|%2F)+(test|backtest)))`)"
+      traefik.http.routers.clients_grafana_write.entrypoints: "websecure"
+      traefik.http.routers.clients_grafana_write.service: "clients_grafana"
+      traefik.http.routers.clients_grafana_write.tls: "true"
+      traefik.http.routers.clients_grafana_write.priority: "99"
+      traefik.http.routers.clients_grafana_write.middlewares: "clients_grafana_inflight,clients_grafana_size_limit"
+      traefik.http.middlewares.clients_grafana_inflight.inflightreq.amount: "30"
+      traefik.http.middlewares.clients_grafana_inflight.inflightreq.sourcecriterion.ipstrategy.depth: "0"
+      traefik.http.middlewares.clients_grafana_size_limit.buffering.maxrequestbodybytes: "4194304"
+      traefik.http.middlewares.clients_grafana_size_limit.buffering.maxresponsebodybytes: "16777216"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health >/dev/null"]
       interval: 10s
@@ -561,6 +588,7 @@ networks:
 
 volumes:
   timescaleData: {}
+  explainGuard: {}
   postgresData: {}
   minioData: {}
   clientsGrafanaData: {}

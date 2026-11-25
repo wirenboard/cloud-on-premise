@@ -36,7 +36,7 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
   retag-and-push:
-    needs: read-version
+    needs: [read-version, explain-guard]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -88,6 +88,12 @@ jobs:
           else
             echo "::warning::${{ matrix.repo }} has no onprem-release/${VERSION} branch — skipping sha tag for ${IMAGE}"
           fi
+
+  explain-guard:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build_explain_guard.yml
 
   sbom:
     needs: [read-version, retag-and-push]

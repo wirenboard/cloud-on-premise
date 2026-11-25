@@ -35,6 +35,18 @@ sed \
   -e "s/__RETENTION_SAFETY_DAYS__/${RETENTION_SAFETY_DAYS}/g" \
   "$TMPL" > "$OUT"
 
+# The image installs timescaledb into postgres and template1 too; Timescale updates it only as the first command of a session.
+psql -X -tA --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+     -c "SELECT datname FROM pg_database WHERE datallowconn" |
+while read -r db; do
+  outdated="$(psql -X -tA --username "$POSTGRES_USER" --dbname "$db" -c \
+    "SELECT installed_version <> default_version FROM pg_available_extensions WHERE name = 'timescaledb'")"
+  if [ "$outdated" = "t" ]; then
+    psql -X -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$db" \
+         -c "ALTER EXTENSION timescaledb UPDATE"
+  fi
+done
+
 # All or nothing: a partial init leaves a store that answers pg_isready while
 # telegraf silently writes nothing.
 psql -v ON_ERROR_STOP=1 --single-transaction \

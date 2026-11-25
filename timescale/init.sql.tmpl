@@ -1,6 +1,8 @@
 -- TimescaleDB bootstrap for single-node on-premise.
 -- Rendered from cloud-infrastructure roles/deploy_stack/templates/timescale-init.sql.j2
 -- at cd394bae. Update the revision when re-syncing: it is the base for the next diff.
+-- Already carries the view security_barrier of 2355e29, the statistics revokes of a1378c2
+-- and the TEMP, template1 and ensure_measurement closures of cloud-infrastructure #293.
 --
 -- Deliberate differences from that base, so the next diff is not mistaken for drift:
 -- the HA cluster is collapsed to one node, Jinja variables to constants and
@@ -157,7 +159,8 @@ AS $$
 $$;
 
 -- VIEW that lists controllers quickly, filtered by RLS
-CREATE OR REPLACE VIEW public.org_controllers AS
+-- security_barrier sits in each definition: CREATE OR REPLACE VIEW resets view options.
+CREATE OR REPLACE VIEW public.org_controllers WITH (security_barrier = true) AS
 SELECT h.host, h.organization_id
 FROM auth.host_org_map h
 WHERE auth.is_admin()
@@ -172,7 +175,7 @@ CREATE TABLE IF NOT EXISTS public.mqtt_metrics_topics (
   PRIMARY KEY (host, topic)
 );
 
-CREATE OR REPLACE VIEW public.mqtt_metrics_topics_readable AS
+CREATE OR REPLACE VIEW public.mqtt_metrics_topics_readable WITH (security_barrier = true) AS
 SELECT org.organization_id, t.host, t.topic, t.first_seen
 FROM public.mqtt_metrics_topics t
 JOIN auth.host_org_map org ON org.host = t.host
@@ -224,6 +227,7 @@ $$;
 CREATE OR REPLACE PROCEDURE ensure_measurement(meas text)
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   measurement regclass;
@@ -234,8 +238,6 @@ DECLARE
   v_readable_sql text;
   v_numeric_readable_sql text;
 BEGIN
-  PERFORM set_config('search_path', 'public', true);
-
   IF meas <> 'mqtt_metrics' THEN
     RAISE LOG 'unsupported metrics measurement %, only mqtt_metrics is created', meas;
     RETURN;
@@ -325,6 +327,7 @@ BEGIN
   EXECUTE format('ALTER TABLE public.%I ALTER COLUMN host SET STATISTICS 1000', meas);
   EXECUTE format('ALTER TABLE public.%I ALTER COLUMN topic SET STATISTICS 1000', meas);
 
+  -- ORDER BY inside: a barrier view is not flattened, so without it a latest-value query reads the whole range.
   v_readable_sql := format(
     $view$
       SELECT
@@ -341,11 +344,12 @@ BEGIN
       FROM public.%I m
       WHERE auth.is_admin()
         OR m.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles())
+      ORDER BY m.time DESC
     $view$,
     meas
   );
 
-  EXECUTE format('CREATE OR REPLACE VIEW public.%I AS %s', v_readable_view_name, v_readable_sql);
+  EXECUTE format('CREATE OR REPLACE VIEW public.%I WITH (security_barrier = true) AS %s', v_readable_view_name, v_readable_sql);
 
   v_numeric_readable_sql := format(
     $view$
@@ -358,11 +362,12 @@ BEGIN
       FROM public.%I m
       WHERE (auth.is_admin() OR m.organization_id IN (SELECT * FROM auth.allowed_orgs_from_roles()))
         AND m.value ~ '^[+-]?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))([eE][+-]?[0-9]+)?$'
+      ORDER BY m.time DESC
     $view$,
     meas
   );
 
-  EXECUTE format('CREATE OR REPLACE VIEW public.%I AS %s', v_numeric_readable_view_name, v_numeric_readable_sql);
+  EXECUTE format('CREATE OR REPLACE VIEW public.%I WITH (security_barrier = true) AS %s', v_numeric_readable_view_name, v_numeric_readable_sql);
 
   EXECUTE format('GRANT SELECT ON TABLE public.%I TO all_reader', meas);
   EXECUTE format('GRANT SELECT ON public.%I TO views_reader, all_reader', v_readable_view_name);
@@ -510,18 +515,74 @@ GRANT SELECT ON public.mqtt_metrics_topics TO all_reader;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.mqtt_metrics_topics FROM views_reader, all_reader;
 
 REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
+
+-- PUBLIC keeps CREATE on public in a store upgraded from PostgreSQL 14.
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+
+-- Clients get no temporary objects; service roles keep what PUBLIC gave them.
+DO $$
+BEGIN
+  EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
+  EXECUTE format('GRANT TEMPORARY ON DATABASE %I TO %I, all_reader, ts_exporter, ts_backup',
+                 current_database(), '__TELEGRAF_USER__');
+END$$;
 
 -- Readers must not execute our internal functions and procedures
 REVOKE EXECUTE ON ALL FUNCTIONS  IN SCHEMA public, auth FROM views_reader, all_reader;
 REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public, auth FROM views_reader, all_reader;
+REVOKE EXECUTE ON PROCEDURE public.ensure_measurement(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.populate_mqtt_metrics_dimensions() FROM PUBLIC;
+GRANT EXECUTE ON PROCEDURE public.ensure_measurement(text) TO "__TELEGRAF_USER__";
+-- TimescaleDB creates the trigger on a new chunk as the inserting role
+GRANT EXECUTE ON FUNCTION public.populate_mqtt_metrics_dimensions() TO "__TELEGRAF_USER__";
 
 -- Deny PUBLIC access to pg_stat_statements
 REVOKE SELECT ON public.pg_stat_statements FROM PUBLIC;
 REVOKE SELECT ON public.pg_stat_statements_info FROM PUBLIC;
 DO $$
+DECLARE
+  obj text;
 BEGIN
   EXECUTE format('GRANT SELECT ON public.pg_stat_statements TO %I', 'ts_exporter');
   EXECUTE format('GRANT SELECT ON public.pg_stat_statements_info TO %I', 'ts_exporter');
+  FOR obj IN
+    SELECT oid::regprocedure::text FROM pg_proc
+    WHERE pronamespace = 'public'::regnamespace AND proname IN ('pg_stat_statements', 'pg_stat_statements_info')
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', obj, 'ts_exporter');
+  END LOOP;
+END$$;
+
+-- Statistics counters tell a client how many other orgs' rows were read before security_barrier.
+DO $$
+DECLARE
+  obj text;
+BEGIN
+  FOR obj IN
+    SELECT oid::regclass::text FROM pg_class
+    WHERE relkind = 'v' AND (
+      relnamespace = 'pg_catalog'::regnamespace AND (relname LIKE 'pg\_stat\_%' OR relname LIKE 'pg\_statio\_%')
+      OR oid = to_regclass('timescaledb_information.stat_chunk_activity'))
+  LOOP
+    EXECUTE format('REVOKE SELECT ON %s FROM PUBLIC', obj);
+    EXECUTE format('GRANT SELECT ON %s TO pg_monitor, all_reader', obj);
+  END LOOP;
+  FOR obj IN
+    SELECT oid::regprocedure::text FROM pg_proc
+    WHERE pronamespace = 'pg_catalog'::regnamespace AND proname LIKE 'pg\_stat\_get\_%'
+      OR pronamespace = to_regnamespace('_timescaledb_functions') AND proname = 'chunk_statistics'
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO pg_monitor, all_reader', obj);
+  END LOOP;
+  FOR obj IN
+    SELECT oid::regprocedure::text FROM pg_proc
+    WHERE pronamespace = to_regnamespace('_timescaledb_functions') AND proname = 'chunk_statistics_reset'
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj);
+  END LOOP;
 END$$;
 
 -- Limits for the reader roles.
@@ -593,3 +654,20 @@ END$$;
 -- compression and retention policies — is never re-applied to a store that already
 -- exists, and only the top-level statements above would reach it.
 CALL _apply_ensure_measurement_all();
+
+DO $$
+DECLARE
+  v_views text;
+BEGIN
+  SELECT string_agg(c.oid::regclass::text, ', ')
+    INTO v_views
+  FROM pg_class c
+  WHERE c.relkind = 'v'
+    AND c.relnamespace = 'public'::regnamespace
+    AND has_table_privilege('views_reader', c.oid, 'SELECT')
+    AND NOT coalesce(c.reloptions, '{}') @> ARRAY['security_barrier=true'];
+  IF v_views IS NOT NULL THEN
+    RAISE EXCEPTION 'views readable by organisation users have no security_barrier and leak other orgs'' rows: %', v_views
+      USING HINT = 'ALTER VIEW ... SET (security_barrier = true), or REVOKE SELECT ON the view FROM views_reader.';
+  END IF;
+END$$;

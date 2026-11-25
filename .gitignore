@@ -41,6 +41,9 @@ CLAUDE.md
 # GeoIP database (operator-provided, see README)
 geoip/*.mmdb
 
+# Left behind by an interrupted tests/test-timescale-upgrade.sh
+.tsupgrade.*
+
 # Local review working notes (never tracked)
 REVIEW-*.md
 REPLIES-*.md

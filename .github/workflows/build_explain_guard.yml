@@ -1,0 +1,52 @@
+name: Build EXPLAIN guard image
+
+# Tagged as the timescale image in docker-compose.yml, not with the release version:
+# the library only loads into the exact PostgreSQL build it was compiled against.
+# A pushed tag is never rebuilt; a change to the library takes a new -rN suffix.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Read the timescale image from docker-compose.yml
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+          timescale=$(sed -nE 's#^ +image: (timescale/timescaledb-ha:[^ ]+)$#\1#p' docker-compose.yml | sort -u)
+          guard=$(sed -nE 's#^ +image: (.+/wbc-timescale-guard:[^ ]+)$#\1#p' docker-compose.yml | sort -u)
+          if [[ $(wc -w <<< "$timescale") -ne 1 || $(wc -w <<< "$guard") -ne 1 ]]; then
+            echo "::error::expected one timescale and one explain-guard image, got '$timescale' and '$guard'"; exit 1
+          fi
+          if [[ ! "${guard##*:}" =~ ^"${timescale##*:}"(-r[0-9]+)?$ ]]; then
+            echo "::error::$guard is not tagged as $timescale"; exit 1
+          fi
+          echo "timescale=$timescale" >> "$GITHUB_OUTPUT"
+          echo "guard=$guard" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ steps.images.outputs.guard }}
+        env:
+          TIMESCALE_IMAGE: ${{ steps.images.outputs.timescale }}
+          GUARD_IMAGE: ${{ steps.images.outputs.guard }}
+        run: |
+          if docker manifest inspect "$GUARD_IMAGE" >/dev/null 2>&1; then
+            echo "::notice::$GUARD_IMAGE is already published, not rebuilding it"; exit 0
+          fi
+          docker build --build-arg TIMESCALE_IMAGE="$TIMESCALE_IMAGE" -t "$GUARD_IMAGE" explain-guard
+          docker push "$GUARD_IMAGE"

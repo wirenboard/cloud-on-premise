@@ -4,6 +4,9 @@
     # Traefik v3 defaults to 60s and cuts off large uploads through tunnels.
     [entryPoints.websecure.transport.respondingTimeouts]
       readTimeout = "3600s"
+    # A backend would take a client's X_Forwarded_Tls_Client_Cert_Info for Traefik's X-Forwarded-Tls-Client-Cert-Info.
+    [entryPoints.websecure.http]
+      aliasHeadersStrategy = "delete"
 
 [providers.docker]
   endpoint = "unix:///var/run/docker.sock"
