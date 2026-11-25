@@ -212,7 +212,7 @@ network.
 |-------------|------|------|--------------------|
 | WB metrics | `on-premise-metrics.wirenboard.cloud` | 443 | Blocking = new controllers cannot be added (sending is mandatory in the free edition) |
 | Email | `EMAIL_HOST` (SMTP) | `EMAIL_PORT` (587 in the example) | Yes — set `EMAIL_ENABLED=False` (invitations are then shared as links from the admin panel) |
-| Docker images (install/upgrade) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, wbc-explain-guard, telegraf, grafana, minio, traefik) | 443 | Needed only during install/upgrade; can stay blocked the rest of the time |
+| Docker images (install/upgrade) | `ghcr.io` + `registry-1.docker.io` / `docker.io` (postgres, redis, timescale, wbc-timescale-guard, telegraf, grafana, minio, traefik) | 443 | Needed only during install/upgrade; can stay blocked the rest of the time |
 | Session geolocation database | `download.db-ip.com` | 443 | Yes — needed only with `GEOIP_ENABLED=True`, and only while the database downloads (`make run`, `make update-geoip`) |
 
 > **TLS certificates.** The installation does **not** fetch certificates from

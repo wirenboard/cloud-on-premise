@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           timescale=$(sed -nE 's#^ +image: (timescale/timescaledb-ha:[^ ]+)$#\1#p' docker-compose.yml | sort -u)
-          guard=$(sed -nE 's#^ +image: (.+/wbc-explain-guard:[^ ]+)$#\1#p' docker-compose.yml | sort -u)
+          guard=$(sed -nE 's#^ +image: (.+/wbc-timescale-guard:[^ ]+)$#\1#p' docker-compose.yml | sort -u)
           if [[ $(wc -w <<< "$timescale") -ne 1 || $(wc -w <<< "$guard") -ne 1 ]]; then
             echo "::error::expected one timescale and one explain-guard image, got '$timescale' and '$guard'"; exit 1
           fi

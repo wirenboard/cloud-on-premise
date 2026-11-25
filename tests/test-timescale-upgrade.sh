@@ -35,7 +35,7 @@ done
 chmod +x "$WORK/old/timescale/10-apply-init.sh"
 cp -R "$ROOT/docker-compose.yml" "$ROOT/timescale" "$WORK/new/"
 TIMESCALE_IMAGE="$(sed -nE 's#^ +image: (timescale/timescaledb-ha:[^ ]+)$#\1#p' "$ROOT/docker-compose.yml" | sort -u)"
-GUARD_IMAGE="$(sed -nE 's#^ +image: (.+/wbc-explain-guard:[^ ]+)$#\1#p' "$ROOT/docker-compose.yml")"
+GUARD_IMAGE="$(sed -nE 's#^ +image: (.+/wbc-timescale-guard:[^ ]+)$#\1#p' "$ROOT/docker-compose.yml")"
 cat "$ROOT/.env.example" > "$WORK/env"
 printf '%s=x\n' VERSION ABSOLUTE_SERVER ABSOLUTE_SERVER_REGEX SECRET_KEY PRIVATE_KEY PUBLIC_KEY \
     TUNNEL_AUTH_TOKEN TUNNEL_DASHBOARD_USER TUNNEL_DASHBOARD_PASSWORD ADMIN_EMAIL ADMIN_PASSWORD >> "$WORK/env"

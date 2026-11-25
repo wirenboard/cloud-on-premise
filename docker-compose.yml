@@ -104,7 +104,7 @@ services:
 
   # Puts wb_explain_guard into a volume for timescale; tagged as the timescale image it is built against.
   explain-guard:
-    image: ghcr.io/wirenboard/on-premise/wbc-explain-guard:pg17.11-ts2.30.2
+    image: ghcr.io/wirenboard/on-premise/wbc-timescale-guard:pg17.11-ts2.30.2
     logging: *default-logging
     restart: "no"
     volumes:
