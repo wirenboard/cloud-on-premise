@@ -61,13 +61,12 @@ query() { printf '%s' "$config" | python3 -c "import json, sys; s = json.load(sy
 check "no MinIO or mc image is left" lacks "$(query '"\n".join(v.get("image", "") for v in s.values())')" '[Mm][Ii][Nn][Ii][Oo]|/mc:'
 check "backend gets MINIO_ROOT_USER as its S3 key" is "$(query 's["backend"]["environment"]["AWS_ACCESS_KEY_ID"]')" legacy_user
 check "backend talks to seaweedfs" is "$(query 's["backend"]["environment"]["AWS_S3_ENDPOINT_URL"]')" http://seaweedfs:8333
-check "backend, tunnel and the init wait for the storage" \
-    is "$(query '" ".join(sorted(n for n, v in s.items() if "seaweedfs" in v.get("depends_on", {})))')" "backend seaweedfs-init tunnel"
+check "backend and tunnel wait for the storage" \
+    is "$(query '" ".join(sorted(n for n, v in s.items() if "seaweedfs" in v.get("depends_on", {})))')" "backend tunnel"
 
 # upgrade.sh keeps these running while the application is stopped for the migration.
 eval "$(grep '^DATA_SERVICES_RE=' "$ROOT/migration/upgrade.sh")"
 check "upgrade.sh treats seaweedfs as data" has seaweedfs "$DATA_SERVICES_RE"
-check "upgrade.sh treats seaweedfs-init as data" has seaweedfs-init "$DATA_SERVICES_RE"
 check "upgrade.sh still treats backend as the application" lacks backend "$DATA_SERVICES_RE"
 
 echo
@@ -88,9 +87,6 @@ check "the minioData volume is kept" docker volume inspect "${PROJECT}_minioData
 echo
 echo "storage"
 check "seaweedfs becomes healthy" compose up -d --wait seaweedfs
-compose up seaweedfs-init >/dev/null 2>&1
-check "seaweedfs-init exits cleanly" \
-    is "$(docker inspect "$(compose ps -aq seaweedfs-init 2>/dev/null)" --format '{{.State.ExitCode}}' 2>/dev/null)" 0
 
 probe() {
     docker run --rm -i --network "${PROJECT}_net" python:3.12-alpine sh -c \
@@ -156,14 +152,6 @@ weed_shell() {
 fid="$(weed_shell 'fs.meta.cat /buckets/media/diagnostic_data/probe.zip' | awk -F'"' '/"fileId"/ {print $4; exit}')"
 check "the volume server does not serve a chunk without a token" \
     is "$(compose run --rm -T --no-deps --entrypoint curl seaweedfs -s -o /dev/null -w '%{http_code}' "http://seaweedfs:9340/$fid" 2>/dev/null)" 401
-
-diagnostic_ttl() {
-    weed_shell fs.configure | python3 -c '
-import json, sys
-text = sys.stdin.read(); conf = json.loads(text[text.index("{"):text.rindex("}") + 1])
-print(next(l["ttl"] for l in conf["locations"] if l["locationPrefix"] == "/buckets/media/diagnostic_data/"))'
-}
-check "diagnostic archives expire after an hour" is "$(diagnostic_ttl 2>/dev/null)" 1h
 
 # Signing keys are generated per start; down + up, as `make update` does, drops the
 # image's anonymous /data volume, so the archive survives only on the named one.

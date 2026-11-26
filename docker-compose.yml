@@ -599,20 +599,6 @@ services:
       timeout: 3s
       retries: 12
 
-  # Backstop for the backend's own 15-minute cleanup of diagnostic archives.
-  seaweedfs-init:
-    image: ghcr.io/wirenboard/on-premise/seaweedfs:4.53
-    logging: *default-logging
-    entrypoint:
-      - /bin/sh
-      - -c
-      - >-
-        echo 'fs.configure -locationPrefix=/buckets/media/diagnostic_data/ -ttl=1h -apply'
-        | weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888
-    depends_on:
-      seaweedfs:
-        condition: service_healthy
-
 
 networks:
   default:
