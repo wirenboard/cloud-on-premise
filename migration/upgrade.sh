@@ -24,7 +24,7 @@ legacy_env_value() {
 compose() { VERSION="$VERSION" docker compose "$@"; }
 
 # Everything that is not the application itself: these stay up through the migration.
-DATA_SERVICES_RE='^(postgres|timescale|redis|minio|minio-client)$'
+DATA_SERVICES_RE='^(postgres|timescale|redis|seaweedfs|minio|minio-client)$'
 # Asked by project label, not by `compose ps --services`: that lists only services of
 # the current file, and the 1.x leftovers are orphans to it — exactly the containers
 # whose presence means the installation is still serving.

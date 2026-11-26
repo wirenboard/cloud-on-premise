@@ -211,7 +211,9 @@ To replace the logo and icons, place your files in that directory with the exact
 
 Sizes are not validated automatically: a file with wrong proportions is served as is and may render incorrectly.
 
-You can also replace only some of these files.
+You can also replace only some of these files. The files can also be uploaded in the backend admin under "Settings → Branding": they are saved to the same `branding/` directory.
+
+On every start of the stack the `branding/` directory is handed to the `nobody` user the backend saves uploaded files as. So put and replace files by hand with `sudo`, for example `sudo cp logo.svg branding/`, or upload them in the admin.
 
 If the project is already running, restart the stack after replacing the files:
 
@@ -234,15 +236,13 @@ FOOTER_SITE_LABEL_EN — caption of that link for English (default: "Wiren Board
 
 If the variables are not set, the Wiren Board defaults are used. Restart the stack after changing `.env`: `make restart`.
 
+The product name and color can also be set without a restart, in the backend admin under "Settings → Branding". The web console picks them up within a minute, and the new values show after a page reload; `SERVICE_NAME` and `PRIMARY_COLOR` from `.env` apply while the admin field is empty. On an update from 2.0.x these values are copied from `.env` to the admin once, so change the name and color there after the update.
+
 ### Controller map
 
-The map background is served by the CARTO service and requires an API key. Get one at https://carto.com/basemaps/apikey and put it into `.env`:
+The map background is served by the CARTO service and requires an API key. Get one at https://carto.com/basemaps/apikey and set it in the backend admin under "Settings → Maps". Without a key the maps and the address search are hidden in the interface. The key is not checked on save: an installation without internet access cannot reach CARTO. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`.
 
-```
-CARTO_API_KEY="..."
-```
-
-Without a key the map shows blank tiles with an "API KEY REQUIRED" label instead of the basemap. Tiles are fetched by the user's browser, so the browser needs access to `*.basemaps.cartocdn.com`. Restart the stack after changing `.env`: `make restart`.
+On an update from 2.0.x, the key from `CARTO_API_KEY` in `.env` moves to the admin once.
 
 ---
 
@@ -429,6 +429,18 @@ skips it.
 If you want to use your own private and public JWT keys, place `private.pem` and `public.pem` in
 the `jwt` directory in the project root — otherwise they are generated automatically.
 
+### Email, proxy and web console
+
+| Variable | What it sets |
+|---|---|
+| `EMAIL_FALLBACK_URLS` | Backup mail servers, comma-separated (`smtp+tls://user:password@host:587` or `smtp+ssl://…:465`): an email goes through the next one when the main `EMAIL_HOST` does not take it |
+| `HTTPS_PROXY`, `NO_PROXY` | Proxy for the cloud's outbound HTTPS requests and your exceptions from it; the cloud services reach each other past the proxy |
+| `WS_RESUME_GRACE`, `WS_RESUME_GRACE_PAGE_CLOSED`, `WS_RESUME_BUFFER_SIZE` | How many seconds a web console terminal waits to be resumed after a dropped connection or a closed page, and how many bytes of output it keeps meanwhile |
+| `WS_RESUME_MAX_DETACHED`, `WS_RESUME_BUSY_PING_TIMEOUT` | How many detached terminals of one tab stay open on the controller, and how many seconds to wait for the previous tab to answer before handing the terminal to a new one |
+| `SSH_CHANNEL_TIMEOUT`, `SFTP_TIMEOUT`, `DELETE_TIMEOUT` | Web console timeouts (seconds): opening an SSH channel, file operations, deleting files |
+
+Defaults are in [`.env.example`](.env.example).
+
 ### Background task performance
 
 The cloud spreads background work across four queues, each with its own worker and its own
@@ -513,9 +525,9 @@ Run all commands from the repo root.
 | `make generate-django-secret` | Generate Django SECRET_KEY                              |
 | `make run`               | Full launch cycle (generate-env, cert check, build and start containers) |
 | `make run-no-cert-check` | Same without the TLS certificate check (not recommended)     |
-| `make stop`              | Stop containers                                              |
+| `make stop`              | Stop containers without removing them                        |
 | `make restart`           | Restart containers (with the cert check)                     |
-| `make update`            | Stop containers, update images, rebuild and restart. It also prunes unused images and **every stopped container on the host** — mind that if the server is shared |
+| `make update`            | Update the running cloud to the latest release: `git pull`, checks, images, database dump, switch, see "Updating" |
 | `make reload-certs`      | Apply a renewed certificate: validate it and restart Traefik only |
 | `make update-geoip`      | Refresh the session geolocation database |
 | `make upgrade`           | 1.x → 2.x upgrade: checks while the cloud runs, then backup, stop, migrate, start |
@@ -528,8 +540,7 @@ Run all commands from the repo root.
 # First launch (environment initialization and container startup)
 make run
 
-# Update the project to the latest state: git pull fetches the new version, make update pulls its images
-git pull
+# Update the cloud to a new release: files, images, switch (see "Updating")
 make update
 
 # Validate environment variables
@@ -541,6 +552,49 @@ make help
 
 ---
 
+## ⬆️ Updating
+
+Update from the installation directory while the cloud is running:
+
+```bash
+make update
+```
+
+`make update` downloads the files of the new release itself (`git pull`) and goes on with them. If the clone
+is on a release tag (`git checkout vX.Y.Z`), there is no `git pull` and the cloud is updated to that tag.
+
+> From 2.0.1 to 2.1.0, once: `git pull && make update` — the `make update` of 2.0.1 does not download files.
+
+While the cloud keeps running, `make update` checks that updating from this version is supported and runs the
+release's one-off checks (for 2.1.0, logins that differ only by letter case); if a check fails, nothing is
+changed. Then it completes `.env` (`make generate-env`), checks the certificates, pulls the images and dumps
+the main database into `backups/pg-<time>.sql.gz` (the last three are kept). Only after that the cloud stops: `make update` removes the containers of the previous
+version, including services the new one no longer has, removes duplicate Grafana organisations and starts the
+new version. Along the way it prunes unused images and **all stopped containers on the host** — keep this in
+mind if the server is shared with other projects. Running `make update` again on the same version rebuilds the
+cloud without the one-off checks.
+
+While the server has containers of the previous version, `make run` and `make restart` on the new files
+refuse and point to `make update`: otherwise the new version would start without the checks and the backup.
+`make update` updates only a running cloud, so first start a cloud stopped by `make stop` as the previous
+version with its own files — `git checkout v2.0.1 && make run && git checkout -` — then run `make update`.
+The same goes when the containers are removed (the `make stop` of 2.0.1 ran `docker compose down`):
+`make run` compares the version of the files with the version of the last start and refuses without a record
+of it.
+
+**Which versions.** 2.1.0 is updated to from 2.0.1. Update a 2.0.0 installation to 2.0.1 first:
+`git checkout v2.0.1 && make update && git checkout - && make update`. Move a 1.x
+installation to 2.0.1 first with `make upgrade` of that release (the section below).
+
+**Rolling back.** The dump in `backups/` holds only the main database. The metrics database upgrades the
+TimescaleDB extension on the first start of 2.1.0, and 2.0.1 no longer starts on it. To be able to go back to
+2.0.1, take a snapshot of the server or a copy of the Docker volumes with the cloud stopped before the update.
+To roll back, restore the whole server snapshot or, for a copy of the volumes:
+`docker compose down --remove-orphans && rm -f .last-run-version`, restore the volumes,
+`git checkout v2.0.1 && make run`.
+
+---
+
 ## ⬆️ Upgrading from 1.x to 2.0
 
 Release **2.0** is incompatible with 1.x, but **no user data is deleted** — it is migrated in
@@ -548,14 +602,16 @@ place. The key change: **the email becomes the login** — it is mandatory, uniq
 the account name. The new schema requires this but does not repair the data itself, so the
 database has to be put in order before the migration — that is what `make upgrade` does.
 
-The upgrade runs as a single command:
+First the installation moves to 2.0.1 with that release's `make upgrade`, then it is updated to the new
+version (see "Updating"). The step to 2.0.1:
 
 ```bash
-git pull
+git fetch --tags
+git checkout v2.0.1
 make upgrade
 ```
 
-It runs its checks while the cloud keeps serving and changes nothing until all of them pass,
+`make upgrade` runs its checks while the cloud keeps serving and changes nothing until all of them pass,
 then asks for confirmation and only after that begins the downtime.
 
 > 📖 Migration conditions, resolving account conflicts, the expected downtime and the rollback

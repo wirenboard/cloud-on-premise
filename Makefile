@@ -109,7 +109,7 @@ help:
 	@printf "  run-no-cert-check        Launch without checking TLS certificates (not recommended)\n"
 	@printf "  stop                     Stop containers\n"
 	@printf "  restart                  Restart containers (with cert check)\n"
-	@printf "  update                   Update images, rebuild and start\n"
+	@printf "  update                   Update the running cloud to the latest release: git pull, checks, images, backup\n"
 	@printf "  upgrade                  1.x -> 2.x upgrade: checks, then backup, stop, migrate, start\n"
 	@printf "  fix-users                Run migration_doctor (MODE=scan|auto|resolve|dump|apply)\n"
 	@printf "  backup                   Back up PostgreSQL (+ InfluxDB if present) into ./backups\n"
@@ -118,6 +118,7 @@ help:
 	@printf "  generate-jwt             Generate/update keys for JWT\n"
 	@printf "  generate-tunnel-token    Generate SSH/HTTP tunnel token\n"
 	@printf "  generate-django-secret   Generate Django secret key\n"
+	@printf "  generate-s3-keys         Generate S3 storage keys\n"
 
 #------------------------------------------------------------------------------
 # [ INTROSPECTION ] -----------------------------------------------------------
@@ -163,6 +164,43 @@ check-not-1x:
 	fi
 
 #------------------------------------------------------------------------------
+# [ VERSION GUARD ] -----------------------------------------------------------
+
+RUN_RECORD := $(shell bash scripts/env.sh record)
+
+define record_run
+	printf '%s\n' "$(VERSION)" > $(RUN_RECORD) || \
+		printf "$(YELLOW)WARNING: could not write $(RUN_RECORD): the next start without containers will be refused.$(NC)\n"
+endef
+
+# After `git pull` the files are newer than the running stack; starting them here
+# would migrate the database with no backup to roll back to.
+.PHONY: check-running-version
+check-running-version:
+	@running="$$(VERSION=$(VERSION) bash scripts/env.sh versions -a)"; \
+	if [ -n "$$running" ] && [ "$$running" != "$(VERSION)" ]; then \
+		printf "$(RED)ERROR: the running stack is %s, the files are %s.$(NC)\n" "$$running" "$(VERSION)"; \
+		if [ -z "$$(VERSION=$(VERSION) docker compose ps -q --status running 2>/dev/null)" ]; then \
+			printf "$(YELLOW)The stack is stopped: start it with its own files, return to these and update:$(NC)\n"; \
+			printf "$(YELLOW)  git checkout v%s && make run && git checkout - && make update$(NC)\n" "$$running"; \
+		else \
+			printf "$(YELLOW)Run 'make update': it checks the release conditions, backs up the database and switches.$(NC)\n"; \
+		fi; \
+		exit 1; \
+	fi; \
+	[ -z "$$running" ] || exit 0; \
+	project="$$(VERSION=$(VERSION) docker compose config --no-interpolate 2>/dev/null | sed -n 's/^name: //p' | head -1)"; \
+	{ [ -n "$$project" ] && docker volume inspect "$${project}_postgresData" >/dev/null 2>&1; } || exit 0; \
+	last="$$(tr -d '[:space:]' 2>/dev/null < $(RUN_RECORD))"; \
+	if [ "$$last" != "$(VERSION)" ]; then \
+		printf "$(RED)ERROR: the database of %s is here with no containers, the files are %s.$(NC)\n" "$${last:-an unrecorded version}" "$(VERSION)"; \
+		printf "$(YELLOW)Starting %s on it would migrate the database with no backup to roll back to.$(NC)\n" "$(VERSION)"; \
+		printf "$(YELLOW)Start the version that ran last with its own files, return to these and update:$(NC)\n"; \
+		printf "$(YELLOW)  git checkout v%s && make run && git checkout - && make update$(NC)\n" "$${last:-<previous>}"; \
+		exit 1; \
+	fi
+
+#------------------------------------------------------------------------------
 # [ TESTS ] -------------------------------------------------------------------
 # Fixtures only — no containers, no database. Not shipped with the release.
 
@@ -171,6 +209,10 @@ check-not-1x:
 test:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ TESTS ]====================="
 	@bash tests/test-check-env.sh
+	@printf "\n"
+	@bash tests/test-compose-env.sh
+	@printf "\n"
+	@bash tests/test-update-path.sh
 	@printf "\n"
 	@bash migration/tests/test-migrate-env.sh
 	@printf "\n"
@@ -357,6 +399,12 @@ generate-django-secret:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating Django secret ------"
 	$(call gen_token,SECRET_KEY,openssl rand -base64 50 | tr -dc 'A-Za-z0-9!@#$%^&*(-_=+)' | cut -c1-50)
 
+.PHONY: generate-s3-keys
+generate-s3-keys:
+	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating S3 storage keys ------"
+	$(call gen_token,MINIO_ROOT_USER,openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20)
+	$(call gen_token,MINIO_ROOT_PASSWORD,openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)
+
 .PHONY: generate-absolute-server-regex
 generate-absolute-server-regex:
 	@printf "\n\033[0;37m%s\033[0m\n" "------ Generating ABSOLUTE_SERVER_REGEX ------"
@@ -391,6 +439,7 @@ generate-env:
 	@${MAKE} generate-tunnel-token
 	@${MAKE} generate-metrics-passwords
 	@${MAKE} generate-django-secret
+	@${MAKE} generate-s3-keys
 	@${MAKE} generate-absolute-server-regex
 	@${MAKE} generate-jwt
 	@bash ./scripts/fetch-geoip.sh
@@ -429,9 +478,11 @@ run:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE ]====================="
 	@$(call require_version)
 	@${MAKE} check-not-1x
+	@${MAKE} check-running-version
 	@${MAKE} generate-env
 	@${MAKE} check-certs
-	@VERSION=$(VERSION) docker compose up -d --build
+	@VERSION=$(VERSION) docker compose up -d --build --remove-orphans
+	@$(call record_run)
 	@${MAKE} check-metrics-schema
 
 .PHONY: run-no-cert-check
@@ -439,39 +490,38 @@ run-no-cert-check:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ LAUNCHING DOCKER COMPOSE (NO CERT CHECK) ]====================="
 	@$(call require_version)
 	@${MAKE} check-not-1x
+	@${MAKE} check-running-version
 	@${MAKE} generate-env
 	@${MAKE} check-cert-paths
-	@VERSION=$(VERSION) docker compose up -d --build
+	@VERSION=$(VERSION) docker compose up -d --build --remove-orphans
+	@$(call record_run)
 	@${MAKE} check-metrics-schema
 
 .PHONY: update
 update:
-	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING IMAGES AND RESTARTING CONTAINERS ]====================="
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING ]====================="
 	@$(call require_version)
 	@${MAKE} check-not-1x
-	@${MAKE} generate-env
-	@${MAKE} check-certs
-	@VERSION=$(VERSION) docker compose pull
-	@VERSION=$(VERSION) docker compose down
-	docker image prune -f
-	docker container prune -f
-	@VERSION=$(VERSION) docker compose up -d --build
-	@${MAKE} check-metrics-schema
+	@MAKE="$(MAKE)" bash ./scripts/update.sh
 
 .PHONY: stop
 stop:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ STOPPING CONTAINERS ]====================="
 	@$(call require_version)
-	@VERSION=$(VERSION) docker compose down
+	@export VERSION=$(VERSION); docker compose stop && \
+		left="$$(docker compose ps -q --status running)" && \
+		if [ -n "$$left" ]; then docker stop $$left; fi
 
 .PHONY: restart
 restart:
 	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ RESTARTING CONTAINERS ]====================="
 	@$(call require_version)
 	@${MAKE} check-not-1x
+	@${MAKE} check-running-version
 	@${MAKE} generate-env
 	@${MAKE} check-certs
-	@export VERSION=$(VERSION); docker compose down && docker compose up -d --build
+	@export VERSION=$(VERSION); docker compose down --remove-orphans && docker compose up -d --build
+	@$(call record_run)
 	@${MAKE} check-metrics-schema
 
 # Traefik reads the certificate files once at startup, so a renewed certificate

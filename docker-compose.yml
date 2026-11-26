@@ -61,9 +61,22 @@ x-backend-common-env: &backend-common-env
   ADMIN_PASSWORD: ${ADMIN_PASSWORD}
   AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
   AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
-  AWS_S3_ENDPOINT_URL: "http://minio:9000"
+  AWS_S3_ENDPOINT_URL: "http://seaweedfs:8333"
   AWS_STORAGE_BUCKET_NAME: "media"
   AWS_S3_REGION_NAME: "eu-west-1"
+  EMAIL_FALLBACK_URLS: ${EMAIL_FALLBACK_URLS:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: "localhost,127.0.0.1,postgres,timescale,redis,seaweedfs,clients-grafana,tunnel,tunnel-webhooks-backend,backend,webssh${NO_PROXY:+,${NO_PROXY}}"
+  # Read once by the site_settings migrations: no value leaves the variable unset (the default), an empty one hides the link.
+  SERVICE_NAME:
+  PRIMARY_COLOR:
+  SERVICE_STATUS_URL:
+  SERVICE_DOCS_URL:
+  SERVICE_DOCS_URL_EN:
+  FOOTER_SITE_URL:
+  FOOTER_SITE_LABEL_RU:
+  FOOTER_SITE_LABEL_EN:
+  CARTO_API_KEY:
 
 x-backend-healthcheck: &backend-healthcheck
   test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthchecks/db/"]
@@ -240,7 +253,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_healthy
       tunnel-webhooks-backend:
         condition: service_healthy
@@ -290,9 +303,19 @@ services:
     restart: always
     environment:
       REDIS_URL: "redis://redis:6379/1"
+      BACKEND_APP_URL: "http://backend:8000/"
       SERVICE_NAME: "${SERVICE_NAME:-Wiren Board Cloud}"
       ABSOLUTE_URL: "https://${ABSOLUTE_SERVER}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
+      # Defaults of cloud-webssh settings.py: an empty value fails its startup.
+      WS_RESUME_GRACE: ${WS_RESUME_GRACE:-600}
+      WS_RESUME_GRACE_PAGE_CLOSED: ${WS_RESUME_GRACE_PAGE_CLOSED:-150}
+      WS_RESUME_BUFFER_SIZE: ${WS_RESUME_BUFFER_SIZE:-65536}
+      WS_RESUME_MAX_DETACHED: ${WS_RESUME_MAX_DETACHED:-3}
+      WS_RESUME_BUSY_PING_TIMEOUT: ${WS_RESUME_BUSY_PING_TIMEOUT:-3}
+      SSH_CHANNEL_TIMEOUT: ${SSH_CHANNEL_TIMEOUT:-15}
+      SFTP_TIMEOUT: ${SFTP_TIMEOUT:-60}
+      DELETE_TIMEOUT: ${DELETE_TIMEOUT:-120}
     volumes:
       - ./branding:/branding:ro
     depends_on:
@@ -314,7 +337,6 @@ services:
       SERVICE_DOCS_URL: "${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud}"
       SERVICE_DOCS_URL_EN: "${SERVICE_DOCS_URL_EN-${SERVICE_DOCS_URL-https://wirenboard.com/wiki/Wiren_Board_Cloud/en}}"
       PRIMARY_COLOR: "${PRIMARY_COLOR:-}"
-      CARTO_API_KEY: "${CARTO_API_KEY:-}"
     volumes:
       - ./branding:/branding:ro
     healthcheck:
@@ -334,14 +356,26 @@ services:
       backend:
         condition: service_healthy
 
+  # The backend runs as nobody and writes the logos uploaded in the admin into the bind mount.
+  branding-init:
+    image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
+    logging: *default-logging
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec", "chown nobody:nogroup /branding && chmod 755 /branding"]
+    volumes:
+      - ./branding:/branding
+
   backend:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
     volumes:
       - ./geoip:/data/geoip:ro
+      - ./branding:/branding
     labels:
       <<: *traefik-common
       traefik.http.routers.backend.rule: "(Host(`${ABSOLUTE_SERVER}`) && PathPrefix(`/static/`)) || (Host(`app.${ABSOLUTE_SERVER}`) && (PathPrefix(`/admin/`) || PathPrefix(`/static/`) || PathPrefix(`/silk/`)))"
@@ -359,18 +393,21 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_healthy
       postgres:
         condition: service_healthy
       timescale:
         condition: service_healthy
+      branding-init:
+        condition: service_completed_successfully
 
   # Dedicated backend instance that serves the FRP tunnel webhooks.
   tunnel-webhooks-backend:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
     healthcheck: *backend-healthcheck
@@ -388,6 +425,8 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-agent-backend:${VERSION}
     logging: *default-logging
     restart: always
+    # Above UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN of the image (120s): agent long polls finish instead of being cut.
+    stop_grace_period: 2m10s
     environment:
       <<: *backend-common-env
     labels:
@@ -411,6 +450,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
       QUEUE: default_queue
@@ -426,6 +466,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
       QUEUE: metrics_queue
@@ -442,6 +483,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
       GRAFANA_DEFAULT_DASHBOARD_UPDATE_PARALLELISM: 12
@@ -459,6 +501,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
       QUEUE: email_queue
@@ -525,34 +568,34 @@ services:
       timescale:
         condition: service_healthy
 
-  minio:
-    image: ghcr.io/wirenboard/on-premise/minio:RELEASE.2025-09-07T16-13-09Z
+  seaweedfs:
+    image: ghcr.io/wirenboard/on-premise/seaweedfs:4.53
     logging: *default-logging
     volumes:
-      - minioData:/data
+      - seaweedfsData:/data
     restart: always
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_login}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_pass}
-    command: server /data
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_login}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_pass}
+    # Without signing keys the filer and volume HTTP APIs serve and take files for any container on the network.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        export WEED_JWT_FILER_SIGNING_KEY="$$(head -c 32 /dev/urandom | base64)"
+        export WEED_JWT_FILER_SIGNING_READ_KEY="$$(head -c 32 /dev/urandom | base64)"
+        export WEED_JWT_SIGNING_KEY="$$(head -c 32 /dev/urandom | base64)"
+        export WEED_JWT_SIGNING_READ_KEY="$$(head -c 32 /dev/urandom | base64)"
+        exec /entrypoint.sh "$$@"
+      - --
+    command: >-
+      mini -dir=/data -bucket=media -webdav=false -admin.ui=false
+      -master.telemetry=false -s3.port.iceberg=0 -s3.port.lance=0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8333/healthz"]
       interval: 5s
       timeout: 3s
-      retries: 5
-
-  minio-client:
-    image: ghcr.io/wirenboard/on-premise/mc:RELEASE.2025-08-13T08-35-41Z
-    logging: *default-logging
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio_login} ${MINIO_ROOT_PASSWORD:-minio_pass};
-      /usr/bin/mc mb --quiet --ignore-existing local/media/;
-      /usr/bin/mc anonymous set public local/media/;
-      "
-    depends_on:
-      minio:
-        condition: service_healthy
+      retries: 12
 
 
 networks:
@@ -562,5 +605,5 @@ networks:
 volumes:
   timescaleData: {}
   postgresData: {}
-  minioData: {}
+  seaweedfsData: {}
   clientsGrafanaData: {}

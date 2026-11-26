@@ -247,6 +247,12 @@ jobs:
                   continue
               text = p.read_text(encoding="utf-8")
 
+              written = re.compile(rf"^## \[{re.escape(version)}\][^\n]*$", re.M)
+              if written.search(text):
+                  p.write_text(written.sub(f"## [{version}] - {today}", text, count=1), encoding="utf-8")
+                  print(f"==> {path_str} already has {version}: dated {today}")
+                  continue
+
               section = (
                   f"## [{version}] - {today}\n\n"
                   f"### {heading}\n\n"
