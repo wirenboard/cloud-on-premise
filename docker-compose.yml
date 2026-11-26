@@ -454,8 +454,6 @@ services:
     environment:
       <<: *backend-common-env
       QUEUE: default_queue
-      # Tags the telemetry of WB test installations; this worker runs send_metrics.
-      METRICS_INTERNAL_TESTING: ${METRICS_INTERNAL_TESTING:-False}
       CONCURRENCY: ${WORKER_CONCURRENCY:-4}
       SOFT_TIME_LIMIT: 120
     depends_on:

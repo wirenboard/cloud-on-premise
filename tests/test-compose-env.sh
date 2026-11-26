@@ -131,12 +131,11 @@ check "the backend and the workers get 30 seconds to stop" \
     "$(holds "all(s[n].get('stop_grace_period') == '30s' for n in ('backend', 'tunnel-webhooks-backend', 'worker', 'worker-metrics', 'worker-grafana', 'worker-email'))")"
 check "EMAIL_FALLBACK_URLS empty by default, for the backend and the email worker" \
     "$(holds "env('backend')['EMAIL_FALLBACK_URLS'] == '' and env('worker-email')['EMAIL_FALLBACK_URLS'] == ''")"
-check "METRICS_INTERNAL_TESTING is off on the worker that sends telemetry" \
-    "$(holds "env('worker')['METRICS_INTERNAL_TESTING'] == 'False'")"
-render 'EMAIL_FALLBACK_URLS=smtp+tls://u:p@relay.example.com:587
-METRICS_INTERNAL_TESTING=true'
-check "and each one is taken from .env" \
-    "$(holds "env('worker-email')['EMAIL_FALLBACK_URLS'].startswith('smtp+tls://') and env('worker')['METRICS_INTERNAL_TESTING'] == 'true'")"
+check "the WB-internal telemetry flag is not in the shipped compose" \
+    "$(holds "all('METRICS_INTERNAL_TESTING' not in env(n) for n in s)")"
+render 'EMAIL_FALLBACK_URLS=smtp+tls://u:p@relay.example.com:587'
+check "and EMAIL_FALLBACK_URLS is taken from .env" \
+    "$(holds "env('worker-email')['EMAIL_FALLBACK_URLS'].startswith('smtp+tls://')")"
 
 echo
 if [ "$failures" -eq 0 ]; then echo "all compose env checks passed"; else echo "$failures compose env check(s) failed"; exit 1; fi
