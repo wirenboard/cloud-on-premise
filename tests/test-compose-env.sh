@@ -127,6 +127,8 @@ echo "the rest of the backend settings"
 render ''
 check "agent_backend gets 2 minutes to finish long polls on stop" \
     "$(holds "s['agent_backend'].get('stop_grace_period') == '2m10s'")"
+check "the backend and the workers get 30 seconds to stop" \
+    "$(holds "all(s[n].get('stop_grace_period') == '30s' for n in ('backend', 'tunnel-webhooks-backend', 'worker', 'worker-metrics', 'worker-grafana', 'worker-email'))")"
 check "EMAIL_FALLBACK_URLS empty by default, for the backend and the email worker" \
     "$(holds "env('backend')['EMAIL_FALLBACK_URLS'] == '' and env('worker-email')['EMAIL_FALLBACK_URLS'] == ''")"
 check "METRICS_INTERNAL_TESTING is off on the worker that sends telemetry" \

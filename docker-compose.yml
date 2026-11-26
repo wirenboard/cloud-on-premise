@@ -370,6 +370,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
     volumes:
@@ -406,6 +407,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-backend:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
     healthcheck: *backend-healthcheck
@@ -448,6 +450,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
       QUEUE: default_queue
@@ -465,6 +468,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
       QUEUE: metrics_queue
@@ -481,6 +485,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
       GRAFANA_DEFAULT_DASHBOARD_UPDATE_PARALLELISM: 12
@@ -498,6 +503,7 @@ services:
     image: ghcr.io/wirenboard/on-premise/wbc-worker:${VERSION}
     logging: *default-logging
     restart: always
+    stop_grace_period: 30s
     environment:
       <<: *backend-common-env
       QUEUE: email_queue
