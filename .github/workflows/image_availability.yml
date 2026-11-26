@@ -1,0 +1,58 @@
+name: Check image availability
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      extra_image:
+        description: "Additional image reference to check, e.g. a known-missing one as a negative control"
+        type: string
+        required: false
+      ref:
+        description: "Branch whose docker-compose.yml is checked"
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  pullable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+
+      - name: Every compose image resolves without credentials
+        env:
+          EXTRA_IMAGE: ${{ inputs.extra_image }}
+        run: |
+          set -euo pipefail
+          args=()
+          [[ -z "${EXTRA_IMAGE:-}" ]] || args+=("$EXTRA_IMAGE")
+          python3 .github/scripts/registry_check.py pullable "${args[@]}"
+
+  notify_failure:
+    needs: pullable
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Send Telegram notify
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CLOUD_DEBUG_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TEXT="⚠️ Не все образы on-premise из docker-compose.yml скачиваются анонимно: заказчик не сможет обновиться.
+          $RUN_URL"
+          curl --fail --silent --show-error --max-time 30 --output /dev/null \
+            --data-urlencode "chat_id=$TG_CHAT_ID" \
+            --data-urlencode "text=$TEXT" \
+            --data disable_web_page_preview=true \
+            "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage"

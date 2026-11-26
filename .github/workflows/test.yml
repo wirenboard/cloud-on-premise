@@ -2,7 +2,8 @@ name: Tests
 
 # Fixtures only: no containers, no database, seconds to run. They guard the
 # parts an operator meets before anything starts — .env validation, the config
-# migration and the 1.x guard — so they run on every change, not by hand.
+# migration and the 1.x guard — and the release tooling in .github/scripts,
+# so they run on every change, not by hand.
 on:
   pull_request:
   push:
@@ -27,3 +28,6 @@ jobs:
 
       - name: Run fixture tests
         run: make test
+
+      - name: Run release tooling tests
+        run: python3 -m unittest discover -s .github/scripts
