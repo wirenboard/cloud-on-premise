@@ -79,16 +79,6 @@ jobs:
           docker push "$TARGET_IMAGE"
           docker push "$LATEST_IMAGE"
 
-          SHA=$(gh api "repos/${{ github.repository_owner }}/${{ matrix.repo }}/branches/onprem-release/${VERSION}" --jq .commit.sha 2>/dev/null || true)
-          if [[ -n "$SHA" ]]; then
-            SHA_IMAGE="${REGISTRY}/${{ github.repository_owner }}/on-premise/${IMAGE}:${SHA}"
-            echo "Tagging $SHA_IMAGE"
-            docker tag "$SOURCE_IMAGE" "$SHA_IMAGE"
-            docker push "$SHA_IMAGE"
-          else
-            echo "::warning::${{ matrix.repo }} has no onprem-release/${VERSION} branch — skipping sha tag for ${IMAGE}"
-          fi
-
   sbom:
     needs: [read-version, retag-and-push]
     permissions: {}
