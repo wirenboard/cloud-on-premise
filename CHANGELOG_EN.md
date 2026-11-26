@@ -29,6 +29,7 @@ All notable changes to this project are documented in this file.
 - A Grafana user can no longer run code on the metrics database server or learn other organisations' data through query errors, database statistics and EXPLAIN.
 - An agent can no longer pose as another controller by forging a header. The Grafana password reset and its `/metrics` are closed from outside.
 - A controller page opened through a tunnel can no longer send requests to the cloud API as the visitor.
+- A tunnel access key works only on the address of its own tunnel.
 - Guessing a password or a 2FA code locks the sign-in and emails the owner (2FA limits — `TOTP_*`). Admin sign-in with 2FA always asks for the code, password changes are rate-limited.
 - Changing the email requires the password and notifies the old address; a password or email change ends all sessions.
 - Accepting an invitation no longer signs in to an existing account without the password and 2FA.
@@ -47,6 +48,7 @@ All notable changes to this project are documented in this file.
 - The web console did not download or upload files with Cyrillic names.
 - The backend log was flooded with tracebacks about the license service and GeoIP warnings.
 - Emails called the product Wiren Board Cloud instead of the name set in the admin panel.
+- The onboarding steps were not translated when the language changed.
 
 ### Changed
 
@@ -56,6 +58,7 @@ All notable changes to this project are documented in this file.
 - A tunnel opening error names the cause.
 - Password reset and 2FA emails come in the user's language.
 - The web console terminal returns to the same session after a connection drop.
+- The web console and tunnels see the user's real IP address, not the proxy's.
 
 ### Added
 
