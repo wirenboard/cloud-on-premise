@@ -529,7 +529,7 @@ Run all commands from the repo root.
 | `make run-no-cert-check` | Same without the TLS certificate check (not recommended)     |
 | `make stop`              | Stop containers without removing them                        |
 | `make restart`           | Restart containers (with the cert check)                     |
-| `make update`            | Update the cloud to the version of the downloaded files (after `git pull`) with `wb-onprem update`: backup, switch, rollback on failure, see "Updating" |
+| `make update`            | Update the running cloud to the latest release: `git pull`, checks, images, database dump, switch, see "Updating" |
 | `make reload-certs`      | Apply a renewed certificate: validate it and restart Traefik only |
 | `make update-geoip`      | Refresh the session geolocation database |
 | `make upgrade`           | 1.x → 2.x upgrade: checks while the cloud runs, then backup, stop, migrate, start |
@@ -542,8 +542,8 @@ Run all commands from the repo root.
 # First launch (environment initialization and container startup)
 make run
 
-# Update the cloud to a new release (needs the wb-onprem utility, see "Updating")
-sudo wb-onprem update
+# Update the cloud to a new release: files, images, switch (see "Updating")
+make update
 
 # Validate environment variables
 make check-env
@@ -556,51 +556,44 @@ make help
 
 ## ⬆️ Updating
 
-Updates are run by the `wb-onprem` utility ([wirenboard/wb-onprem-cli](https://github.com/wirenboard/wb-onprem-cli)).
-While the cloud keeps running, it checks the installation and the release, including the release's one-off
-checks (for 2.1.0, logins that differ only by letter case), and pulls the images. Then it stops the cloud,
-copies the volumes, `.env`, certificates, `jwt/` and `branding/` into `backups/wb-onprem-<time>-<version>/`,
-starts the new version and, if it does not become healthy, brings the previous one back from that copy.
-
-Install the utility once:
+Update from the installation directory while the cloud is running:
 
 ```bash
-curl -fLO https://github.com/wirenboard/wb-onprem-cli/releases/latest/download/wb-onprem.pyz
-curl -fLO https://github.com/wirenboard/wb-onprem-cli/releases/latest/download/wb-onprem.pyz.sha256
-sha256sum -c wb-onprem.pyz.sha256
-sudo install -m 755 wb-onprem.pyz /usr/local/bin/wb-onprem
-```
-
-Update from the installation directory:
-
-```bash
-sudo wb-onprem update
-```
-
-The utility moves the clone to the new release tag itself after the checks and the backup, and moves it
-back on a rollback. A specific release: `--to vX.Y.Z`.
-
-The fallback is the files first, then the utility:
-
-```bash
-git pull
 make update
 ```
 
-`make update` runs `sudo wb-onprem update` for the files already downloaded; without the utility it refuses
-and links to its releases. While the server has containers of the previous version, `make run` and
-`make restart` on the new files refuse and point to `make update`: otherwise the new version would start
-without a backup. The utility updates only a running cloud, so first start a cloud stopped by `make stop` as the
-previous version with its own files — `git checkout v2.0.1 && make run && git checkout -` — then run `make update`.
-The same goes when the containers are removed (the `make stop` of 2.0.1 ran `docker compose down`): `make run`
-compares the version of the files with the version of the last start and refuses without a record of it.
+`make update` downloads the files of the new release itself (`git pull`) and goes on with them. If the clone
+is on a release tag (`git checkout vX.Y.Z`), there is no `git pull` and the cloud is updated to that tag.
 
-**Which versions.** 2.1.0 is updated to from 2.0.1 and later. Update a 2.0.0 installation to 2.0.1 first:
-`sudo wb-onprem update --to v2.0.1`. A 1.x installation is taken by `wb-onprem update` through
-`make upgrade` of release 2.0.1 (the section below) and then on to the new version.
+> From 2.0.1 to 2.1.0, once: `git pull && make update` — the `make update` of 2.0.1 does not download files.
 
-**Going back by hand.** If the new version passed the check but does not suit you, restore the previous one
-from the copy: `sudo wb-onprem restore backups/wb-onprem-<time>-<version>`. Details are in the utility's README.
+While the cloud keeps running, `make update` checks that updating from this version is supported and runs the
+release's one-off checks (for 2.1.0, logins that differ only by letter case); if a check fails, nothing is
+changed. Then it completes `.env` (`make generate-env`), checks the certificates, pulls the images and dumps
+the main database into `backups/pg-<time>.sql.gz` (the last three are kept). Only after that the cloud stops: `make update` removes the containers of the previous
+version, including services the new one no longer has, removes duplicate Grafana organisations and starts the
+new version. Along the way it prunes unused images and **all stopped containers on the host** — keep this in
+mind if the server is shared with other projects. Running `make update` again on the same version rebuilds the
+cloud without the one-off checks.
+
+While the server has containers of the previous version, `make run` and `make restart` on the new files
+refuse and point to `make update`: otherwise the new version would start without the checks and the backup.
+`make update` updates only a running cloud, so first start a cloud stopped by `make stop` as the previous
+version with its own files — `git checkout v2.0.1 && make run && git checkout -` — then run `make update`.
+The same goes when the containers are removed (the `make stop` of 2.0.1 ran `docker compose down`):
+`make run` compares the version of the files with the version of the last start and refuses without a record
+of it.
+
+**Which versions.** 2.1.0 is updated to from 2.0.1. Update a 2.0.0 installation to 2.0.1 first:
+`git checkout v2.0.1 && make update && git checkout - && make update`. Move a 1.x
+installation to 2.0.1 first with `make upgrade` of that release (the section below).
+
+**Rolling back.** The dump in `backups/` holds only the main database. The metrics database upgrades the
+TimescaleDB extension on the first start of 2.1.0, and 2.0.1 no longer starts on it. To be able to go back to
+2.0.1, take a snapshot of the server or a copy of the Docker volumes with the cloud stopped before the update.
+To roll back, restore the whole server snapshot or, for a copy of the volumes:
+`docker compose down --remove-orphans && rm -f .last-run-version`, restore the volumes,
+`git checkout v2.0.1 && make run`.
 
 ---
 
@@ -611,8 +604,8 @@ place. The key change: **the email becomes the login** — it is mandatory, uniq
 the account name. The new schema requires this but does not repair the data itself, so the
 database has to be put in order before the migration — that is what `make upgrade` does.
 
-`sudo wb-onprem update` (see "Updating") runs the upgrade: first to 2.0.1 with that release's
-`make upgrade`, then on to the new version. The step to 2.0.1 by hand:
+First the installation moves to 2.0.1 with that release's `make upgrade`, then it is updated to the new
+version (see "Updating"). The step to 2.0.1:
 
 ```bash
 git fetch --tags

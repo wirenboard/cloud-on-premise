@@ -26,8 +26,19 @@ env_value_raw() {
 env_true()  { case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in true|on|ok|y|yes|1) return 0 ;; esac; return 1; }
 env_false() { case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in false|off|no|0) return 0 ;; esac; return 1; }
 
+RUN_RECORD=".last-run-version"
+
+# wbc-timescale-guard is tagged after the Timescale build, not the release: the tag must be X.Y.Z.
+stack_versions() {
+    { VERSION="${VERSION:-}" docker compose ps "$@" --format '{{.Image}}' 2>/dev/null || true; } \
+        | sed -nE 's#^.*/on-premise/wbc-[a-z0-9-]+:([0-9]+\.[0-9]+\.[0-9]+.*)$#\1#p' \
+        | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
 case "${1:-}" in
     get)    env_value "$2" "${3:-}" ;;
     getraw) env_value_raw "$2" "${3:-}" ;;
     marker) printf '%s\n' "$UPGRADE_MARKER" ;;
+    record) printf '%s\n' "$RUN_RECORD" ;;
+    versions) shift; stack_versions "$@"; echo ;;
 esac

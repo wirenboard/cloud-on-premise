@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# make update hands over to wb-onprem; run/restart refuse a stack of another version;
-# the release manifest has the shape wb-onprem reads: bash tests/test-update-path.sh
+# make update and the version guard of run/restart: bash tests/test-update-path.sh
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,38 +14,44 @@ check() {
 
 FAKE="$WORK/bin"
 mkdir -p "$FAKE"
-# docker: `compose ps -a` prints the images in $FAKE_IMAGES, `compose ps --status running`
-# the containers in $FAKE_RUNNING (all of $FAKE_IMAGES by default), `volume inspect` finds
-# only the volumes in $FAKE_VOLUMES of the project "onprem"; every call is logged.
+# ps -a: $FAKE_IMAGES, other ps: $FAKE_RUNNING (default $FAKE_IMAGES), volumes: $FAKE_VOLUMES; $FAKE_FAIL fails.
 cat > "$FAKE/docker" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CALLS"
+if [ -n "${FAKE_FAIL:-}" ]; then case "$*" in *"$FAKE_FAIL"*) exit 1 ;; esac; fi
 case "$*" in
-    *"compose ps"*"--status running"*) printf '%s\n' ${FAKE_RUNNING-${FAKE_IMAGES:-}} ;;
-    *"compose ps"*) printf '%s\n' ${FAKE_IMAGES:-} ;;
+    *"exec -T postgres psql"*) cat > /dev/null; printf '%b' "${FAKE_PSQL:-}" ;;
+    *"compose ps -a"*) printf '%s\n' ${FAKE_IMAGES:-} ;;
+    *"compose ps"*) printf '%s\n' ${FAKE_RUNNING-${FAKE_IMAGES:-}} ;;
     *"compose config"*) printf 'name: onprem\nservices: {}\n' ;;
     "volume inspect "*) case " ${FAKE_VOLUMES:-} " in *" ${3:-} "*) ;; *) exit 1 ;; esac ;;
 esac
 exit 0
 SH
-cat > "$FAKE/sudo" <<'SH'
+# make: logs the target; `backup` adds a dump named after $FAKE_DUMP_TIME, as migration/upgrade.sh does.
+cat > "$FAKE/fake-make" <<'SH'
 #!/usr/bin/env bash
-printf 'sudo %s\n' "$*" >> "$CALLS"
-exec "$@"
+printf 'make %s%s\n' "$*" "${UPDATE_FILES_PULLED:+ (files pulled)}" >> "$CALLS"
+if [ "$1" = backup ]; then mkdir -p backups && : > "backups/pg-${FAKE_DUMP_TIME:-20261126-120000}.sql.gz"; fi
 SH
-cat > "$FAKE/wb-onprem" <<'SH'
+# git: on a branch unless $FAKE_DETACHED; `pull` fails when $FAKE_GIT_FAIL is set.
+cat > "$FAKE/git" <<'SH'
 #!/usr/bin/env bash
-printf '%s %s\n' "$0" "$*" >> "$CALLS"
+printf 'git %s\n' "$*" >> "$CALLS"
+case "$1" in
+    symbolic-ref) [ -z "${FAKE_DETACHED:-}" ] ;;
+    pull) [ -z "${FAKE_GIT_FAIL:-}" ] ;;
+    describe) echo v2.1.0 ;;
+esac
 SH
 chmod +x "$FAKE"/*
 export CALLS="$WORK/calls"
-# make update calls sudo only when it does not already run as root; the fake logs its own path.
-AS_ROOT="sudo "; [ "$(id -u)" -eq 0 ] && AS_ROOT=""
 
 setup() { # VERSION of the files
-    rm -rf "$WORK/case"; mkdir -p "$WORK/case/scripts"
+    rm -rf "$WORK/case"; mkdir -p "$WORK/case/scripts" "$WORK/case/upgrade/2.1.0"
     cp "$ROOT/Makefile" "$ROOT/.env.example" "$WORK/case/"
-    cp "$ROOT/scripts/env.sh" "$WORK/case/scripts/"
+    cp "$ROOT/scripts/env.sh" "$ROOT/scripts/update.sh" "$WORK/case/scripts/"
+    cp "$ROOT/upgrade/2.1.0/logins-differ-only-by-case.sql" "$WORK/case/upgrade/2.1.0/"
     printf '%s\n' "$1" > "$WORK/case/VERSION"
     printf 'ABSOLUTE_SERVER=cloud.example.com\nEMAIL_ENABLED=False\n' > "$WORK/case/.env"
     cp "$WORK/case/.env" "$WORK/env.before"
@@ -74,6 +79,13 @@ setup 2.1.0
 PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.1.0)" make check-running-version >/dev/null 2>&1
 check "passes the stack of the files' version" $?
 setup 2.1.0
+PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.1.0) ghcr.io/wirenboard/on-premise/wbc-timescale-guard:pg17.11-ts2.30.2" \
+    make check-running-version >/dev/null 2>&1
+check "the one-shot wbc-timescale-guard, tagged after Timescale, is not a version" $?
+setup 2.1.0
+PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.1.0)" FAKE_RUNNING="" make check-running-version >/dev/null 2>&1
+check "passes a stopped stack of the files' version" $?
+setup 2.1.0
 PATH="$FAKE:$PATH" FAKE_IMAGES="" make check-running-version >/dev/null 2>&1
 check "passes a fresh installation: no containers, no database volume" $?
 setup 2.1.0
@@ -92,25 +104,6 @@ setup 2.1.0
 printf '2.1.0\n' > .last-run-version
 PATH="$FAKE:$PATH" FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version >/dev/null 2>&1
 check "passes a database whose last run was the files' version" $?
-setup 2.1.0
-mkdir backups && printf '{\n  "version": "2.1.0",\n  "commit": "%040d"\n}\n' 0 > backups/installed.json
-PATH="$FAKE:$PATH" FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version >/dev/null 2>&1
-check "takes the version wb-onprem installed last as the record" $?
-setup 2.1.0
-printf '2.1.0\n' > .last-run-version
-mkdir backups && printf '{\n  "version": "2.0.1",\n  "commit": "%040d"\n}\n' 0 > backups/installed.json
-touch -t 200001010000 .last-run-version
-check "takes the newer of the two records (a restore by wb-onprem after a run)" "$(PATH="$FAKE:$PATH" \
-    FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version >/dev/null 2>&1 && echo 1 || echo 0)"
-if [ "$(id -u)" -ne 0 ]; then
-    setup 2.1.0
-    mkdir backups && printf '{\n  "version": "2.1.0",\n  "commit": "%040d"\n}\n' 0 > backups/installed.json
-    chmod 700 backups && chmod 000 backups
-    out="$(PATH="$FAKE:$PATH" FAKE_IMAGES="" FAKE_VOLUMES="onprem_postgresData" make check-running-version 2>&1)"
-    chmod 700 backups
-    check "tells to run with sudo when the wb-onprem record is closed to the user" \
-        "$(printf '%s' "$out" | grep -q 'with sudo'; echo $?)"
-fi
 setup 2.1.0
 out="$(PATH="$FAKE:$PATH" FAKE_IMAGES="$(img 2.0.1)" FAKE_RUNNING="" make check-running-version 2>&1)"; rc=$?
 check "refuses a stopped stack of another version" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
@@ -154,62 +147,128 @@ check "also stops what is left running: the 2.0.x MinIO the files no longer list
     "$(grep -qx 'stop minio-id minio-client-id' "$CALLS"; echo $?)"
 
 echo
-echo "make update hands over to wb-onprem"
-setup 2.1.0
-PATH="$FAKE:$PATH" make update >/dev/null 2>&1
-check "exits zero when wb-onprem does" $?
-check "runs wb-onprem update as root by its full path, for this directory" \
-    "$(grep -qx "${AS_ROOT}$FAKE/wb-onprem update --dir $WORK/case" "$CALLS"; echo $?)"
-check "does not answer the confirmation on its own" "$(grep -q -- '--yes' "$CALLS" && echo 1 || echo 0)"
-check "neither pulls nor stops containers itself" "$(grep -Eq 'compose (pull|up|down)' "$CALLS" && echo 1 || echo 0)"
-setup 2.1.0
-PATH="$FAKE:$PATH" make update WB_ONPREM_UPDATE_FLAGS="--yes --redeploy" >/dev/null 2>&1
-check "passes --yes and --redeploy only from WB_ONPREM_UPDATE_FLAGS" \
-    "$(grep -qx "${AS_ROOT}$FAKE/wb-onprem update --dir $WORK/case --yes --redeploy" "$CALLS"; echo $?)"
+echo "make update from 2.0.1"
+# Line of the first call matching $1 in the log, 0 when there is none.
+at() { grep -n -m1 -e "$1" "$CALLS" | cut -d: -f1 | grep . || echo 0; }
+in_order() { # patterns in the order the calls must come
+    local prev=0 n
+    for p in "$@"; do
+        n="$(at "$p")"
+        [ "$n" -gt "$prev" ] || return 1
+        prev="$n"
+    done
+}
+update() { PATH="$FAKE:$PATH" UPDATE_FILES_PULLED=1 make update MAKE="$FAKE/fake-make" 2>&1; }
+first_pass() { PATH="$FAKE:$PATH" make update MAKE="$FAKE/fake-make" 2>&1; }
 
 setup 2.1.0
-printf '#!/usr/bin/env bash\nexit 2\n' > "$FAKE/wb-onprem"
-check "fails when wb-onprem refuses" "$(PATH="$FAKE:$PATH" make update >/dev/null 2>&1 && echo 1 || echo 0)"
+out="$(first_pass)"; rc=$?
+check "on a branch: git pull --ff-only, then make update of the pulled files" \
+    "$([ $rc -eq 0 ] && in_order 'git pull --ff-only' 'make update (files pulled)'; echo $?)"
+check "and nothing else in the first pass" "$(grep -Eq 'compose (pull|down|up)|make backup' "$CALLS" && echo 1 || echo 0)"
+setup 2.1.0
+out="$(FAKE_GIT_FAIL=1 first_pass)"; rc=$?
+check "a failed git pull stops the update" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "before any change" "$(grep -Eq 'make update|compose|make backup' "$CALLS" && echo 1 || echo 0)"
+setup 2.1.0
+out="$(FAKE_DETACHED=1 first_pass)"; rc=$?
+check "a checked-out tag: no git pull, updates to the tag" \
+    "$([ $rc -eq 0 ] && ! grep -q 'git pull' "$CALLS" && grep -q 'make update (files pulled)' "$CALLS"; echo $?)"
 
 setup 2.1.0
-rm "$FAKE/wb-onprem"
-if command -v wb-onprem >/dev/null 2>&1; then
-    echo "  skip without wb-onprem: one is installed on this machine"
-else
-    out="$(PATH="$FAKE:$PATH" make update 2>&1)"; rc=$?
-    check "without wb-onprem fails" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
-    check "without wb-onprem points to its releases" \
-        "$(printf '%s' "$out" | grep -q 'github.com/wirenboard/wb-onprem-cli/releases'; echo $?)"
-    check "without wb-onprem touches nothing" "$([ -s "$CALLS" ] && echo 1 || echo 0)"
-fi
+out="$(FAKE_IMAGES="$(img 2.0.1)" update)"; rc=$?
+check "exits zero" $rc
+check "checks logins, then env, certs, pull, backup, stop, Grafana duplicates, start, metrics schema" \
+    "$(in_order 'exec -T postgres psql' 'make generate-env' 'make check-certs' 'compose pull' 'make backup' \
+        'compose down --remove-orphans' 'delete_duplicate_grafana_orgs --apply' \
+        'compose up -d --build --remove-orphans' 'make check-metrics-schema'; echo $?)"
+check "refuses 1.x before anything else" "$(in_order 'make check-not-1x' 'compose ps'; echo $?)"
+check "removes Grafana duplicates with the new backend image alone, its database and Grafana up" \
+    "$(in_order 'compose up -d --wait postgres clients-grafana' \
+        'compose run --rm --no-deps backend uv run --no-dev ./manage.py delete_duplicate_grafana_orgs --apply'; echo $?)"
+check "records the version it started" "$([ "$(cat .last-run-version 2>/dev/null)" = 2.1.0 ] && echo 0 || echo 1)"
+
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.1)" FAKE_PSQL='5 Admin\n6 admin\n' update)"; rc=$?
+check "refuses logins that differ only by case" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "lists them" "$(printf '%s' "$out" | grep -qx '6 admin'; echo $?)"
+check "before any change" "$(grep -Eq 'make (generate-env|backup)|compose (pull|down|up)' "$CALLS" && echo 1 || echo 0)"
+
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.1)" FAKE_FAIL='exec -T postgres' update)"; rc=$?
+check "refuses when the login check cannot run" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "and changes nothing" "$(grep -Eq 'make (generate-env|backup)|compose (pull|down|up)' "$CALLS" && echo 1 || echo 0)"
+
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.1)" FAKE_FAIL='compose pull' update)"; rc=$?
+check "a failed pull fails the update" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "and leaves 2.0.1 running, with no dump taken" "$(grep -Eq 'compose (down|up)|make backup' "$CALLS" && echo 1 || echo 0)"
+
+setup 2.1.0
+mkdir backups
+for t in 20261101-000000 20261102-000000 20261103-000000 20261104-000000; do : > "backups/pg-$t.sql.gz"; done
+: > backups/keep-me.txt
+out="$(FAKE_IMAGES="$(img 2.0.1)" FAKE_DUMP_TIME=20261126-130000 update)"; rc=$?
+check "keeps the last 3 dumps, the new one included, and nothing else is touched" \
+    "$([ "$(ls backups | tr '\n' ' ')" = "keep-me.txt pg-20261103-000000.sql.gz pg-20261104-000000.sql.gz pg-20261126-130000.sql.gz " ] && echo 0 || echo 1)"
+
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.1)" FAKE_FAIL='delete_duplicate_grafana_orgs' update)"; rc=$?
+check "goes on when the Grafana cleanup fails" "$rc"
+check "and tells how to run it later" "$(printf '%s' "$out" | grep -q 'delete_duplicate_grafana_orgs \[--apply\]'; echo $?)"
+
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.1)" FAKE_FAIL='up -d --build' update)"; rc=$?
+check "a failed start fails the update" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "and names the dump to roll back to" "$(printf '%s' "$out" | grep -q 'backups/pg-20261126-120000.sql.gz'; echo $?)"
+check "records no version" "$([ -e .last-run-version ] && echo 1 || echo 0)"
+
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.1)" FAKE_FAIL='prune' update)"; rc=$?
+check "a failed prune does not stop the update halfway" "$(in_order 'compose down' 'compose up -d --build'; echo $?)"
+
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.1) ghcr.io/wirenboard/on-premise/wbc-timescale-guard:pg17.11-ts2.30.2" update)"; rc=$?
+check "the guard image tagged after Timescale is not a version" "$rc"
 
 echo
-echo "the 2.1.0 manifest"
-python3 -I - "$ROOT" <<'PY' || failures=$((failures + 1))
-import json, os, posixpath, sys
+echo "make update refuses what it cannot switch"
+setup 2.1.0
+out="$(FAKE_IMAGES="" update)"; rc=$?
+check "a stopped cloud" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "points a new installation to make run" "$(printf '%s' "$out" | grep -q "'make run'"; echo $?)"
+check "and changes nothing" "$(grep -Eq 'make (generate-env|backup)|compose (pull|down|up)' "$CALLS" && echo 1 || echo 0)"
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.1)" FAKE_RUNNING="" update)"; rc=$?
+check "a stopped 2.0.1: tells to start it with its own files" \
+    "$([ $rc -ne 0 ] && printf '%s' "$out" | grep -q 'git checkout v2.0.1 && make run'; echo $?)"
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.1.0)" FAKE_RUNNING="" update)"; rc=$?
+check "a stopped 2.1.0, e.g. after a failed start: points to make run and the logs, not to 2.0.1" \
+    "$([ $rc -ne 0 ] && printf '%s' "$out" | grep -q "start them with 'make run'" &&
+       ! printf '%s' "$out" | grep -q 'git checkout'; echo $?)"
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.0.0)" update)"; rc=$?
+check "2.0.0" "$([ $rc -ne 0 ] && echo 0 || echo 1)"
+check "sends it through 2.0.1 first" "$(printf '%s' "$out" | grep -q 'git checkout v2.0.1 && make update'; echo $?)"
+check "and changes nothing" "$(grep -Eq 'make (generate-env|backup)|compose (pull|down|up)' "$CALLS" && echo 1 || echo 0)"
+setup 2.1.0
+out="$(FAKE_IMAGES="$(img 2.1.0) ghcr.io/wirenboard/on-premise/wbc-webssh:2.0.1" update)"; rc=$?
+check "a stack of mixed versions, named so" \
+    "$([ $rc -ne 0 ] && printf '%s' "$out" | grep -q 'several versions: 2.0.1 2.1.0'; echo $?)"
 
-root = sys.argv[1]
-failures = 0
-def check(name, ok):
-    global failures
-    print(f"  {'ok  ' if ok else 'FAIL'} {name}")
-    failures += not ok
-
-m = json.load(open(os.path.join(root, "upgrade/2.1.0/manifest.json")))
-check("format 1, version 2.1.0, min_cli 0.2.0",
-      (m.get("format"), m.get("version"), m.get("min_cli")) == (1, "2.1.0", "0.2.0"))
-check("updates only from 2.0.1 up to 2.1.0", m.get("upgrade_from") == ">=2.0.1,<2.1.0")
-checks = m.get("checks", [])
-check("has the login check", [c.get("id") for c in checks] == ["logins-differ-only-by-case"])
-for c in checks:
-    check(f"{c['id']}: every field wb-onprem requires is a non-empty string",
-          all(isinstance(c.get(k), str) and c[k] for k in ("id", "type", "database", "file", "message", "hint")))
-    check(f"{c['id']}: sql on the main database", (c["type"], c["database"]) == ("sql", "main"))
-    check(f"{c['id']}: its file lies in upgrade/2.1.0/ and exists",
-          posixpath.normpath(c["file"]) == c["file"] and c["file"].startswith("upgrade/2.1.0/")
-          and os.path.isfile(os.path.join(root, c["file"])))
-sys.exit(1 if failures else 0)
-PY
+echo
+echo "make update rebuilds the same release"
+for pair in "2.1.0 2.1.0" "2.1.0-testing 2.1.0" "2.1.0 2.1.0-testing"; do
+    read -r files running <<< "$pair"
+    setup "$files"
+    out="$(FAKE_IMAGES="$(img "$running")" update)"; rc=$?
+    check "$running running, $files files: exits zero" "$rc"
+    check "$running running, $files files: pulls, backs up and restarts" \
+        "$(in_order 'compose pull' 'make backup' 'compose down --remove-orphans' 'compose up -d --build'; echo $?)"
+    check "$running running, $files files: no login check, no Grafana cleanup" \
+        "$(grep -Eq 'psql|delete_duplicate_grafana_orgs' "$CALLS" && echo 1 || echo 0)"
+done
 
 echo
 if [ "$failures" -eq 0 ]; then echo "all checks passed"; else echo "$failures check(s) failed"; exit 1; fi

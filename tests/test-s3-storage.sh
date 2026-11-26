@@ -77,7 +77,7 @@ git -C "$ROOT" show v2.0.1:docker-compose.yml > "$WORK/old/docker-compose.yml"
                    docker compose -p "$PROJECT" up minio-client >/dev/null 2>&1)
 service_containers() { docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"; }
 check "2.0.1 MinIO is up before the update" has "$(service_containers minio)" .
-# The very `down` `make restart` runs, against the 2.1.0 files; `make update` leaves it to wb-onprem.
+# The very `down` `make restart` and scripts/update.sh run, against the 2.1.0 files.
 down_cmd="$(awk '/^restart:/{f=1; next} f && /^[a-z]/{exit} f' "$ROOT/Makefile" | grep -o 'docker compose down[^&;]*')"
 check "make restart has a docker compose down" has "$down_cmd" .
 (cd "$WORK/stack" && export COMPOSE_PROJECT_NAME="$PROJECT" VERSION=test && eval "$down_cmd") >/dev/null 2>&1

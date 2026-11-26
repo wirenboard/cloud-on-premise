@@ -109,7 +109,7 @@ help:
 	@printf "  run-no-cert-check        Launch without checking TLS certificates (not recommended)\n"
 	@printf "  stop                     Stop containers\n"
 	@printf "  restart                  Restart containers (with cert check)\n"
-	@printf "  update                   Update with wb-onprem: checks, backup, switch, rollback on failure\n"
+	@printf "  update                   Update the running cloud to the latest release: git pull, checks, images, backup\n"
 	@printf "  upgrade                  1.x -> 2.x upgrade: checks, then backup, stop, migrate, start\n"
 	@printf "  fix-users                Run migration_doctor (MODE=scan|auto|resolve|dump|apply)\n"
 	@printf "  backup                   Back up PostgreSQL (+ InfluxDB if present) into ./backups\n"
@@ -166,9 +166,7 @@ check-not-1x:
 #------------------------------------------------------------------------------
 # [ VERSION GUARD ] -----------------------------------------------------------
 
-RUN_RECORD       := .last-run-version
-# wb-onprem rewrites it after an update or a restore, which do not go through `make run`.
-WB_ONPREM_RECORD := backups/installed.json
+RUN_RECORD := $(shell bash scripts/env.sh record)
 
 define record_run
 	printf '%s\n' "$(VERSION)" > $(RUN_RECORD) || \
@@ -179,16 +177,14 @@ endef
 # would migrate the database with no backup to roll back to.
 .PHONY: check-running-version
 check-running-version:
-	@running="$$(VERSION=$(VERSION) docker compose ps -a --format '{{.Image}}' 2>/dev/null \
-		| grep -E 'on-premise/wbc-' | sed 's/.*://' | sort -u | tr '\n' ' ')"; \
-	running="$${running% }"; \
+	@running="$$(VERSION=$(VERSION) bash scripts/env.sh versions -a)"; \
 	if [ -n "$$running" ] && [ "$$running" != "$(VERSION)" ]; then \
 		printf "$(RED)ERROR: the running stack is %s, the files are %s.$(NC)\n" "$$running" "$(VERSION)"; \
 		if [ -z "$$(VERSION=$(VERSION) docker compose ps -q --status running 2>/dev/null)" ]; then \
 			printf "$(YELLOW)The stack is stopped: start it with its own files, return to these and update:$(NC)\n"; \
 			printf "$(YELLOW)  git checkout v%s && make run && git checkout - && make update$(NC)\n" "$$running"; \
 		else \
-			printf "$(YELLOW)Run 'make update': it backs up the running version, switches and rolls back on failure.$(NC)\n"; \
+			printf "$(YELLOW)Run 'make update': it checks the release conditions, backs up the database and switches.$(NC)\n"; \
 		fi; \
 		exit 1; \
 	fi; \
@@ -196,17 +192,11 @@ check-running-version:
 	project="$$(VERSION=$(VERSION) docker compose config --no-interpolate 2>/dev/null | sed -n 's/^name: //p' | head -1)"; \
 	{ [ -n "$$project" ] && docker volume inspect "$${project}_postgresData" >/dev/null 2>&1; } || exit 0; \
 	last="$$(tr -d '[:space:]' 2>/dev/null < $(RUN_RECORD))"; \
-	if [ -f $(WB_ONPREM_RECORD) ] && { [ -z "$$last" ] || [ $(WB_ONPREM_RECORD) -nt $(RUN_RECORD) ]; }; then \
-		last="$$(sed -n 's/^  "version": "\(.*\)",$$/\1/p' $(WB_ONPREM_RECORD) 2>/dev/null | head -1)"; \
-	fi; \
 	if [ "$$last" != "$(VERSION)" ]; then \
 		printf "$(RED)ERROR: the database of %s is here with no containers, the files are %s.$(NC)\n" "$${last:-an unrecorded version}" "$(VERSION)"; \
 		printf "$(YELLOW)Starting %s on it would migrate the database with no backup to roll back to.$(NC)\n" "$(VERSION)"; \
 		printf "$(YELLOW)Start the version that ran last with its own files, return to these and update:$(NC)\n"; \
 		printf "$(YELLOW)  git checkout v%s && make run && git checkout - && make update$(NC)\n" "$${last:-<previous>}"; \
-		if [ -d backups ] && [ ! -x backups ]; then \
-			printf "$(YELLOW)backups/ is readable only by root: if wb-onprem made the last update, run the same make command with sudo.$(NC)\n"; \
-		fi; \
 		exit 1; \
 	fi
 
@@ -507,26 +497,12 @@ run-no-cert-check:
 	@$(call record_run)
 	@${MAKE} check-metrics-schema
 
-WB_ONPREM_RELEASES := https://github.com/wirenboard/wb-onprem-cli/releases/latest
-
-# The test server deploy passes --yes --redeploy here; nothing else answers for the admin.
-WB_ONPREM_UPDATE_FLAGS ?=
-
 .PHONY: update
 update:
-	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING WITH wb-onprem ]====================="
+	@printf "\n\n\033[1;37m%s\033[0m\n" "=====================[ UPDATING ]====================="
 	@$(call require_version)
-	@cli="$$(command -v wb-onprem)" || { \
-		printf "$(RED)ERROR: wb-onprem is not installed: the update needs it for the backup and the rollback.$(NC)\n"; \
-		printf "$(YELLOW)Download wb-onprem.pyz and wb-onprem.pyz.sha256 from %s, check and install it:$(NC)\n" "$(WB_ONPREM_RELEASES)"; \
-		printf "$(YELLOW)  sha256sum -c wb-onprem.pyz.sha256 && sudo install -m 755 wb-onprem.pyz /usr/local/bin/wb-onprem$(NC)\n"; \
-		exit 1; \
-	}; \
-	if [ "$$(id -u)" -eq 0 ]; then \
-		"$$cli" update --dir "$(CURDIR)" $(WB_ONPREM_UPDATE_FLAGS); \
-	else \
-		sudo "$$cli" update --dir "$(CURDIR)" $(WB_ONPREM_UPDATE_FLAGS); \
-	fi
+	@${MAKE} check-not-1x
+	@MAKE="$(MAKE)" bash ./scripts/update.sh
 
 .PHONY: stop
 stop:
